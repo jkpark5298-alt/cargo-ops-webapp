@@ -1,43 +1,23 @@
-import io
-import json
 from typing import List
+import base64
 
-from google.cloud import vision
-from google.oauth2 import service_account
-from PIL import Image
+def extract_text_from_image(image_bytes: bytes) -> List[str]:
+    """
+    OCR 텍스트 추출 (현재는 기본 처리 / 추후 Vision API 연결 가능)
+    """
 
-from app.core.config import settings
+    try:
+        # 임시 OCR 처리 (텍스트 디코딩 기반)
+        text = image_bytes.decode(errors="ignore")
 
+        lines = [
+            line.strip()
+            for line in text.split("\n")
+            if line.strip()
+        ]
 
-class VisionOCRService:
-    def __init__(self) -> None:
-        self._client = None
+        return lines
 
-    def _build_client(self) -> vision.ImageAnnotatorClient:
-        if settings.google_application_credentials_json:
-            info = json.loads(settings.google_application_credentials_json)
-            credentials = service_account.Credentials.from_service_account_info(info)
-            return vision.ImageAnnotatorClient(credentials=credentials)
-        return vision.ImageAnnotatorClient()
-
-    @property
-    def client(self) -> vision.ImageAnnotatorClient:
-        if self._client is None:
-            self._client = self._build_client()
-        return self._client
-
-    def extract_text_lines(self, file_bytes: bytes) -> List[str]:
-        image = vision.Image(content=file_bytes)
-        response = self.client.text_detection(image=image)
-        if response.error.message:
-            raise RuntimeError(response.error.message)
-
-        if not response.text_annotations:
-            return []
-
-        full_text = response.text_annotations[0].description
-        return [line.strip() for line in full_text.splitlines() if line.strip()]
-
-    def get_image_size(self, file_bytes: bytes) -> tuple[int, int]:
-        with Image.open(io.BytesIO(file_bytes)) as img:
-            return img.size
+    except Exception as e:
+        print("OCR ERROR:", e)
+        return []

@@ -1,20 +1,59 @@
-# Cargo Ops WebApp Monorepo
+# Cargo Ops Backend - Step 4
 
-이 저장소는 아이폰용 웹앱(PWA/향후 앱 래핑 가능) + OCR/공항 API 백엔드로 분리된 모노레포 구조입니다.
+이 백엔드는 다음 기능을 담당합니다.
 
-## 폴더 구조
+- Google Vision OCR 기반 이미지 문자 추출
+- 이름/편명/주기장 1차 파싱
+- 인천공항 화물기 API 조회
+- 이후 단계에서 알림 엔진 연결 예정
 
-- `frontend/` : Vercel 배포용 프론트엔드(다음 단계에서 Next.js로 구성)
-- `backend/` : OCR, 파싱, 인천공항 API 연동용 FastAPI 서버
-- `docs/` : 설계 문서, API 명세, OCR 규칙 문서
+## 1. 로컬 실행
 
-## 추천 GitHub 저장소 운영
+```bash
+cd backend
+python -m venv .venv
+source .venv/bin/activate  # Windows: .venv\\Scripts\\activate
+pip install -r requirements.txt
+cp .env.example .env
+uvicorn app.main:app --reload
+```
 
-초기에는 이 모노레포 하나로 시작하고, 운영 단계에서 필요하면 프론트/백엔드 저장소를 분리합니다.
+## 2. Google Vision 설정
 
-## 개발 순서
+### 권장 방식
+Google Cloud 서비스 계정 JSON 전체를 한 줄 문자열로 `GOOGLE_APPLICATION_CREDENTIALS_JSON` 환경변수에 넣습니다.
 
-1. GitHub 구조 정리
-2. 프론트엔드 Next.js/Vercel 구성
-3. 백엔드 Render 배포
-4. 알림 엔진 추가
+예시:
+
+```env
+GOOGLE_APPLICATION_CREDENTIALS_JSON={"type":"service_account",...}
+```
+
+## 3. 인천공항 API 설정
+
+`.env`에 아래 값을 넣습니다.
+
+```env
+INCHEON_API_SERVICE_KEY=발급받은키
+```
+
+키가 없으면 `/flights/lookup`은 데모 응답을 반환합니다.
+
+## 4. 주요 API
+
+### 상태 확인
+`GET /health`
+
+### OCR 추출
+`POST /ocr/extract`
+- form-data
+- key: `file`
+
+### 편명 조회
+`GET /flights/lookup?flight_no=5X123&search_day=20260419`
+
+## 5. Render 배포
+
+- Root Directory: `backend`
+- Runtime: Docker
+- Environment Variables 등록 필요

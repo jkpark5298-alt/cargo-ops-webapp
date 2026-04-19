@@ -1,223 +1,534 @@
-'use client';
+"use client";
 
-import { ChangeEvent, FormEvent, useMemo, useState } from 'react';
-import StatusPill from '@/app/components/StatusPill';
-import type { FlightInfo, OcrResponse } from '@/lib/types';
+import { useMemo, useState } from "react";
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_BASE_URL || 'http://127.0.0.1:8000';
+type FlightLookupItem = {
+  airline?: string;
+  flightNo?: string;
+  masterFlightNo?: string;
+  scheduleTime?: string;
+  estimatedTime?: string;
+  airportCode?: string;
+  airportName?: string;
+  gateNumber?: string;
+  terminal?: string;
+  status?: string;
+  operationType?: string;
+  codeshare?: string;
+};
+
+type ExtractedRow = {
+  raw: string;
+  name?: string;
+  flightNo?: string;
+  parkingStand?: string;
+};
+
+type ExtractResponse = {
+  rows: ExtractedRow[];
+  text?: string;
+};
+
+const API_BASE_URL =
+  process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
 
 export default function UploadPage() {
-  const [file, setFile] = useState<File | null>(null);
-  const [previewUrl, setPreviewUrl] = useState<string>('');
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string>('');
-  const [result, setResult] = useState<OcrResponse | null>(null);
-  const [manualText, setManualText] = useState('');
+  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+  const [rawText, setRawText] = useState("");
+  const [flightNo, setFlightNo] = useState("");
+  const [extractLoading, setExtractLoading] = useState(false);
+  const [lookupLoading, setLookupLoading] = useState(false);
+  const [extractError, setExtractError] = useState("");
+  const [lookupError, setLookupError] = useState("");
+  const [extractResult, setExtractResult] = useState<ExtractResponse | null>(
+    null
+  );
+  const [lookupResult, setLookupResult] = useState<FlightLookupItem[] | null>(
+    null
+  );
 
-  const totalFlights = result?.flights.length ?? 0;
-  const totalRows = result?.rows.length ?? 0;
+  const extractedRows = useMemo(() => extractResult?.rows ?? [], [extractResult]);
+  const extractedFlightNos = useMemo(
+    () => extractedRows.map((row) => row.flightNo).filter(Boolean),
+    [extractedRows]
+  );
+  const extractedParkingStands = useMemo(
+    () => extractedRows.map((row) => row.parkingStand).filter(Boolean),
+    [extractedRows]
+  );
 
-  const standChangedCandidates = useMemo(() => {
-    if (!result) return 0;
-    return result.rows.filter((row) => row.parkingStand && row.parkingStand.length >= 2).length;
-  }, [result]);
+  const handleFileChange = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0] ?? null;
+    setSelectedFile(file);
+  };
 
-  function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
-    const nextFile = event.target.files?.[0] || null;
-    setFile(nextFile);
-    setResult(null);
-    setError('');
-
-    if (previewUrl) {
-      URL.revokeObjectURL(previewUrl);
-    }
-
-    if (nextFile) {
-      setPreviewUrl(URL.createObjectURL(nextFile));
-    } else {
-      setPreviewUrl('');
-    }
-  }
-
-  async function handleSubmit(event: FormEvent) {
-    event.preventDefault();
-    setLoading(true);
-    setError('');
-    setResult(null);
+  const handleExtract = async () => {
+    setExtractLoading(true);
+    setExtractError("");
+    setExtractResult(null);
+    setLookupResult(null);
+    setLookupError("");
 
     try {
       const formData = new FormData();
-      if (file) formData.append('image', file);
-      if (manualText.trim()) formData.append('manual_text', manualText.trim());
+
+      if (selectedFile) {
+        formData.append("file", selectedFile);
+      }
+
+      if (rawText.trim()) {
+        formData.append("raw_text", rawText.trim());
+      }
 
       const response = await fetch(`${API_BASE_URL}/ocr/extract`, {
-        method: 'POST',
-        body: formData
+        method: "POST",
+        body: formData,
       });
 
       if (!response.ok) {
-        throw new Error(`요청 실패 (${response.status})`);
+        throw new Error(`OCR 요청 실패 (${response.status})`);
       }
 
-      const data = (await response.json()) as OcrResponse;
-      setResult(data);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : '알 수 없는 오류가 발생했습니다.';
-      setError(message);
+      const data: ExtractResponse = await response.json();
+      setExtractResult(data);
+    } catch (error) {
+      setExtractError(
+        error instanceof Error ? error.message : "OCR 처리 중 오류가 발생했습니다."
+      );
     } finally {
-      setLoading(false);
+      setExtractLoading(false);
     }
-  }
+  };
+
+  const handleLookup = async (targetFlightNo?: string) => {
+    const finalFlightNo = (targetFlightNo ?? flightNo).trim().toUpperCase();
+
+    if (!finalFlightNo) {
+      setLookupError("편명을 입력해주세요.");
+      return;
+    }
+
+    setLookupLoading(true);
+    setLookupError("");
+    setLookupResult(null);
+
+    try {
+      const response = await fetch(
+        `${API_BASE_URL}/flights/lookup?flight_no=${encodeURIComponent(finalFlightNo)}`
+      );
+
+      if (!response.ok) {
+        throw new Error(`운항 조회 실패 (${response.status})`);
+      }
+
+      const data = await response.json();
+
+      if (Array.isArray(data)) {
+        setLookupResult(data);
+      } else if (data?.items && Array.isArray(data.items)) {
+        setLookupResult(data.items);
+      } else if (data) {
+        setLookupResult([data]);
+      } else {
+        setLookupResult([]);
+      }
+    } catch (error) {
+      setLookupError(
+        error instanceof Error ? error.message : "운항 조회 중 오류가 발생했습니다."
+      );
+    } finally {
+      setLookupLoading(false);
+    }
+  };
 
   return (
-    <main className="container grid">
-      <section className="hero">
-        <span className="badge">Upload · OCR Test</span>
-        <h1>이미지 업로드 및 조회 테스트</h1>
-        <p>
-          현재 단계에서는 알림 없이, OCR 추출 결과와 편명 기준 운항 정보 조회 흐름을 검증합니다.
-          백엔드가 없으면 데모 응답으로 연결되도록 설계하면 됩니다.
-        </p>
-      </section>
-
-      <section className="kpis">
-        <div className="kpi">
-          <div className="small">추출 행 수</div>
-          <strong>{totalRows}</strong>
-        </div>
-        <div className="kpi">
-          <div className="small">조회 편명 수</div>
-          <strong>{totalFlights}</strong>
-        </div>
-        <div className="kpi">
-          <div className="small">주기장 인식 후보</div>
-          <strong>{standChangedCandidates}</strong>
-        </div>
-      </section>
-
-      <section className="card">
-        <h2>입력</h2>
-        <form className="grid" onSubmit={handleSubmit}>
-          <div>
-            <div className="small" style={{ marginBottom: 8 }}>이미지 업로드</div>
-            <input className="input" type="file" accept="image/*" onChange={handleFileChange} />
+    <main
+      style={{
+        minHeight: "100vh",
+        background:
+          "linear-gradient(180deg, #07111f 0%, #09162a 50%, #081221 100%)",
+        color: "#f3f7ff",
+        padding: "32px 20px 80px",
+      }}
+    >
+      <div style={{ maxWidth: 1080, margin: "0 auto" }}>
+        <section
+          style={{
+            border: "1px solid #20314d",
+            borderRadius: 24,
+            padding: 28,
+            background: "rgba(9,20,40,0.92)",
+            boxShadow: "0 10px 30px rgba(0,0,0,0.18)",
+            marginBottom: 24,
+          }}
+        >
+          <div
+            style={{
+              display: "inline-block",
+              border: "1px solid #3b5d9a",
+              color: "#b9d4ff",
+              borderRadius: 999,
+              padding: "8px 14px",
+              fontSize: 14,
+              marginBottom: 14,
+            }}
+          >
+            Upload · OCR Test
           </div>
 
-          <div>
-            <div className="small" style={{ marginBottom: 8 }}>OCR 없이 파싱만 테스트할 경우 텍스트 직접 입력</div>
-            <textarea
-              className="textarea"
-              placeholder="예: 박종규 5X123 A12"
-              value={manualText}
-              onChange={(e) => setManualText(e.target.value)}
-            />
+          <h1 style={{ fontSize: 54, lineHeight: 1.15, margin: 0, fontWeight: 800 }}>
+            이미지 업로드 및 조회 테스트
+          </h1>
+
+          <p
+            style={{
+              color: "#b6c4de",
+              fontSize: 28,
+              lineHeight: 1.6,
+              marginTop: 18,
+              marginBottom: 0,
+            }}
+          >
+            현재 단계에서는 알림 없이, OCR 추출 결과와 편명 기준 운항 정보 조회 흐름을
+            검증합니다. 이미지가 없어도 편명을 직접 입력해 조회할 수 있습니다.
+          </p>
+        </section>
+
+        <section
+          style={{
+            display: "grid",
+            gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+            gap: 16,
+            marginBottom: 24,
+          }}
+        >
+          <StatCard label="추출 행 수" value={String(extractedRows.length)} />
+          <StatCard label="조회 편명 수" value={String(extractedFlightNos.length)} />
+          <StatCard
+            label="주기장 인식 후보"
+            value={String(extractedParkingStands.length)}
+          />
+        </section>
+
+        <section
+          style={{
+            border: "1px solid #20314d",
+            borderRadius: 24,
+            padding: 28,
+            background: "rgba(9,20,40,0.92)",
+            marginBottom: 24,
+          }}
+        >
+          <h2 style={{ marginTop: 0, marginBottom: 22, fontSize: 30 }}>입력</h2>
+
+          <label style={labelStyle}>이미지 업로드</label>
+          <div style={inputWrapStyle}>
+            <input type="file" accept="image/*" onChange={handleFileChange} />
           </div>
 
-          <div className="row">
-            <button className="button primary" type="submit" disabled={loading || (!file && !manualText.trim())}>
-              {loading ? '조회 중...' : 'OCR 및 편명 조회 실행'}
+          <label style={{ ...labelStyle, marginTop: 20 }}>
+            OCR 없이 파싱만 테스트할 경우 텍스트 직접 입력
+          </label>
+          <textarea
+            value={rawText}
+            onChange={(e) => setRawText(e.target.value)}
+            placeholder="예: 박종규 5X123 A12"
+            style={textareaStyle}
+          />
+
+          <div style={{ display: "flex", gap: 12, flexWrap: "wrap", marginTop: 18 }}>
+            <button
+              onClick={handleExtract}
+              disabled={extractLoading}
+              style={primaryButtonStyle}
+            >
+              {extractLoading ? "추출 중..." : "OCR / 파싱 실행"}
             </button>
           </div>
-        </form>
-      </section>
 
-      {previewUrl ? (
-        <section className="card">
-          <h2>업로드 미리보기</h2>
-          <img src={previewUrl} alt="업로드 이미지 미리보기" className="preview" />
+          <hr style={dividerStyle} />
+
+          <label style={labelStyle}>편명 직접 입력 조회</label>
+          <div
+            style={{
+              display: "grid",
+              gridTemplateColumns: "1fr auto",
+              gap: 12,
+              alignItems: "center",
+            }}
+          >
+            <input
+              value={flightNo}
+              onChange={(e) => setFlightNo(e.target.value.toUpperCase())}
+              placeholder="예: KJ193, 5X596, KE123"
+              style={textInputStyle}
+            />
+            <button
+              onClick={() => handleLookup()}
+              disabled={lookupLoading}
+              style={primaryButtonStyle}
+            >
+              {lookupLoading ? "조회 중..." : "편명 조회"}
+            </button>
+          </div>
+
+          {extractError ? <ErrorBox message={extractError} /> : null}
+          {lookupError ? <ErrorBox message={lookupError} /> : null}
         </section>
-      ) : null}
 
-      {error ? (
-        <section className="card">
-          <h2>오류</h2>
-          <p className="status-bad">{error}</p>
-        </section>
-      ) : null}
+        <section
+          style={{
+            border: "1px solid #20314d",
+            borderRadius: 24,
+            padding: 28,
+            background: "rgba(9,20,40,0.92)",
+            marginBottom: 24,
+          }}
+        >
+          <h2 style={{ marginTop: 0, marginBottom: 18, fontSize: 30 }}>
+            OCR / 파싱 결과
+          </h2>
 
-      {result ? (
-        <>
-          <section className="card">
-            <h2>처리 결과</h2>
-            <p>{result.message}</p>
-            <p className="small">{result.usedDemo ? '현재 응답은 데모 데이터입니다.' : '실제 백엔드 응답입니다.'}</p>
-          </section>
-
-          <section className="card">
-            <h2>행 단위 추출 결과</h2>
-            <div className="tableWrap">
-              <table>
+          {extractedRows.length === 0 ? (
+            <EmptyText text="아직 추출된 결과가 없습니다." />
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={tableStyle}>
                 <thead>
                   <tr>
-                    <th>행</th>
-                    <th>이름</th>
-                    <th>편명</th>
-                    <th>주기장</th>
-                    <th>원문</th>
+                    <Th>이름</Th>
+                    <Th>편명</Th>
+                    <Th>주기장</Th>
+                    <Th>원문</Th>
+                    <Th>동작</Th>
                   </tr>
                 </thead>
                 <tbody>
-                  {result.rows.map((row) => (
-                    <tr key={`${row.rowIndex}-${row.flightNo}-${row.name}`}>
-                      <td>{row.rowIndex}</td>
-                      <td>{row.name || '-'}</td>
-                      <td>{row.flightNo || '-'}</td>
-                      <td>{row.parkingStand || '-'}</td>
-                      <td>{row.rawText || '-'}</td>
+                  {extractedRows.map((row, index) => (
+                    <tr key={`${row.raw}-${index}`}>
+                      <Td>{row.name || "-"}</Td>
+                      <Td>{row.flightNo || "-"}</Td>
+                      <Td>{row.parkingStand || "-"}</Td>
+                      <Td>{row.raw || "-"}</Td>
+                      <Td>
+                        {row.flightNo ? (
+                          <button
+                            onClick={() => handleLookup(row.flightNo)}
+                            disabled={lookupLoading}
+                            style={miniButtonStyle}
+                          >
+                            이 편명 조회
+                          </button>
+                        ) : (
+                          "-"
+                        )}
+                      </Td>
                     </tr>
                   ))}
                 </tbody>
               </table>
             </div>
-          </section>
+          )}
+        </section>
 
-          <section className="card">
-            <h2>편명 기준 운항 정보</h2>
-            <FlightTable flights={result.flights} />
-          </section>
-        </>
-      ) : null}
+        <section
+          style={{
+            border: "1px solid #20314d",
+            borderRadius: 24,
+            padding: 28,
+            background: "rgba(9,20,40,0.92)",
+          }}
+        >
+          <h2 style={{ marginTop: 0, marginBottom: 18, fontSize: 30 }}>
+            운항 조회 결과
+          </h2>
+
+          {!lookupResult ? (
+            <EmptyText text="아직 조회 결과가 없습니다." />
+          ) : lookupResult.length === 0 ? (
+            <EmptyText text="조회 결과가 없습니다." />
+          ) : (
+            <div style={{ overflowX: "auto" }}>
+              <table style={tableStyle}>
+                <thead>
+                  <tr>
+                    <Th>항공사</Th>
+                    <Th>편명</Th>
+                    <Th>마스터편명</Th>
+                    <Th>운항타입</Th>
+                    <Th>예정일시</Th>
+                    <Th>변경일시</Th>
+                    <Th>도착지코드</Th>
+                    <Th>도착지공항명</Th>
+                    <Th>게이트</Th>
+                    <Th>터미널</Th>
+                    <Th>현황</Th>
+                    <Th>코드쉐어</Th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {lookupResult.map((item, index) => (
+                    <tr key={`${item.flightNo ?? "flight"}-${index}`}>
+                      <Td>{item.airline || "-"}</Td>
+                      <Td>{item.flightNo || "-"}</Td>
+                      <Td>{item.masterFlightNo || "-"}</Td>
+                      <Td>{item.operationType || "-"}</Td>
+                      <Td>{item.scheduleTime || "-"}</Td>
+                      <Td>{item.estimatedTime || "-"}</Td>
+                      <Td>{item.airportCode || "-"}</Td>
+                      <Td>{item.airportName || "-"}</Td>
+                      <Td>{item.gateNumber || "-"}</Td>
+                      <Td>{item.terminal || "-"}</Td>
+                      <Td>{item.status || "-"}</Td>
+                      <Td>{item.codeshare || "-"}</Td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      </div>
     </main>
   );
 }
 
-function FlightTable({ flights }: { flights: FlightInfo[] }) {
-  if (!flights.length) {
-    return <p className="small">조회된 운항 정보가 없습니다.</p>;
-  }
-
+function StatCard({ label, value }: { label: string; value: string }) {
   return (
-    <div className="tableWrap">
-      <table>
-        <thead>
-          <tr>
-            <th>편명</th>
-            <th>항공사</th>
-            <th>운항타입</th>
-            <th>예정일시</th>
-            <th>변경일시</th>
-            <th>공항</th>
-            <th>게이트</th>
-            <th>터미널</th>
-            <th>현황</th>
-          </tr>
-        </thead>
-        <tbody>
-          {flights.map((flight) => (
-            <tr key={`${flight.flightId}-${flight.scheduleDateTime}`}> 
-              <td>{flight.flightId}</td>
-              <td>{flight.airline || '-'}</td>
-              <td>{flight.flightType || '-'}</td>
-              <td>{flight.scheduleDateTime || '-'}</td>
-              <td>{flight.changedDateTime || '-'}</td>
-              <td>{flight.airportName || flight.airportCode || '-'}</td>
-              <td>{flight.gateNumber || '-'}</td>
-              <td>{flight.terminal || '-'}</td>
-              <td><StatusPill label={flight.status} /></td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div
+      style={{
+        border: "1px solid #20314d",
+        borderRadius: 24,
+        padding: 22,
+        background: "rgba(9,20,40,0.92)",
+      }}
+    >
+      <div style={{ color: "#b6c4de", fontSize: 18, marginBottom: 12 }}>{label}</div>
+      <div style={{ fontSize: 54, fontWeight: 800 }}>{value}</div>
     </div>
   );
+}
+
+function ErrorBox({ message }: { message: string }) {
+  return (
+    <div
+      style={{
+        marginTop: 16,
+        border: "1px solid #7d2a3d",
+        background: "rgba(122, 26, 52, 0.18)",
+        color: "#ffcad6",
+        borderRadius: 14,
+        padding: "14px 16px",
+        fontSize: 16,
+      }}
+    >
+      {message}
+    </div>
+  );
+}
+
+function EmptyText({ text }: { text: string }) {
+  return <p style={{ color: "#b6c4de", fontSize: 18, margin: 0 }}>{text}</p>;
+}
+
+const labelStyle: React.CSSProperties = {
+  display: "block",
+  fontSize: 18,
+  color: "#b6c4de",
+  marginBottom: 10,
+};
+
+const inputWrapStyle: React.CSSProperties = {
+  border: "1px solid #2b4168",
+  borderRadius: 18,
+  padding: "16px 18px",
+  background: "#0a1730",
+};
+
+const textareaStyle: React.CSSProperties = {
+  width: "100%",
+  minHeight: 170,
+  resize: "vertical",
+  border: "1px solid #2b4168",
+  borderRadius: 18,
+  background: "#0a1730",
+  color: "#f3f7ff",
+  padding: "18px 20px",
+  fontSize: 18,
+  outline: "none",
+  boxSizing: "border-box",
+};
+
+const textInputStyle: React.CSSProperties = {
+  width: "100%",
+  border: "1px solid #2b4168",
+  borderRadius: 18,
+  background: "#0a1730",
+  color: "#f3f7ff",
+  padding: "18px 20px",
+  fontSize: 18,
+  outline: "none",
+  boxSizing: "border-box",
+};
+
+const primaryButtonStyle: React.CSSProperties = {
+  border: "none",
+  borderRadius: 14,
+  background: "#69a7ff",
+  color: "#081221",
+  fontWeight: 800,
+  fontSize: 17,
+  padding: "14px 20px",
+  cursor: "pointer",
+};
+
+const miniButtonStyle: React.CSSProperties = {
+  border: "none",
+  borderRadius: 12,
+  background: "#69a7ff",
+  color: "#081221",
+  fontWeight: 700,
+  fontSize: 14,
+  padding: "10px 14px",
+  cursor: "pointer",
+};
+
+const dividerStyle: React.CSSProperties = {
+  border: 0,
+  height: 1,
+  background: "#20314d",
+  margin: "24px 0",
+};
+
+const tableStyle: React.CSSProperties = {
+  width: "100%",
+  borderCollapse: "collapse",
+  minWidth: 1100,
+};
+
+const cellCommonStyle: React.CSSProperties = {
+  borderBottom: "1px solid #20314d",
+  textAlign: "left",
+  padding: "14px 12px",
+  fontSize: 15,
+  verticalAlign: "top",
+};
+
+function Th({ children }: { children: React.ReactNode }) {
+  return (
+    <th
+      style={{
+        ...cellCommonStyle,
+        color: "#b9d4ff",
+        fontWeight: 700,
+        background: "#0a1730",
+      }}
+    >
+      {children}
+    </th>
+  );
+}
+
+function Td({ children }: { children: React.ReactNode }) {
+  return <td style={{ ...cellCommonStyle, color: "#f3f7ff" }}>{children}</td>;
 }

@@ -8,67 +8,69 @@ export default function UploadPage() {
   const [file, setFile] = useState<File | null>(null)
   const [targets, setTargets] = useState("")
   const [loading, setLoading] = useState(false)
-  const [result, setResult] = useState<any>(null)
   const [error, setError] = useState("")
+  const [result, setResult] = useState<any>(null)
 
-  // ⏱ timeout 적용 fetch
-  const fetchWithTimeout = async (url: string, options: any, timeout = 15000) => {
+  // ⏱ timeout fetch
+  const fetchWithTimeout = async (
+    url: string,
+    options: RequestInit,
+    timeout = 20000
+  ) => {
     const controller = new AbortController()
     const id = setTimeout(() => controller.abort(), timeout)
 
     try {
-      const response = await fetch(url, {
+      const res = await fetch(url, {
         ...options,
         signal: controller.signal,
       })
-      return response
+      return res
     } finally {
       clearTimeout(id)
     }
   }
 
   const handleUpload = async () => {
+    setError("")
+    setResult(null)
+
     if (!file) {
       setError("파일을 선택하세요.")
       return
     }
 
     setLoading(true)
-    setError("")
-    setResult(null)
 
     try {
-      // 📦 FormData 구성
       const formData = new FormData()
       formData.append("file", file)
-      formData.append("targets", targets) // "B박종규,B" 등
+      formData.append("targets", targets)
 
-      const response = await fetchWithTimeout(
+      const res = await fetchWithTimeout(
         `${BACKEND_URL}/ocr/extract`,
         {
           method: "POST",
           body: formData,
         },
-        20000 // 20초 timeout (OCR 고려)
+        25000
       )
 
       // ❌ HTTP 에러 처리
-      if (!response.ok) {
-        const text = await response.text()
-        throw new Error(`서버 오류 (${response.status}) : ${text}`)
+      if (!res.ok) {
+        const text = await res.text()
+        throw new Error(`서버 오류 (${res.status}) : ${text}`)
       }
 
-      // 📥 JSON 파싱
-      const data = await response.json()
-
+      const data = await res.json()
       setResult(data)
     } catch (err: any) {
       console.error(err)
 
       if (err.name === "AbortError") {
-        setError("요청 시간 초과 (서버 응답 지연)")
+        setError("⏱ 요청 시간 초과 (서버 지연)")
       } else {
-        setError(err.message || "알 수 없는 오류")
+        setError(err.message || "❌ OCR 요청 실패")
       }
     } finally {
       setLoading(false)
@@ -79,30 +81,34 @@ export default function UploadPage() {
     <div style={{ padding: 20 }}>
       <h2>OCR 업로드</h2>
 
-      {/* 파일 업로드 */}
+      {/* 파일 선택 */}
       <input
         type="file"
         accept="image/*"
         onChange={(e) => setFile(e.target.files?.[0] || null)}
       />
 
-      {/* 타겟 입력 */}
-      <textarea
-        placeholder="예: B박종규,B"
-        value={targets}
-        onChange={(e) => setTargets(e.target.value)}
-        style={{ width: "100%", height: 80, marginTop: 10 }}
-      />
+      <div style={{ marginTop: 10 }}>
+        <textarea
+          placeholder="예: B박종규,B"
+          value={targets}
+          onChange={(e) => setTargets(e.target.value)}
+          style={{ width: "100%", height: 80 }}
+        />
+      </div>
 
-      {/* 버튼 */}
-      <button onClick={handleUpload} disabled={loading}>
+      <button
+        onClick={handleUpload}
+        disabled={loading}
+        style={{ marginTop: 10 }}
+      >
         {loading ? "처리중..." : "OCR 실행"}
       </button>
 
       {/* 에러 */}
       {error && (
         <div style={{ color: "red", marginTop: 10 }}>
-          ❌ {error}
+          {error}
         </div>
       )}
 

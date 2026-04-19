@@ -53,11 +53,49 @@ function formatOperationType(value?: string) {
   return value;
 }
 
+function normalizeStatus(status?: string) {
+  if (!status) return "-";
+  return status.trim();
+}
+
 function getStatusColor(status?: string) {
-  if (!status) return "#f3f7ff";
-  if (status.includes("출발")) return "#ef4444";
-  if (status.includes("도착")) return "#3b82f6";
+  const s = normalizeStatus(status);
+
+  if (s.includes("지연")) return "#f59e0b"; // amber
+  if (s.includes("정시")) return "#22c55e"; // green
+  if (s.includes("출발")) return "#ef4444"; // red
+  if (s.includes("도착")) return "#3b82f6"; // blue
+  if (s.includes("결항")) return "#9ca3af"; // gray
   return "#f3f7ff";
+}
+
+/**
+ * 인천공항 API에서 airportCode / airportName은 "상대 공항"으로 보고 처리.
+ * - 출발편: ICN -> 상대공항
+ * - 도착편: 상대공항 -> ICN
+ *
+ * status가 "출발"이면 출발편으로 본다.
+ * 그 외는 도착편으로 처리.
+ */
+function isDepartureFlight(item: FlightLookupItem) {
+  const status = normalizeStatus(item.status);
+  return status.includes("출발");
+}
+
+function getDepartureCode(item: FlightLookupItem) {
+  return isDepartureFlight(item) ? "ICN" : item.airportCode || "-";
+}
+
+function getDepartureName(item: FlightLookupItem) {
+  return isDepartureFlight(item) ? "인천공항" : item.airportName || "-";
+}
+
+function getArrivalCode(item: FlightLookupItem) {
+  return isDepartureFlight(item) ? item.airportCode || "-" : "ICN";
+}
+
+function getArrivalName(item: FlightLookupItem) {
+  return isDepartureFlight(item) ? item.airportName || "-" : "인천공항";
 }
 
 export default function UploadPage() {
@@ -232,7 +270,7 @@ export default function UploadPage() {
         padding: "32px 20px 80px",
       }}
     >
-      <div style={{ maxWidth: 1180, margin: "0 auto" }}>
+      <div style={{ maxWidth: 1320, margin: "0 auto" }}>
         <section
           style={{
             border: "1px solid #20314d",
@@ -270,9 +308,8 @@ export default function UploadPage() {
               marginBottom: 0,
             }}
           >
-            현재 단계에서는 알림 없이, OCR 추출 결과와 편명 기준 운항 정보 조회 흐름을
-            검증합니다. 이미지가 없어도 편명을 직접 입력해 조회할 수 있으며,
-            쉼표(,)로 여러 편명을 한 번에 조회할 수 있습니다.
+            OCR 추출 결과와 편명 기준 운항 정보 조회 흐름을 검증합니다. 이미지가 없어도
+            편명을 직접 입력해 조회할 수 있으며, 쉼표(,)로 여러 편명을 한 번에 조회할 수 있습니다.
           </p>
         </section>
 
@@ -342,7 +379,7 @@ export default function UploadPage() {
             <input
               value={flightNo}
               onChange={(e) => setFlightNo(e.target.value.toUpperCase())}
-              placeholder="예: KJ587, KE123, OZ201"
+              placeholder="예: KJ282, KJ285, KJ587"
               style={textInputStyle}
             />
             <button
@@ -434,43 +471,43 @@ export default function UploadPage() {
               <table style={tableStyle}>
                 <thead>
                   <tr>
-                    <Th>항공사</Th>
+                    <Th>현황</Th>
                     <Th>편명</Th>
-                    <Th>마스터편명</Th>
-                    <Th>운항타입</Th>
-                    <Th>예정일시</Th>
-                    <Th>변경일시</Th>
+                    <Th>출발지코드</Th>
+                    <Th>출발지공항명</Th>
                     <Th>도착지코드</Th>
                     <Th>도착지공항명</Th>
+                    <Th>예정일시</Th>
+                    <Th>변경일시</Th>
                     <Th>게이트</Th>
                     <Th>터미널</Th>
-                    <Th>현황</Th>
+                    <Th>마스터 편명</Th>
                     <Th>코드쉐어</Th>
                   </tr>
                 </thead>
                 <tbody>
                   {lookupResult.map((item, index) => (
                     <tr key={`${item.flightNo ?? "flight"}-${item.scheduleTime ?? index}`}>
-                      <Td>{item.airline || "-"}</Td>
-                      <Td>{item.flightNo || "-"}</Td>
-                      <Td>{item.masterFlightNo || "-"}</Td>
-                      <Td>{formatOperationType(item.operationType)}</Td>
-                      <Td>{formatDateTime(item.scheduleTime)}</Td>
-                      <Td>{formatDateTime(item.estimatedTime)}</Td>
-                      <Td>{item.airportCode || "-"}</Td>
-                      <Td>{item.airportName || "-"}</Td>
-                      <Td>{item.gateNumber || "-"}</Td>
-                      <Td>{item.terminal || "-"}</Td>
                       <Td>
                         <span
                           style={{
                             color: getStatusColor(item.status),
-                            fontWeight: 700,
+                            fontWeight: 800,
                           }}
                         >
-                          {item.status || "-"}
+                          {normalizeStatus(item.status)}
                         </span>
                       </Td>
+                      <Td>{item.flightNo || "-"}</Td>
+                      <Td>{getDepartureCode(item)}</Td>
+                      <Td>{getDepartureName(item)}</Td>
+                      <Td>{getArrivalCode(item)}</Td>
+                      <Td>{getArrivalName(item)}</Td>
+                      <Td>{formatDateTime(item.scheduleTime)}</Td>
+                      <Td>{formatDateTime(item.estimatedTime)}</Td>
+                      <Td>{item.gateNumber || "-"}</Td>
+                      <Td>{item.terminal || "-"}</Td>
+                      <Td>{item.masterFlightNo || "-"}</Td>
                       <Td>{item.codeshare || "-"}</Td>
                     </tr>
                   ))}
@@ -594,7 +631,7 @@ const dividerStyle: React.CSSProperties = {
 const tableStyle: React.CSSProperties = {
   width: "100%",
   borderCollapse: "collapse",
-  minWidth: 1250,
+  minWidth: 1350,
 };
 
 const cellCommonStyle: React.CSSProperties = {

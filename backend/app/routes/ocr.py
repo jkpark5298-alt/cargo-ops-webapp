@@ -1,28 +1,39 @@
-from fastapi import APIRouter, File, HTTPException, UploadFile
+from __future__ import annotations
 
-from app.services.parser import parse_rows
-from app.services.vision_ocr import VisionOCRService
+from typing import Optional
 
-router = APIRouter(prefix='/ocr', tags=['ocr'])
-ocr_service = VisionOCRService()
+from fastapi import APIRouter, File, Form, UploadFile
+
+from app.services.parser import parse_ocr_text, filter_rows_by_targets_text
+from app.services.vision_ocr import extract_text_from_image
+
+router = APIRouter(prefix="/ocr", tags=["ocr"])
 
 
-@router.post('/extract')
-async def extract_from_image(file: UploadFile = File(...)) -> dict:
-    content = await file.read()
-    if not content:
-        raise HTTPException(status_code=400, detail='빈 파일입니다.')
+@router.post("/extract")
+async def extract_ocr(
+    file: UploadFile | None = File(default=None),
+    raw_text: str | None = Form(default=None),
+    target_names: str | None = Form(default=None),
+):
+    text = ""
 
-    try:
-        lines = ocr_service.extract_text_lines(content)
-        rows = parse_rows(lines)
-        width, height = ocr_service.get_image_size(content)
-    except Exception as exc:
-        raise HTTPException(status_code=500, detail=f'OCR 처리 실패: {exc}') from exc
+    if file is not None:
+        text = await extract_text_from_image(file)
+    elif raw_text:
+        text = raw_text
+    else:
+        return {
+            "rows": [],
+            "text": "",
+        }
+
+    rows = parse_ocr_text(text)
+
+    if target_names and target_names.strip():
+        rows = filter_rows_by_targets_text(rows, target_names)
 
     return {
-        'filename': file.filename,
-        'image_size': {'width': width, 'height': height},
-        'raw_lines': lines,
-        'rows': rows,
+        "rows": rows,
+        "text": text,
     }

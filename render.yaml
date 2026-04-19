@@ -1,7 +1,0 @@
-services:
-  - type: web
-    name: cargo-ops-backend
-    runtime: docker
-    plan: starter
-    rootDir: backend
-    autoDeploy: true

@@ -1,9 +1,0 @@
-fastapi
-uvicorn[standard]
-python-multipart
-httpx
-pydantic
-pydantic-settings
-Pillow
-pytesseract
-opencv-python-headless

@@ -50,27 +50,12 @@ function normalizeStatus(status?: string) {
   return (status || "").trim();
 }
 
-/**
- * 현황 표시 규칙
- * - 출발 완료: "출발" (빨강)
- * - 출발 전: 공란
- * - 도착 완료: "도착" (파랑)
- * - 도착 전: 공란
- *
- * 기준:
- * - status에 출발/도착이 명시되어 있고
- * - scheduleTime !== estimatedTime 일 때만 실제 변동/실행으로 간주
- *
- * 참고:
- * 공항 응답에서 scheduleTime === estimatedTime 인 경우가 많아
- * 아직 출발 전 / 도착 전으로 보고 공란 처리
- */
 function displayStatus(item: FlightLookupItem) {
   const status = normalizeStatus(item.status);
   const sched = (item.scheduleTime || "").trim();
   const est = (item.estimatedTime || "").trim();
 
-  // 시간 정보가 같으면 아직 실행 전으로 간주
+  // 출발 전 / 도착 전은 공란
   if (!est || !sched || sched === est) {
     return "";
   }
@@ -82,24 +67,11 @@ function displayStatus(item: FlightLookupItem) {
 }
 
 function getStatusColor(statusText: string) {
-  if (statusText === "출발") return "#ef4444"; // red
-  if (statusText === "도착") return "#3b82f6"; // blue
+  if (statusText === "출발") return "#ef4444";
+  if (statusText === "도착") return "#3b82f6";
   return "#f3f7ff";
 }
 
-/**
- * 방향 판단:
- * 1) status에 "도착"이 있으면 도착편
- * 2) status에 "출발"이 있으면 출발편
- * 3) status가 없으면 sourceType 사용
- *    - departure -> 출발편
- *    - arrival -> 도착편
- * 4) 둘 다 없으면 기본적으로 출발편으로 처리
- *
- * airportCode / airportName은 "상대 공항"으로 보고,
- * - 출발편이면 ICN -> 상대공항
- * - 도착편이면 상대공항 -> ICN
- */
 function isDepartureFlight(item: FlightLookupItem) {
   const status = normalizeStatus(item.status);
 
@@ -131,6 +103,7 @@ function getArrivalName(item: FlightLookupItem) {
 export default function UploadPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [rawText, setRawText] = useState("");
+  const [targetNames, setTargetNames] = useState("");
   const [flightNo, setFlightNo] = useState("");
   const [extractLoading, setExtractLoading] = useState(false);
   const [lookupLoading, setLookupLoading] = useState(false);
@@ -174,6 +147,10 @@ export default function UploadPage() {
         formData.append("raw_text", rawText.trim());
       }
 
+      if (targetNames.trim()) {
+        formData.append("target_names", targetNames.trim());
+      }
+
       const response = await fetch(`${API_BASE_URL}/ocr/extract`, {
         method: "POST",
         body: formData,
@@ -207,15 +184,9 @@ export default function UploadPage() {
 
     const data = await response.json();
 
-    if (Array.isArray(data)) {
-      return data as FlightLookupItem[];
-    }
-    if (data?.items && Array.isArray(data.items)) {
-      return data.items as FlightLookupItem[];
-    }
-    if (data) {
-      return [data as FlightLookupItem];
-    }
+    if (Array.isArray(data)) return data as FlightLookupItem[];
+    if (data?.items && Array.isArray(data.items)) return data.items as FlightLookupItem[];
+    if (data) return [data as FlightLookupItem];
     return [];
   };
 
@@ -272,15 +243,10 @@ export default function UploadPage() {
       }
 
       const results = await Promise.all(
-        flightList.map(async (singleFlightNo) => {
-          return await lookupSingleFlight(singleFlightNo);
-        })
+        flightList.map(async (singleFlightNo) => lookupSingleFlight(singleFlightNo))
       );
 
-      const merged = results.flat();
-      const unique = dedupeResults(merged);
-
-      setLookupResult(unique);
+      setLookupResult(dedupeResults(results.flat()));
     } catch (error) {
       setLookupError(
         error instanceof Error ? error.message : "운항 조회 중 오류가 발생했습니다."
@@ -338,8 +304,9 @@ export default function UploadPage() {
               marginBottom: 0,
             }}
           >
-            OCR 추출 결과와 편명 기준 운항 정보 조회 흐름을 검증합니다. 이미지가 없어도
-            편명을 직접 입력해 조회할 수 있으며, 쉼표(,)로 여러 편명을 한 번에 조회할 수 있습니다.
+            OCR 추출 결과와 편명 기준 운항 정보 조회 흐름을 검증합니다.
+            OCR 추출 대상 이름은 한 줄에 한 사람씩 입력하고, 한 줄 안에서 쉼표(,)로
+            이름/별칭/문자코드를 함께 입력할 수 있습니다.
           </p>
         </section>
 
@@ -374,6 +341,19 @@ export default function UploadPage() {
           <div style={inputWrapStyle}>
             <input type="file" accept="image/*" onChange={handleFileChange} />
           </div>
+
+          <label style={{ ...labelStyle, marginTop: 20 }}>
+            OCR 추출 대상 이름 / 별칭 / 코드 입력 (복수 가능)
+          </label>
+          <textarea
+            value={targetNames}
+            onChange={(e) => setTargetNames(e.target.value)}
+            placeholder={`예:
+박종규,A박종규,A,B,C
+김철수,D김철수,D
+이민호,E`}
+            style={textareaStyle}
+          />
 
           <label style={{ ...labelStyle, marginTop: 20 }}>
             OCR 없이 파싱만 테스트할 경우 텍스트 직접 입력
@@ -611,7 +591,7 @@ const inputWrapStyle: React.CSSProperties = {
 
 const textareaStyle: React.CSSProperties = {
   width: "100%",
-  minHeight: 170,
+  minHeight: 120,
   resize: "vertical",
   border: "1px solid #2b4168",
   borderRadius: 18,

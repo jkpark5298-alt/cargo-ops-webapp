@@ -1,23 +1,19 @@
-from typing import List
-import base64
+import pytesseract
+import cv2
+import numpy as np
 
-def extract_text_from_image(image_bytes: bytes) -> List[str]:
-    """
-    OCR 텍스트 추출 (현재는 기본 처리 / 추후 Vision API 연결 가능)
-    """
 
+def extract_text_from_image(image_bytes: bytes) -> str:
     try:
-        # 임시 OCR 처리 (텍스트 디코딩 기반)
-        text = image_bytes.decode(errors="ignore")
+        np_arr = np.frombuffer(image_bytes, np.uint8)
+        img = cv2.imdecode(np_arr, cv2.IMREAD_COLOR)
 
-        lines = [
-            line.strip()
-            for line in text.split("\n")
-            if line.strip()
-        ]
+        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+        gray = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY)[1]
 
-        return lines
+        text = pytesseract.image_to_string(gray, lang="kor+eng")
+
+        return text
 
     except Exception as e:
-        print("OCR ERROR:", e)
-        return []
+        raise Exception(f"OCR 처리 실패: {str(e)}")

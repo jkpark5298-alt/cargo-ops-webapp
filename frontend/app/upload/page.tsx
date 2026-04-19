@@ -46,40 +46,70 @@ function formatDateTime(value?: string) {
   )} ${digits.slice(8, 10)}:${digits.slice(10, 12)}`;
 }
 
-function formatOperationType(value?: string) {
-  if (!value) return "-";
-  if (value === "I") return "국제선";
-  if (value === "D") return "국내선";
-  return value;
-}
-
 function normalizeStatus(status?: string) {
-  if (!status) return "-";
-  return status.trim();
+  return (status || "").trim();
 }
 
-function getStatusColor(status?: string) {
-  const s = normalizeStatus(status);
+/**
+ * 현황 표시 규칙
+ * - 출발 완료: "출발" (빨강)
+ * - 출발 전: 공란
+ * - 도착 완료: "도착" (파랑)
+ * - 도착 전: 공란
+ *
+ * 기준:
+ * - status에 출발/도착이 명시되어 있고
+ * - scheduleTime !== estimatedTime 일 때만 실제 변동/실행으로 간주
+ *
+ * 참고:
+ * 공항 응답에서 scheduleTime === estimatedTime 인 경우가 많아
+ * 아직 출발 전 / 도착 전으로 보고 공란 처리
+ */
+function displayStatus(item: FlightLookupItem) {
+  const status = normalizeStatus(item.status);
+  const sched = (item.scheduleTime || "").trim();
+  const est = (item.estimatedTime || "").trim();
 
-  if (s.includes("지연")) return "#f59e0b"; // amber
-  if (s.includes("정시")) return "#22c55e"; // green
-  if (s.includes("출발")) return "#ef4444"; // red
-  if (s.includes("도착")) return "#3b82f6"; // blue
-  if (s.includes("결항")) return "#9ca3af"; // gray
+  // 시간 정보가 같으면 아직 실행 전으로 간주
+  if (!est || !sched || sched === est) {
+    return "";
+  }
+
+  if (status.includes("출발")) return "출발";
+  if (status.includes("도착")) return "도착";
+
+  return "";
+}
+
+function getStatusColor(statusText: string) {
+  if (statusText === "출발") return "#ef4444"; // red
+  if (statusText === "도착") return "#3b82f6"; // blue
   return "#f3f7ff";
 }
 
 /**
- * 인천공항 API에서 airportCode / airportName은 "상대 공항"으로 보고 처리.
- * - 출발편: ICN -> 상대공항
- * - 도착편: 상대공항 -> ICN
+ * 방향 판단:
+ * 1) status에 "도착"이 있으면 도착편
+ * 2) status에 "출발"이 있으면 출발편
+ * 3) status가 없으면 sourceType 사용
+ *    - departure -> 출발편
+ *    - arrival -> 도착편
+ * 4) 둘 다 없으면 기본적으로 출발편으로 처리
  *
- * status가 "출발"이면 출발편으로 본다.
- * 그 외는 도착편으로 처리.
+ * airportCode / airportName은 "상대 공항"으로 보고,
+ * - 출발편이면 ICN -> 상대공항
+ * - 도착편이면 상대공항 -> ICN
  */
 function isDepartureFlight(item: FlightLookupItem) {
   const status = normalizeStatus(item.status);
-  return status.includes("출발");
+
+  if (status.includes("도착")) return false;
+  if (status.includes("출발")) return true;
+
+  if (item.sourceType === "arrival") return false;
+  if (item.sourceType === "departure") return true;
+
+  return true;
 }
 
 function getDepartureCode(item: FlightLookupItem) {
@@ -486,31 +516,37 @@ export default function UploadPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {lookupResult.map((item, index) => (
-                    <tr key={`${item.flightNo ?? "flight"}-${item.scheduleTime ?? index}`}>
-                      <Td>
-                        <span
-                          style={{
-                            color: getStatusColor(item.status),
-                            fontWeight: 800,
-                          }}
-                        >
-                          {normalizeStatus(item.status)}
-                        </span>
-                      </Td>
-                      <Td>{item.flightNo || "-"}</Td>
-                      <Td>{getDepartureCode(item)}</Td>
-                      <Td>{getDepartureName(item)}</Td>
-                      <Td>{getArrivalCode(item)}</Td>
-                      <Td>{getArrivalName(item)}</Td>
-                      <Td>{formatDateTime(item.scheduleTime)}</Td>
-                      <Td>{formatDateTime(item.estimatedTime)}</Td>
-                      <Td>{item.gateNumber || "-"}</Td>
-                      <Td>{item.terminal || "-"}</Td>
-                      <Td>{item.masterFlightNo || "-"}</Td>
-                      <Td>{item.codeshare || "-"}</Td>
-                    </tr>
-                  ))}
+                  {lookupResult.map((item, index) => {
+                    const statusText = displayStatus(item);
+
+                    return (
+                      <tr
+                        key={`${item.flightNo ?? "flight"}-${item.scheduleTime ?? index}`}
+                      >
+                        <Td>
+                          <span
+                            style={{
+                              color: getStatusColor(statusText),
+                              fontWeight: 800,
+                            }}
+                          >
+                            {statusText}
+                          </span>
+                        </Td>
+                        <Td>{item.flightNo || "-"}</Td>
+                        <Td>{getDepartureCode(item)}</Td>
+                        <Td>{getDepartureName(item)}</Td>
+                        <Td>{getArrivalCode(item)}</Td>
+                        <Td>{getArrivalName(item)}</Td>
+                        <Td>{formatDateTime(item.scheduleTime)}</Td>
+                        <Td>{formatDateTime(item.estimatedTime)}</Td>
+                        <Td>{item.gateNumber || "-"}</Td>
+                        <Td>{item.terminal || "-"}</Td>
+                        <Td>{item.masterFlightNo || "-"}</Td>
+                        <Td>{item.codeshare || "-"}</Td>
+                      </tr>
+                    );
+                  })}
                 </tbody>
               </table>
             </div>

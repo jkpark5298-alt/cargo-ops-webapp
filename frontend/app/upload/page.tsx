@@ -15,6 +15,8 @@ type FlightLookupItem = {
   status?: string;
   operationType?: string;
   codeshare?: string;
+  fid?: string;
+  sourceType?: string;
 };
 
 type ExtractedRow = {
@@ -31,6 +33,32 @@ type ExtractResponse = {
 
 const API_BASE_URL =
   process.env.NEXT_PUBLIC_API_BASE_URL || "http://localhost:8000";
+
+function formatDateTime(value?: string) {
+  if (!value) return "-";
+
+  const digits = String(value).replace(/\D/g, "");
+  if (digits.length !== 12) return value;
+
+  return `${digits.slice(0, 4)}/${digits.slice(4, 6)}/${digits.slice(
+    6,
+    8
+  )} ${digits.slice(8, 10)}:${digits.slice(10, 12)}`;
+}
+
+function formatOperationType(value?: string) {
+  if (!value) return "-";
+  if (value === "I") return "국제선";
+  if (value === "D") return "국내선";
+  return value;
+}
+
+function getStatusColor(status?: string) {
+  if (!status) return "#f3f7ff";
+  if (status.includes("출발")) return "#ef4444";
+  if (status.includes("도착")) return "#3b82f6";
+  return "#f3f7ff";
+}
 
 export default function UploadPage() {
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
@@ -66,8 +94,6 @@ export default function UploadPage() {
     setExtractLoading(true);
     setExtractError("");
     setExtractResult(null);
-    setLookupResult(null);
-    setLookupError("");
 
     try {
       const formData = new FormData();
@@ -100,10 +126,65 @@ export default function UploadPage() {
     }
   };
 
-  const handleLookup = async (targetFlightNo?: string) => {
-    const finalFlightNo = (targetFlightNo ?? flightNo).trim().toUpperCase();
+  const lookupSingleFlight = async (singleFlightNo: string) => {
+    const response = await fetch(
+      `${API_BASE_URL}/flights/lookup?flight_no=${encodeURIComponent(
+        singleFlightNo
+      )}`
+    );
 
-    if (!finalFlightNo) {
+    if (!response.ok) {
+      throw new Error(`운항 조회 실패 (${response.status})`);
+    }
+
+    const data = await response.json();
+
+    if (Array.isArray(data)) {
+      return data as FlightLookupItem[];
+    }
+    if (data?.items && Array.isArray(data.items)) {
+      return data.items as FlightLookupItem[];
+    }
+    if (data) {
+      return [data as FlightLookupItem];
+    }
+    return [];
+  };
+
+  const dedupeResults = (items: FlightLookupItem[]) => {
+    return items.filter((item, index, self) => {
+      const key = [
+        item.flightNo ?? "",
+        item.scheduleTime ?? "",
+        item.estimatedTime ?? "",
+        item.airportCode ?? "",
+        item.gateNumber ?? "",
+        item.terminal ?? "",
+        item.status ?? "",
+      ].join("|");
+
+      return (
+        index ===
+        self.findIndex((target) => {
+          const targetKey = [
+            target.flightNo ?? "",
+            target.scheduleTime ?? "",
+            target.estimatedTime ?? "",
+            target.airportCode ?? "",
+            target.gateNumber ?? "",
+            target.terminal ?? "",
+            target.status ?? "",
+          ].join("|");
+          return targetKey === key;
+        })
+      );
+    });
+  };
+
+  const handleLookup = async (targetFlightNo?: string) => {
+    const rawInput = (targetFlightNo ?? flightNo).trim().toUpperCase();
+
+    if (!rawInput) {
       setLookupError("편명을 입력해주세요.");
       return;
     }
@@ -113,25 +194,25 @@ export default function UploadPage() {
     setLookupResult(null);
 
     try {
-      const response = await fetch(
-        `${API_BASE_URL}/flights/lookup?flight_no=${encodeURIComponent(finalFlightNo)}`
+      const flightList = rawInput
+        .split(",")
+        .map((v) => v.trim().toUpperCase())
+        .filter(Boolean);
+
+      if (flightList.length === 0) {
+        throw new Error("유효한 편명이 없습니다.");
+      }
+
+      const results = await Promise.all(
+        flightList.map(async (singleFlightNo) => {
+          return await lookupSingleFlight(singleFlightNo);
+        })
       );
 
-      if (!response.ok) {
-        throw new Error(`운항 조회 실패 (${response.status})`);
-      }
+      const merged = results.flat();
+      const unique = dedupeResults(merged);
 
-      const data = await response.json();
-
-      if (Array.isArray(data)) {
-        setLookupResult(data);
-      } else if (data?.items && Array.isArray(data.items)) {
-        setLookupResult(data.items);
-      } else if (data) {
-        setLookupResult([data]);
-      } else {
-        setLookupResult([]);
-      }
+      setLookupResult(unique);
     } catch (error) {
       setLookupError(
         error instanceof Error ? error.message : "운항 조회 중 오류가 발생했습니다."
@@ -151,7 +232,7 @@ export default function UploadPage() {
         padding: "32px 20px 80px",
       }}
     >
-      <div style={{ maxWidth: 1080, margin: "0 auto" }}>
+      <div style={{ maxWidth: 1180, margin: "0 auto" }}>
         <section
           style={{
             border: "1px solid #20314d",
@@ -190,7 +271,8 @@ export default function UploadPage() {
             }}
           >
             현재 단계에서는 알림 없이, OCR 추출 결과와 편명 기준 운항 정보 조회 흐름을
-            검증합니다. 이미지가 없어도 편명을 직접 입력해 조회할 수 있습니다.
+            검증합니다. 이미지가 없어도 편명을 직접 입력해 조회할 수 있으며,
+            쉼표(,)로 여러 편명을 한 번에 조회할 수 있습니다.
           </p>
         </section>
 
@@ -260,7 +342,7 @@ export default function UploadPage() {
             <input
               value={flightNo}
               onChange={(e) => setFlightNo(e.target.value.toUpperCase())}
-              placeholder="예: KJ193, 5X596, KE123"
+              placeholder="예: KJ587, KE123, OZ201"
               style={textInputStyle}
             />
             <button
@@ -368,18 +450,27 @@ export default function UploadPage() {
                 </thead>
                 <tbody>
                   {lookupResult.map((item, index) => (
-                    <tr key={`${item.flightNo ?? "flight"}-${index}`}>
+                    <tr key={`${item.flightNo ?? "flight"}-${item.scheduleTime ?? index}`}>
                       <Td>{item.airline || "-"}</Td>
                       <Td>{item.flightNo || "-"}</Td>
                       <Td>{item.masterFlightNo || "-"}</Td>
-                      <Td>{item.operationType || "-"}</Td>
-                      <Td>{item.scheduleTime || "-"}</Td>
-                      <Td>{item.estimatedTime || "-"}</Td>
+                      <Td>{formatOperationType(item.operationType)}</Td>
+                      <Td>{formatDateTime(item.scheduleTime)}</Td>
+                      <Td>{formatDateTime(item.estimatedTime)}</Td>
                       <Td>{item.airportCode || "-"}</Td>
                       <Td>{item.airportName || "-"}</Td>
                       <Td>{item.gateNumber || "-"}</Td>
                       <Td>{item.terminal || "-"}</Td>
-                      <Td>{item.status || "-"}</Td>
+                      <Td>
+                        <span
+                          style={{
+                            color: getStatusColor(item.status),
+                            fontWeight: 700,
+                          }}
+                        >
+                          {item.status || "-"}
+                        </span>
+                      </Td>
                       <Td>{item.codeshare || "-"}</Td>
                     </tr>
                   ))}
@@ -503,7 +594,7 @@ const dividerStyle: React.CSSProperties = {
 const tableStyle: React.CSSProperties = {
   width: "100%",
   borderCollapse: "collapse",
-  minWidth: 1100,
+  minWidth: 1250,
 };
 
 const cellCommonStyle: React.CSSProperties = {

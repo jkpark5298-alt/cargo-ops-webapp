@@ -1,39 +1,45 @@
 from fastapi import APIRouter, UploadFile, File, Form
-from typing import List
+from fastapi.responses import JSONResponse
 
 from app.services.vision_ocr import extract_text_from_image
-from app.services.parser import parse_ocr_text, filter_rows_by_targets_text
+from app.services.parser import (
+    parse_ocr_text,
+    filter_rows_by_targets_text
+)
 
 router = APIRouter()
 
 
-@router.post("/ocr/parse")
-async def ocr_parse(
+@router.post("/extract")
+async def extract(
     file: UploadFile = File(...),
-    targets: str = Form(default="")
+    targets: str = Form("")
 ):
-    """
-    OCR + 필터
-    targets:
-      - A,B,C
-      - 박종규
-      - B박종규
-      - 복수 가능
-    """
+    try:
+        # 1. 이미지 → 텍스트
+        contents = await file.read()
+        raw_text = extract_text_from_image(contents)
 
-    contents = await file.read()
+        # 2. 텍스트 → 구조화
+        parsed = parse_ocr_text(raw_text)
 
-    # 1️⃣ OCR
-    lines = extract_text_from_image(contents)
+        # 3. 대상 필터링 (복수 입력 가능)
+        target_list = [t.strip() for t in targets.split(",") if t.strip()]
 
-    # 2️⃣ 파싱
-    parsed = parse_ocr_text(lines)
+        if target_list:
+            parsed = filter_rows_by_targets_text(parsed, target_list)
 
-    # 3️⃣ 필터
-    filtered = filter_rows_by_targets_text(parsed, targets)
+        return JSONResponse({
+            "success": True,
+            "count": len(parsed),
+            "data": parsed
+        })
 
-    return {
-        "raw_lines": lines,
-        "parsed": parsed,
-        "filtered": filtered
-    }
+    except Exception as e:
+        return JSONResponse(
+            status_code=500,
+            content={
+                "success": False,
+                "error": str(e)
+            }
+        )

@@ -1,47 +1,107 @@
-from __future__ import annotations
+from fastapi import APIRouter, Query
+import httpx
+import xml.etree.ElementTree as ET
+from datetime import datetime
 
-from typing import Optional
+router = APIRouter()
 
-from fastapi import APIRouter, HTTPException, Query
+# 🔑 환경변수로 넣는 걸 추천
+SERVICE_KEY = "여기에_네_API_KEY_입력"
 
-from app.services.incheon_api import IncheonCargoAPIError, fetch_by_flight
+API_URL = "https://apis.data.go.kr/B551177/StatusOfCargoFlightsDeOdp/getCargoFlightOdp"
 
-router = APIRouter(prefix="/flights", tags=["flights"])
+
+def format_time(t: str):
+    if not t or len(t) != 12:
+        return "-"
+    return f"{t[:4]}/{t[4:6]}/{t[6:8]} {t[8:10]}:{t[10:12]}"
+
+
+def get_status(schedule: str, estimated: str):
+    if not schedule or not estimated:
+        return ""
+
+    if schedule == estimated:
+        return "정시"
+    return "지연"
 
 
 @router.get("/lookup")
-async def lookup_flight(
-    flight_no: str = Query(..., description="조회할 편명. 예: KJ193, 5X596"),
-    search_day: Optional[str] = Query(
-        None,
-        description="조회일(YYYYMMDD). 비우면 오늘 기준 D-3~D+6 범위로 순차 조회",
-    ),
-):
-    """
-    편명 기준으로 인천공항 화물기 출발/도착 정보를 조회합니다.
-    프론트에서:
-      GET /flights/lookup?flight_no=KJ193
-    형태로 호출하면 됩니다.
-    """
-    normalized_flight_no = (flight_no or "").strip().upper().replace(" ", "")
-
-    if not normalized_flight_no:
-        raise HTTPException(status_code=400, detail="flight_no는 필수입니다.")
-
+async def lookup_flights(flight_no: str = Query(...)):
     try:
-        items = await fetch_by_flight(
-            flight_no=normalized_flight_no,
-            search_day=search_day,
-        )
+        flight_list = [f.strip() for f in flight_no.split(",") if f.strip()]
+        results = []
 
-        # 프론트에서 배열로 바로 처리할 수 있게 그대로 반환
-        return items
+        async with httpx.AsyncClient(timeout=10) as client:
+            for f in flight_list:
+                params = {
+                    "serviceKey": SERVICE_KEY,
+                    "type": "json",
+                    "flight_id": f
+                }
 
-    except IncheonCargoAPIError as e:
-        # 설정/키/응답형식 오류 등 우리가 의도적으로 올린 예외
-        raise HTTPException(status_code=500, detail=str(e))
+                res = await client.get(API_URL, params=params)
+
+                if res.status_code != 200:
+                    continue
+
+                # 🔥 XML 파싱
+                root = ET.fromstring(res.text)
+
+                items = root.findall(".//item")
+
+                for item in items:
+                    schedule = item.findtext("scheduleDateTime")
+                    estimated = item.findtext("estimatedDateTime")
+
+                    dep = item.findtext("airportCode")  # 출발 or 도착 공항
+                    airport_name = item.findtext("airport")
+
+                    gate = item.findtext("gatenumber")
+                    terminal = item.findtext("terminalid")
+
+                    remark = item.findtext("remark")  # 출발 / 도착
+                    codeshare = item.findtext("codeshare")
+                    master = item.findtext("masterflightid")
+
+                    # 🔥 출발/도착 구분 보정
+                    if remark == "출발":
+                        departure = "ICN"
+                        arrival = dep
+                    else:
+                        departure = dep
+                        arrival = "ICN"
+
+                    # 🔥 현황 처리
+                    now = datetime.now().strftime("%Y%m%d%H%M")
+
+                    status_text = ""
+                    if remark == "출발" and estimated and estimated < now:
+                        status_text = "출발"
+                    elif remark == "도착" and estimated and estimated < now:
+                        status_text = "도착"
+
+                    results.append({
+                        "현황": status_text,
+                        "flightId": f,
+                        "출발지코드": departure,
+                        "도착지코드": arrival,
+                        "출발지공항명": "인천공항" if departure == "ICN" else airport_name,
+                        "도착지공항명": airport_name if arrival != "ICN" else "인천공항",
+                        "예정일시": format_time(schedule),
+                        "변경일시": format_time(estimated),
+                        "게이트": gate or "-",
+                        "터미널": terminal or "-",
+                        "마스터편명": master or "-",
+                        "코드쉐어": codeshare or "-"
+                    })
+
+        return {
+            "count": len(results),
+            "data": results
+        }
 
     except Exception as e:
-        # Render Logs에서 원인 추적하기 쉽게 메시지 남기기
-        print(f"[flights.lookup] unexpected error: {type(e).__name__}: {e}")
-        raise HTTPException(status_code=500, detail="Flight lookup failed.")
+        return {
+            "error": str(e)
+        }

@@ -7,6 +7,9 @@ from typing import List, Dict
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 
+# -----------------------------
+# Google Vision API 호출
+# -----------------------------
 def call_google_vision(image_bytes: bytes):
     url = f"https://vision.googleapis.com/v1/images:annotate?key={GOOGLE_API_KEY}"
 
@@ -30,33 +33,58 @@ def call_google_vision(image_bytes: bytes):
     return res.json()
 
 
+# -----------------------------
+# OCR 텍스트 추출
+# -----------------------------
 def extract_text_from_image(image_bytes: bytes) -> str:
     result = call_google_vision(image_bytes)
 
     try:
-        return result["responses"][0]["fullTextAnnotation"]["text"]
+        text = result["responses"][0]["fullTextAnnotation"]["text"]
+        print("📌 OCR TEXT:\n", text)  # 디버깅용
+        return text
     except Exception:
         return ""
 
 
+# -----------------------------
+# 문자열 정규화
+# -----------------------------
 def _normalize(line: str) -> str:
-    return re.sub(r"\s+", "", line or "").upper()
+    if not line:
+        return ""
+    line = line.upper()
+    line = re.sub(r"\s+", "", line)
+    return line
 
 
+# -----------------------------
+# 🔥 이름 인식 (강화 버전)
+# -----------------------------
 def _is_target_line(line: str, target_name="박종규") -> bool:
-    normalized = _normalize(line)
-    target = _normalize(target_name)
+    if not line:
+        return False
 
-    if target in normalized:
+    normalized = _normalize(line)
+
+    # 기본 포함
+    if target_name in normalized:
         return True
 
-    for code in ["A", "B", "C"]:
-        if f"{code}{target}" in normalized:
-            return True
+    # 공백 깨짐 대응
+    if target_name in normalized.replace(" ", ""):
+        return True
+
+    # 글자 분해 대응 (박 종 규 따로 찍힌 경우)
+    if all(char in normalized for char in ["박", "종", "규"]):
+        return True
 
     return False
 
 
+# -----------------------------
+# 편명 정규화 (0 제거)
+# -----------------------------
 def _normalize_flight(flight: str) -> str:
     m = re.match(r"KJ0+(\d{3,4})", flight)
     if m:
@@ -64,11 +92,15 @@ def _normalize_flight(flight: str) -> str:
     return flight
 
 
+# -----------------------------
+# 편명 추출
+# -----------------------------
 def _extract_flight(line: str) -> str:
     line = _normalize(line)
 
     # OCR 오인식 보정
     line = line.replace("KJO", "KJ0")
+    line = line.replace("KJI", "KJ1")
 
     match = re.search(r"KJ\d{3,4}", line)
     if match:
@@ -77,6 +109,9 @@ def _extract_flight(line: str) -> str:
     return ""
 
 
+# -----------------------------
+# 주기장 추출
+# -----------------------------
 def _extract_parking(line: str) -> str:
     line = _normalize(line)
 
@@ -87,6 +122,9 @@ def _extract_parking(line: str) -> str:
     return ""
 
 
+# -----------------------------
+# 🔥 최종: 행 단위 추출
+# -----------------------------
 def extract_flight_parking(text: str, target_name="박종규") -> List[Dict]:
     if not text:
         return []

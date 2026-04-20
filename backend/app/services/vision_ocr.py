@@ -6,6 +6,9 @@ import re
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 
+# -----------------------------
+# Google Vision API 호출
+# -----------------------------
 def call_google_vision(image_bytes: bytes):
     url = f"https://vision.googleapis.com/v1/images:annotate?key={GOOGLE_API_KEY}"
 
@@ -29,6 +32,9 @@ def call_google_vision(image_bytes: bytes):
     return res.json()
 
 
+# -----------------------------
+# OCR 텍스트 추출
+# -----------------------------
 def extract_text_from_image(image_bytes: bytes) -> str:
     result = call_google_vision(image_bytes)
 
@@ -38,17 +44,32 @@ def extract_text_from_image(image_bytes: bytes) -> str:
         return ""
 
 
-# 🔥 핵심: 편명 추출 강화
+# -----------------------------
+# ✈ 편명 추출 (핵심 개선)
+# -----------------------------
 def extract_flights(text: str):
     if not text:
         return []
 
     text = text.upper()
 
-    # OCR 깨짐 보정
-    text = text.replace(" ", "").replace("\n", "")
+    # 줄 기준으로 나누기 (표 구조 유지)
+    lines = text.split("\n")
 
-    # KJ + 숫자 패턴
-    flights = re.findall(r"KJ\d{3,4}", text)
+    flights = []
 
-    return list(set(flights))
+    for line in lines:
+        # KJ 편명만 추출 (HL 제거됨)
+        match = re.search(r"\bKJ\d{3,4}\b", line)
+        if match:
+            flights.append(match.group())
+
+    # 중복 제거 + 순서 유지
+    seen = set()
+    result = []
+    for f in flights:
+        if f not in seen:
+            seen.add(f)
+            result.append(f)
+
+    return result

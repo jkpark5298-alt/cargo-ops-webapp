@@ -1,11 +1,12 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-import os
 
 from app.routes.flights import router as flights_router
 from app.routes.ocr import router as ocr_router
+from app.routes.health import router as health_router
 
-app = FastAPI(title="Cargo Ops API", version="1.0.0")
+app = FastAPI(title="Cargo Ops Backend")
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -15,22 +16,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(flights_router, prefix="/flights", tags=["Flights"])
-app.include_router(ocr_router, prefix="/ocr", tags=["OCR"])
-
 
 @app.get("/")
-def root():
+async def root():
     return {"message": "Cargo Ops Backend Running"}
 
 
-@app.get("/ping")
-def ping():
-    return {"status": "ok"}
-
-
-if __name__ == "__main__":
-    import uvicorn
-
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run("app.main:app", host="0.0.0.0", port=port)
+app.include_router(health_router, prefix="/health", tags=["health"])
+app.include_router(flights_router, prefix="/flights", tags=["flights"])
+app.include_router(ocr_router, prefix="/ocr", tags=["ocr"])

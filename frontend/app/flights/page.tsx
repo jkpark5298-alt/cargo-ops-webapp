@@ -53,16 +53,13 @@ function getTomorrowString() {
 function getStatusText(row: FlightRow) {
   if (row.canceled) return "결항";
   if (row.gateChanged) return "게이트 변경";
-
   if (row.delay) {
     if (row.status === "도착") return "도착(지연)";
     if (row.status === "출발") return "출발(지연)";
     return "지연";
   }
-
   if (row.status === "출발") return "출발";
   if (row.status === "도착") return "도착";
-
   return "-";
 }
 
@@ -133,9 +130,7 @@ export default function FlightsPage() {
     if (q) {
       const upper = q.toUpperCase();
       setInput(upper);
-      fetchFlights(upper);
     }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

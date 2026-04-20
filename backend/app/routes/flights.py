@@ -1,34 +1,69 @@
-from datetime import datetime, timedelta
-from typing import List
+from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter
+from pydantic import BaseModel
 
 from app.services.incheon_api import get_flight_data
 
 router = APIRouter()
 
 
-@router.get("/lookup")
-async def lookup_flight(
-    flight_no: str = Query(..., description="예: KJ282 또는 KJ282,KJ913"),
-    start_date: str | None = Query(None, description="조회 시작일 YYYY-MM-DD"),
-    end_date: str | None = Query(None, description="조회 종료일 YYYY-MM-DD"),
-):
-    today = datetime.now().date()
+class FlightsLookupRequest(BaseModel):
+    flights: List[str]
+    start: Optional[str] = None
+    end: Optional[str] = None
 
-    # 기본값: D, D+1
-    start_date = start_date or today.strftime("%Y-%m-%d")
-    end_date = end_date or (today + timedelta(days=1)).strftime("%Y-%m-%d")
 
-    raw_flights = [x.strip().upper() for x in flight_no.split(",") if x.strip()]
-    if not raw_flights:
-        raise HTTPException(status_code=400, detail="flight_no는 필수입니다.")
+def _normalize_date(value: Optional[str], default_time: str) -> str:
+    """
+    datetime-local 값(YYYY-MM-DDTHH:MM) 또는 date 값(YYYY-MM-DD)을
+    YYYY-MM-DD 로 정규화한다.
+    """
+    if not value:
+        return ""
 
-    all_rows: List[dict] = []
+    value = value.strip()
+    if not value:
+        return ""
 
-    for one_flight in raw_flights:
+    # YYYY-MM-DDTHH:MM
+    if "T" in value:
+        return value.split("T")[0]
+
+    # YYYY-MM-DD HH:MM 같은 형태 방어
+    if " " in value:
+        return value.split(" ")[0]
+
+    # 이미 YYYY-MM-DD
+    return value
+
+
+@router.post("/")
+async def lookup_flights(payload: FlightsLookupRequest):
+    flights = [f.strip().upper() for f in payload.flights if f and f.strip()]
+
+    if not flights:
+        return {
+            "success": False,
+            "message": "조회할 편명이 없습니다.",
+            "data": [],
+        }
+
+    start_date = _normalize_date(payload.start, "00:00")
+    end_date = _normalize_date(payload.end, "23:59")
+
+    if not start_date or not end_date:
+        return {
+            "success": False,
+            "message": "시작일과 종료일이 필요합니다.",
+            "data": [],
+        }
+
+    all_rows = []
+
+    for flight_no in flights:
         rows = await get_flight_data(
-            flight_no=one_flight,
+            flight_no=flight_no,
             start_date=start_date,
             end_date=end_date,
         )
@@ -36,9 +71,5 @@ async def lookup_flight(
 
     return {
         "success": True,
-        "flight_count": len(raw_flights),
-        "start_date": start_date,
-        "end_date": end_date,
-        "count": len(all_rows),
         "data": all_rows,
     }

@@ -29,7 +29,6 @@ def _format_time(value: str) -> str:
 
 
 def _get_kst_now_str() -> str:
-    # Render 서버는 UTC 기준이므로 KST(+9)로 보정
     return (datetime.utcnow() + timedelta(hours=9)).strftime("%Y%m%d%H%M")
 
 
@@ -60,8 +59,6 @@ def _parse_xml_items(xml_text: str, source_type: str) -> List[Dict[str, Any]]:
         type_of_flight = _text(item, "typeOfFlight")
         fid = _text(item, "fid")
 
-        # departure API -> 인천 출발
-        # arrival API   -> 인천 도착
         is_departure = source_type == "departure"
 
         departure_code = "ICN" if is_departure else airport_code
@@ -69,7 +66,6 @@ def _parse_xml_items(xml_text: str, source_type: str) -> List[Dict[str, Any]]:
         arrival_code = airport_code if is_departure else "ICN"
         arrival_name = airport_name if is_departure else "인천공항"
 
-        # 상태 판단
         status_text = ""
 
         canceled = "결항" in remark
@@ -80,11 +76,8 @@ def _parse_xml_items(xml_text: str, source_type: str) -> List[Dict[str, Any]]:
             or "GATE CHANGED" in remark.upper()
         )
 
-        # 예정과 변경 시간이 다르면 지연으로 판단
         delay = bool(schedule and estimated and schedule != estimated and not canceled)
 
-        # 핵심: 한국시간 기준으로 estimatedDateTime 이 현재 시각 이하이면
-        # 출발편은 "출발", 도착편은 "도착" 표시
         if estimated and estimated <= now_str:
             status_text = "출발" if is_departure else "도착"
 
@@ -188,7 +181,6 @@ async def get_flight_data(
             rows = await _fetch_one_day(client, flight_no, day)
             all_rows.extend(rows)
 
-    # 중복 제거
     deduped: List[Dict[str, Any]] = []
     seen = set()
 

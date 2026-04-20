@@ -2,46 +2,46 @@ import re
 from typing import List, Dict
 
 
-def extract_flight_numbers(text: str) -> List[str]:
-    pattern = r"\b[A-Z]{2}\d{3,4}\b"
-    return list(set(re.findall(pattern, text or "")))
+# -----------------------------
+# 편명 추출
+# -----------------------------
+def extract_flights(text: str) -> List[str]:
+    return list(set(re.findall(r"\b[A-Z]{2}\d{3,4}\b", text or "")))
 
 
-def parse_user_targets(input_text: str) -> Dict[str, List[str]]:
-    names = []
-    codes = []
-
-    if not input_text:
-        return {"names": names, "codes": codes}
-
-    tokens = [t.strip() for t in input_text.split(",") if t.strip()]
-
-    for token in tokens:
-        m = re.match(r"^([A-Z])\s*([가-힣]+)$", token)
-        if m:
-            codes.append(m.group(1))
-            names.append(m.group(2))
-            continue
-
-        if re.match(r"^[A-Z]$", token):
-            codes.append(token)
-            continue
-
-        names.append(token)
-
-    return {
-        "names": list(set(names)),
-        "codes": list(set(codes))
-    }
+# -----------------------------
+# 주기장 추출 (C01, A12 등)
+# -----------------------------
+def extract_parking(text: str) -> str:
+    m = re.search(r"\b[A-Z]\d{2}\b", text)
+    return m.group(0) if m else ""
 
 
+# -----------------------------
+# 이름 추출 (이름 기준 우선)
+# -----------------------------
+def extract_name(line: str, target_names: List[str]) -> str:
+    for name in target_names:
+        if name in line:
+            return name
+    return ""
+
+
+# -----------------------------
+# 코드 추출 (A/B/C)
+# -----------------------------
+def extract_codes(line: str) -> List[str]:
+    return re.findall(r"\b[A-C]\b", line)
+
+
+# -----------------------------
+# 범례 추출
+# 예: A박종규 B김기성 C이기영
+# -----------------------------
 def extract_legend(text: str) -> Dict[str, str]:
     legend = {}
 
-    if not text:
-        return legend
-
-    matches = re.findall(r"\b([A-Z])\s*([가-힣]{2,4})", text)
+    matches = re.findall(r"\b([A-C])\s*([가-힣]{2,4})", text)
 
     for code, name in matches:
         legend[code] = name
@@ -49,46 +49,63 @@ def extract_legend(text: str) -> Dict[str, str]:
     return legend
 
 
-def extract_codes_from_line(line: str) -> List[str]:
-    return re.findall(r"\b[A-Z]\b", line)
+# -----------------------------
+# OCR 전체 파싱
+# -----------------------------
+def parse_ocr_text(
+    text: str,
+    target_names: List[str],
+    fallback_legend: Dict[str, str] = None
+) -> List[Dict]:
 
+    legend = extract_legend(text)
 
-def build_row_mapping(text: str) -> List[Dict]:
-    rows = []
-
-    if not text:
-        return rows
+    # fallback 입력값이 있으면 덮어쓰기
+    if fallback_legend:
+        legend.update(fallback_legend)
 
     lines = text.split("\n")
 
+    results = []
+
     for line in lines:
-        codes = extract_codes_from_line(line)
+        line = line.strip()
+        if not line:
+            continue
 
-        rows.append({
-            "raw": line,
-            "codes": codes
-        })
+        flights = extract_flights(line)
+        if not flights:
+            continue
 
-    return rows
+        parking = extract_parking(line)
 
+        # -----------------------------
+        # 1️⃣ 이름이 있는 경우 (최우선)
+        # -----------------------------
+        name = extract_name(line, target_names)
 
-def match_targets(ocr_text: str, user_input: str) -> List[Dict]:
-    targets = parse_user_targets(user_input)
-    legend = extract_legend(ocr_text)
-    rows = build_row_mapping(ocr_text)
+        if name:
+            results.append({
+                "name": name,
+                "flights": flights,
+                "parking": parking
+            })
+            continue
 
-    result = []
+        # -----------------------------
+        # 2️⃣ 코드만 있는 경우 (A/B/C)
+        # -----------------------------
+        codes = extract_codes(line)
 
-    for row in rows:
-        for code in row["codes"]:
-            name = legend.get(code)
+        if codes:
+            for code in codes:
+                mapped_name = legend.get(code, "")
 
-            if code in targets["codes"]:
-                result.append(row)
-                break
+                results.append({
+                    "name": mapped_name,
+                    "code": code,
+                    "flights": flights,
+                    "parking": parking
+                })
 
-            if name and name in targets["names"]:
-                result.append(row)
-                break
-
-    return result
+    return results

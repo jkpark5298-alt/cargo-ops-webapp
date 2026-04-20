@@ -3,10 +3,17 @@ from typing import List, Dict
 
 
 # -----------------------------
-# 편명 추출
+# 편명 추출 (NEW)
 # -----------------------------
 def extract_flights(text: str) -> List[str]:
     return list(set(re.findall(r"\b[A-Z]{2}\d{3,4}\b", text or "")))
+
+
+# -----------------------------
+# ⚠ 기존 코드 호환 (중요)
+# -----------------------------
+def extract_flight_numbers(text: str) -> List[str]:
+    return extract_flights(text)
 
 
 # -----------------------------

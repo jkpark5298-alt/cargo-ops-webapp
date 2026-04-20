@@ -1,6 +1,7 @@
 from datetime import datetime, timedelta
-from fastapi import APIRouter, HTTPException, Query
 from typing import List
+
+from fastapi import APIRouter, HTTPException, Query
 
 from app.services.incheon_api import get_flight_data
 
@@ -13,13 +14,11 @@ async def lookup_flight(
     start_date: str | None = Query(None, description="조회 시작일 YYYY-MM-DD"),
     end_date: str | None = Query(None, description="조회 종료일 YYYY-MM-DD"),
 ):
-    # 기본값: D ~ D+1
     today = datetime.now().date()
-    default_start = today.strftime("%Y-%m-%d")
-    default_end = (today + timedelta(days=1)).strftime("%Y-%m-%d")
 
-    start_date = start_date or default_start
-    end_date = end_date or default_end
+    # 기본값: D, D+1
+    start_date = start_date or today.strftime("%Y-%m-%d")
+    end_date = end_date or (today + timedelta(days=1)).strftime("%Y-%m-%d")
 
     raw_flights = [x.strip().upper() for x in flight_no.split(",") if x.strip()]
     if not raw_flights:

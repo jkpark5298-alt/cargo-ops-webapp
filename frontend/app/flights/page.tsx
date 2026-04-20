@@ -1,101 +1,301 @@
 "use client";
 
-import { useEffect, useState } from "react";
+export const dynamic = "force-dynamic";
+
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_API_URL || "https://cargo-ops-backend.onrender.com";
 
+type FlightRow = {
+  airline?: string;
+  flightId?: string;
+  flightNo?: string;
+  departureCode?: string;
+  departureName?: string;
+  arrivalCode?: string;
+  arrivalName?: string;
+  scheduleDateTime?: string;
+  estimatedDateTime?: string;
+  formattedScheduleTime?: string;
+  formattedEstimatedTime?: string;
+  gatenumber?: string;
+  terminalid?: string;
+  masterflightid?: string;
+  codeshare?: string;
+  typeOfFlight?: string;
+  remark?: string;
+  status?: string;
+  delay?: boolean;
+  canceled?: boolean;
+  gateChanged?: boolean;
+  sourceType?: string;
+  fid?: string;
+};
+
+function getTodayString() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function getTomorrowString() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function getStatusText(row: FlightRow) {
+  if (row.canceled) return "결항";
+  if (row.gateChanged) return "게이트 변경";
+
+  if (row.delay) {
+    if (row.status === "도착") return "도착(지연)";
+    if (row.status === "출발") return "출발(지연)";
+    return "지연";
+  }
+
+  if (row.status === "출발") return "출발";
+  if (row.status === "도착") return "도착";
+
+  return "-";
+}
+
+function getStatusColor(row: FlightRow) {
+  if (row.canceled) return "#111111"; // 검정
+  if (row.gateChanged) return "#a855f7"; // 보라
+  if (row.delay) return "#f59e0b"; // 주황
+  if (row.status === "출발") return "#ef4444"; // 빨강
+  if (row.status === "도착") return "#3b82f6"; // 파랑
+  return "#f3f4f6"; // 기본
+}
+
 export default function FlightsPage() {
-  const [flightInput, setFlightInput] = useState("");
-  const [flights, setFlights] = useState<any[]>([]);
+  const searchParams = useSearchParams();
+
+  const [input, setInput] = useState("");
+  const [rows, setRows] = useState<FlightRow[]>([]);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
 
-  // 🔥 SSR 문제 방지 (window에서만 실행)
-  useEffect(() => {
-    if (typeof window === "undefined") return;
+  const [startDate, setStartDate] = useState(getTodayString());
+  const [endDate, setEndDate] = useState(getTomorrowString());
 
-    const params = new URLSearchParams(window.location.search);
-    const flightParam = params.get("flight");
+  const dateInfo = useMemo(
+    () => `${startDate} ~ ${endDate}`,
+    [startDate, endDate]
+  );
 
-    if (flightParam) {
-      setFlightInput(flightParam);
-      fetchFlights(flightParam);
+  const fetchFlights = async (flightArg?: string) => {
+    const finalInput = (flightArg ?? input).trim();
+
+    if (!finalInput) {
+      setError("편명을 입력하세요.");
+      return;
     }
-  }, []);
 
-  const fetchFlights = async (flightStr: string) => {
+    setLoading(true);
+    setError("");
+    setRows([]);
+
     try {
-      setLoading(true);
+      const url =
+        `${BACKEND_URL}/flights/lookup` +
+        `?flight_no=${encodeURIComponent(finalInput)}` +
+        `&start_date=${encodeURIComponent(startDate)}` +
+        `&end_date=${encodeURIComponent(endDate)}`;
 
-      const res = await fetch(
-        `${BACKEND_URL}/flights/lookup?flight_no=${flightStr}`
-      );
+      const res = await fetch(url);
 
       if (!res.ok) {
-        throw new Error("조회 실패");
+        const text = await res.text();
+        throw new Error(`서버 오류 (${res.status}) : ${text}`);
       }
 
-      const data = await res.json();
-      setFlights(data.data || []);
-    } catch (e) {
-      console.error(e);
-      setFlights([]);
+      const json = await res.json();
+      setRows(json.data || []);
+    } catch (e: any) {
+      setError(e.message || "조회 실패");
     } finally {
       setLoading(false);
     }
   };
 
-  const handleSearch = () => {
-    if (!flightInput) return;
-    fetchFlights(flightInput);
-  };
+  useEffect(() => {
+    const q = searchParams.get("flight");
+    if (q) {
+      const upper = q.toUpperCase();
+      setInput(upper);
+      fetchFlights(upper);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [searchParams]);
 
   return (
     <div
       style={{
         padding: 40,
+        color: "white",
         background: "#07152b",
         minHeight: "100vh",
-        color: "white",
       }}
     >
-      <h2>✈️ 편명 조회</h2>
+      <h2 style={{ fontSize: 28, marginBottom: 20 }}>✈️ 편명 조회</h2>
 
-      {/* 입력창 */}
-      <div style={{ marginTop: 20 }}>
+      <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
         <input
-          value={flightInput}
-          onChange={(e) => setFlightInput(e.target.value)}
-          placeholder="KJ282,KJ913"
+          value={input}
+          onChange={(e) => setInput(e.target.value.toUpperCase())}
+          placeholder="예: KJ241,KJ987"
           style={{
-            width: 400,
-            padding: 10,
-            marginRight: 10,
+            flex: 1,
+            padding: 12,
+            background: "#111",
+            border: "1px solid #444",
             borderRadius: 6,
+            color: "white",
+            fontSize: 16,
           }}
         />
-        <button onClick={handleSearch}>조회</button>
+        <button
+          onClick={() => fetchFlights()}
+          style={{
+            padding: "12px 22px",
+            background: "#4f8cff",
+            border: "none",
+            borderRadius: 6,
+            color: "white",
+            cursor: "pointer",
+            fontSize: 16,
+          }}
+        >
+          조회
+        </button>
       </div>
 
-      {/* 결과 */}
-      <div style={{ marginTop: 30 }}>
-        {loading && <p>조회 중...</p>}
+      <div
+        style={{
+          display: "flex",
+          gap: 14,
+          marginTop: 16,
+          alignItems: "center",
+          flexWrap: "wrap",
+        }}
+      >
+        <label style={{ minWidth: 50 }}>시작일</label>
+        <input
+          type="date"
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+          style={{
+            padding: 10,
+            background: "#111",
+            border: "1px solid #444",
+            borderRadius: 6,
+            color: "white",
+          }}
+        />
 
-        {!loading && flights.length === 0 && <p>데이터 없음</p>}
-
-        {!loading &&
-          flights.map((f, i) => (
-            <div
-              key={i}
-              style={{
-                padding: 12,
-                borderBottom: "1px solid #333",
-              }}
-            >
-              <b>{f.flightId}</b> / {f.std} / {f.etd}
-            </div>
-          ))}
+        <label style={{ minWidth: 50, marginLeft: 8 }}>종료일</label>
+        <input
+          type="date"
+          value={endDate}
+          onChange={(e) => setEndDate(e.target.value)}
+          style={{
+            padding: 10,
+            background: "#111",
+            border: "1px solid #444",
+            borderRadius: 6,
+            color: "white",
+          }}
+        />
       </div>
+
+      <div style={{ marginTop: 10, color: "#9fb3c8", fontSize: 14 }}>
+        기본 조회 범위: D, D+1 / 현재 조회 범위: {dateInfo}
+      </div>
+
+      {loading && <p style={{ marginTop: 20 }}>조회중...</p>}
+      {error && <p style={{ marginTop: 20, color: "red" }}>{error}</p>}
+
+      {rows.length > 0 && (
+        <div style={{ marginTop: 30, overflowX: "auto" }}>
+          <table
+            style={{
+              width: "100%",
+              borderCollapse: "collapse",
+              minWidth: 1200,
+            }}
+          >
+            <thead>
+              <tr style={{ background: "#222" }}>
+                <th style={thStyle}>현황</th>
+                <th style={thStyle}>편명</th>
+                <th style={thStyle}>출발지코드</th>
+                <th style={thStyle}>출발지공항명</th>
+                <th style={thStyle}>도착지코드</th>
+                <th style={thStyle}>도착지공항명</th>
+                <th style={thStyle}>예정일시</th>
+                <th style={thStyle}>변경일시</th>
+                <th style={thStyle}>게이트</th>
+                <th style={thStyle}>터미널</th>
+                <th style={thStyle}>마스터 편명</th>
+                <th style={thStyle}>코드쉐어</th>
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((r, i) => (
+                <tr key={i} style={{ borderBottom: "1px solid #333" }}>
+                  <td
+                    style={{
+                      ...tdStyle,
+                      color: getStatusColor(r),
+                      fontWeight: 700,
+                    }}
+                  >
+                    {getStatusText(r)}
+                  </td>
+                  <td style={tdStyle}>{r.flightId || r.flightNo || "-"}</td>
+                  <td style={tdStyle}>{r.departureCode || "-"}</td>
+                  <td style={tdStyle}>{r.departureName || "-"}</td>
+                  <td style={tdStyle}>{r.arrivalCode || "-"}</td>
+                  <td style={tdStyle}>{r.arrivalName || "-"}</td>
+                  <td style={tdStyle}>{r.formattedScheduleTime || "-"}</td>
+                  <td style={tdStyle}>{r.formattedEstimatedTime || "-"}</td>
+                  <td style={tdStyle}>{r.gatenumber || "-"}</td>
+                  <td style={tdStyle}>{r.terminalid || "-"}</td>
+                  <td style={tdStyle}>{r.masterflightid || "-"}</td>
+                  <td style={tdStyle}>{r.codeshare || "-"}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {!loading && !error && rows.length === 0 && (
+        <div style={{ marginTop: 30, color: "#9fb3c8" }}>
+          조회 결과가 없습니다.
+        </div>
+      )}
     </div>
   );
 }
+
+const thStyle: React.CSSProperties = {
+  padding: "12px 10px",
+  textAlign: "left",
+  borderBottom: "1px solid #333",
+  whiteSpace: "nowrap",
+};
+
+const tdStyle: React.CSSProperties = {
+  padding: "12px 10px",
+  whiteSpace: "nowrap",
+};

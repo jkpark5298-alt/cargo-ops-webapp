@@ -8,6 +8,7 @@ const BACKEND_URL =
 
 export default function UploadPage() {
   const router = useRouter();
+
   const [file, setFile] = useState<File | null>(null);
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
@@ -23,9 +24,9 @@ export default function UploadPage() {
     const formData = new FormData();
     formData.append("file", file);
 
-    setLoading(true);
-
     try {
+      setLoading(true);
+
       const res = await fetch(`${BACKEND_URL}/ocr/extract`, {
         method: "POST",
         body: formData,
@@ -33,18 +34,19 @@ export default function UploadPage() {
 
       if (!res.ok) {
         const text = await res.text();
-        throw new Error(`서버 오류 (${res.status}) : ${text}`);
+        throw new Error(`OCR 실패 (${res.status}) : ${text}`);
       }
 
       const data = await res.json();
 
-      if (data.flights?.length) {
-        router.push(`/flights?flight=${encodeURIComponent(data.flights.join(","))}`);
+      if (data.flights && data.flights.length > 0) {
+        const flights = data.flights.join(",");
+        router.push(`/flights?flight=${encodeURIComponent(flights)}`);
       } else {
-        setError("OCR에서 편명을 찾지 못했습니다.");
+        setError("편명을 찾지 못했습니다.");
       }
     } catch (e: any) {
-      setError(e.message || "OCR 요청 실패");
+      setError(e.message || "업로드 실패");
     } finally {
       setLoading(false);
     }
@@ -53,62 +55,46 @@ export default function UploadPage() {
   return (
     <div
       style={{
-        padding: 30,
-        color: "white",
-        background: "#0f172a",
+        padding: 40,
+        background: "#07152b",
         minHeight: "100vh",
+        color: "white",
       }}
     >
-      <h1 style={{ fontSize: 28, marginBottom: 20 }}>📄 OCR 업로드</h1>
+      <h2 style={{ fontSize: 28, marginBottom: 24 }}>📷 OCR 업로드</h2>
 
-      <div style={{ display: "flex", flexDirection: "column", gap: 12, maxWidth: 700 }}>
+      <div style={{ marginTop: 20 }}>
         <input
           type="file"
           accept="image/*"
-          onChange={(e) => setFile(e.target.files?.[0] || null)}
-          style={{
-            padding: 10,
-            background: "#111827",
-            border: "1px solid #374151",
-            color: "white",
+          onChange={(e) => {
+            if (e.target.files && e.target.files[0]) {
+              setFile(e.target.files[0]);
+            }
           }}
+          style={{ marginBottom: 20 }}
         />
 
-        <div style={{ display: "flex", gap: 10 }}>
+        <div>
           <button
             onClick={handleUpload}
             disabled={loading}
             style={{
-              padding: "10px 20px",
-              background: "#2563eb",
-              color: "white",
+              padding: "12px 20px",
+              background: "#4f8cff",
               border: "none",
+              borderRadius: 6,
+              color: "white",
               cursor: "pointer",
+              fontSize: 16,
               opacity: loading ? 0.7 : 1,
             }}
           >
-            {loading ? "OCR 처리중..." : "OCR 실행"}
-          </button>
-
-          <button
-            onClick={() => router.push("/flights")}
-            style={{
-              padding: "10px 20px",
-              background: "#16a34a",
-              color: "white",
-              border: "none",
-              cursor: "pointer",
-            }}
-          >
-            ✈️ 편명 조회 이동
+            {loading ? "처리중..." : "업로드 & 조회"}
           </button>
         </div>
 
-        {error && (
-          <div style={{ color: "#ef4444", marginTop: 8, fontWeight: 600 }}>
-            {error}
-          </div>
-        )}
+        {error && <p style={{ color: "red", marginTop: 20 }}>{error}</p>}
       </div>
     </div>
   );

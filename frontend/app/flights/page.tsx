@@ -3,7 +3,6 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useMemo, useState } from "react";
-import { useSearchParams } from "next/navigation";
 
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_API_URL || "https://cargo-ops-backend.onrender.com";
@@ -68,17 +67,15 @@ function getStatusText(row: FlightRow) {
 }
 
 function getStatusColor(row: FlightRow) {
-  if (row.canceled) return "#111111"; // 검정
-  if (row.gateChanged) return "#a855f7"; // 보라
-  if (row.delay) return "#f59e0b"; // 주황
-  if (row.status === "출발") return "#ef4444"; // 빨강
-  if (row.status === "도착") return "#3b82f6"; // 파랑
-  return "#f3f4f6"; // 기본
+  if (row.canceled) return "#111111";
+  if (row.gateChanged) return "#a855f7";
+  if (row.delay) return "#f59e0b";
+  if (row.status === "출발") return "#ef4444";
+  if (row.status === "도착") return "#3b82f6";
+  return "#f3f4f6";
 }
 
 export default function FlightsPage() {
-  const searchParams = useSearchParams();
-
   const [input, setInput] = useState("");
   const [rows, setRows] = useState<FlightRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -128,14 +125,18 @@ export default function FlightsPage() {
   };
 
   useEffect(() => {
-    const q = searchParams.get("flight");
+    if (typeof window === "undefined") return;
+
+    const params = new URLSearchParams(window.location.search);
+    const q = params.get("flight");
+
     if (q) {
       const upper = q.toUpperCase();
       setInput(upper);
       fetchFlights(upper);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [searchParams]);
+  }, []);
 
   return (
     <div

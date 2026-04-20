@@ -1,22 +1,29 @@
 from fastapi import APIRouter, UploadFile, File
-from app.services.vision_ocr import extract_text_from_image
-from app.services.parser import extract_flight_numbers, extract_name_parking
+from app.services.vision_ocr import extract_text_from_image, extract_flights
 
 router = APIRouter()
 
 
 @router.post("/extract")
 async def extract_ocr(file: UploadFile = File(...)):
-    image_bytes = await file.read()
+    try:
+        file_bytes = await file.read()
 
-    text = extract_text_from_image(image_bytes)
+        # ✅ Vision OCR 실행
+        text = extract_text_from_image(file_bytes)
 
-    flights = extract_flight_numbers(text)
-    name_parking = extract_name_parking(text)
+        # ✅ 편명 추출
+        flights = extract_flights(text)
 
-    return {
-        "success": True,
-        "text": text,
-        "flights": flights,
-        "nameParking": name_parking
-    }
+        return {
+            "success": True,
+            "text": text,
+            "flights": flights,
+        }
+
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e),
+            "flights": [],
+        }

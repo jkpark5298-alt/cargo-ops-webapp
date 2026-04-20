@@ -2,15 +2,15 @@ import os
 import requests
 import base64
 import re
-from typing import List, Dict
+from typing import List, Dict, Any
 
 GOOGLE_API_KEY = os.getenv("GOOGLE_API_KEY")
 
 
 # -----------------------------
-# Google Vision API 호출
+# Vision API 호출
 # -----------------------------
-def call_google_vision(image_bytes: bytes):
+def call_google_vision(image_bytes: bytes) -> Dict[str, Any]:
     url = f"https://vision.googleapis.com/v1/images:annotate?key={GOOGLE_API_KEY}"
 
     img_base64 = base64.b64encode(image_bytes).decode()
@@ -19,7 +19,7 @@ def call_google_vision(image_bytes: bytes):
         "requests": [
             {
                 "image": {"content": img_base64},
-                "features": [{"type": "TEXT_DETECTION"}],
+                "features": [{"type": "DOCUMENT_TEXT_DETECTION"}],
             }
         ]
     }
@@ -34,67 +34,100 @@ def call_google_vision(image_bytes: bytes):
 
 
 # -----------------------------
-# OCR 텍스트 추출
+# 텍스트 + 위치 블록 추출
 # -----------------------------
-def extract_text_from_image(image_bytes: bytes) -> str:
+def extract_blocks(image_bytes: bytes):
     result = call_google_vision(image_bytes)
 
+    blocks = []
+
     try:
-        text = result["responses"][0]["fullTextAnnotation"]["text"]
-        print("📌 OCR TEXT:\n", text)
-        return text
-    except Exception:
-        return ""
+        pages = result["responses"][0]["fullTextAnnotation"]["pages"]
+        for page in pages:
+            for block in page["blocks"]:
+                for para in block["paragraphs"]:
+                    for word in para["words"]:
+                        text = "".join([s["text"] for s in word["symbols"]])
+                        vertices = word["boundingBox"]["vertices"]
+
+                        # y 좌표 평균 (행 판단용)
+                        y = sum([v.get("y", 0) for v in vertices]) / len(vertices)
+
+                        blocks.append({
+                            "text": text,
+                            "y": y
+                        })
+    except Exception as e:
+        print("OCR PARSE ERROR:", e)
+
+    return blocks
+
+
+# -----------------------------
+# 행 클러스터링
+# -----------------------------
+def group_by_line(blocks, threshold=10):
+    lines = []
+
+    for b in blocks:
+        placed = False
+        for line in lines:
+            if abs(line["y"] - b["y"]) < threshold:
+                line["words"].append(b["text"])
+                placed = True
+                break
+
+        if not placed:
+            lines.append({
+                "y": b["y"],
+                "words": [b["text"]]
+            })
+
+    return lines
 
 
 # -----------------------------
 # 편명 정규화
 # -----------------------------
-def normalize_flight(flight: str) -> str:
-    m = re.match(r"KJ0+(\d{3,4})", flight)
+def normalize_flight(f):
+    m = re.match(r"KJ0*(\d{3,4})", f)
     if m:
         return f"KJ{m.group(1)}"
-    return flight
+    return f
 
 
 # -----------------------------
-# 🔥 핵심: 위치 기반 매칭
+# 행 기반 추출 (핵심)
 # -----------------------------
-def extract_flight_parking(text: str, target_name="박종규") -> List[Dict]:
-    if not text:
-        return []
+def extract_flight_parking(image_bytes: bytes, target_name="박종규") -> List[Dict]:
+    blocks = extract_blocks(image_bytes)
+    lines = group_by_line(blocks)
 
-    lines = text.split("\n")
     result = []
 
-    # 1️⃣ 모든 편명 위치 수집
-    flights = []
-    for i, line in enumerate(lines):
-        match = re.search(r"KJ\d{3,4}", line.replace("KJO", "KJ0"))
-        if match:
-            flights.append((i, normalize_flight(match.group())))
+    for line in lines:
+        text = "".join(line["words"])
 
-    # 2️⃣ 이름 위치 찾기
-    for i, line in enumerate(lines):
-        if target_name in line.replace(" ", ""):
+        # 이름 포함된 행만
+        if target_name not in text:
+            continue
 
-            # 🔥 앞뒤 2줄 탐색
-            for f_idx, flight in flights:
-                if abs(f_idx - i) <= 2:
+        # 편명
+        f_match = re.search(r"KJ\d{3,4}", text.replace("KJO", "KJ0"))
+        if not f_match:
+            continue
 
-                    # 주기장 찾기
-                    parking = ""
-                    search_line = lines[f_idx]
+        flight = normalize_flight(f_match.group())
 
-                    p = re.search(r"\d{3}[RL]?", search_line)
-                    if p:
-                        parking = p.group()
+        # 주기장
+        p_match = re.search(r"\d{3}[RL]?", text)
+        parking = p_match.group() if p_match else ""
 
-                    result.append({
-                        "name": target_name,
-                        "flight": flight,
-                        "parking": parking
-                    })
+        result.append({
+            "name": target_name,
+            "flight": flight,
+            "parking": parking
+        })
 
     # 중복 제거
     unique = {}

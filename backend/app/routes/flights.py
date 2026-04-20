@@ -14,10 +14,13 @@ class FlightsLookupRequest(BaseModel):
     end: Optional[str] = None
 
 
-def _normalize_date(value: Optional[str], default_time: str) -> str:
+def _normalize_date(value: Optional[str]) -> str:
     """
-    datetime-local 값(YYYY-MM-DDTHH:MM) 또는 date 값(YYYY-MM-DD)을
-    YYYY-MM-DD 로 정규화한다.
+    프론트에서 넘어오는 값:
+    - YYYY-MM-DDTHH:MM
+    - YYYY-MM-DD
+    - YYYY-MM-DD HH:MM
+    중 무엇이든 YYYY-MM-DD 로 정규화
     """
     if not value:
         return ""
@@ -26,15 +29,12 @@ def _normalize_date(value: Optional[str], default_time: str) -> str:
     if not value:
         return ""
 
-    # YYYY-MM-DDTHH:MM
     if "T" in value:
         return value.split("T")[0]
 
-    # YYYY-MM-DD HH:MM 같은 형태 방어
     if " " in value:
         return value.split(" ")[0]
 
-    # 이미 YYYY-MM-DD
     return value
 
 
@@ -49,8 +49,8 @@ async def lookup_flights(payload: FlightsLookupRequest):
             "data": [],
         }
 
-    start_date = _normalize_date(payload.start, "00:00")
-    end_date = _normalize_date(payload.end, "23:59")
+    start_date = _normalize_date(payload.start)
+    end_date = _normalize_date(payload.end)
 
     if not start_date or not end_date:
         return {

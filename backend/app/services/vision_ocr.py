@@ -1,7 +1,21 @@
+from google.cloud import vision
+import io
+
+
 def extract_text_from_image(image_bytes: bytes) -> str:
-    """
-    임시 OCR 스텁.
-    현재는 서버가 죽지 않도록 빈 문자열 반환.
-    추후 Google Vision OCR 연결 시 이 함수 안만 교체하면 됨.
-    """
-    return ""
+    try:
+        client = vision.ImageAnnotatorClient()
+
+        image = vision.Image(content=image_bytes)
+
+        response = client.text_detection(image=image)
+        texts = response.text_annotations
+
+        if not texts:
+            return ""
+
+        return texts[0].description
+
+    except Exception as e:
+        print("OCR ERROR:", e)
+        return ""

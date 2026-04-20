@@ -14,7 +14,6 @@ export default function UploadPage() {
   const [error, setError] = useState("");
   const [result, setResult] = useState<any>(null);
 
-  // ⏱ timeout fetch
   const fetchWithTimeout = async (
     url: string,
     options: RequestInit,
@@ -67,12 +66,10 @@ export default function UploadPage() {
       const data = await res.json();
       setResult(data);
     } catch (err: any) {
-      console.error(err);
-
       if (err.name === "AbortError") {
-        setError("⏱ 요청 시간 초과 (서버 지연)");
+        setError("요청 시간 초과");
       } else {
-        setError(err.message || "❌ OCR 요청 실패");
+        setError(err.message || "OCR 요청 실패");
       }
     } finally {
       setLoading(false);
@@ -83,14 +80,12 @@ export default function UploadPage() {
     <div style={{ padding: 40, color: "white" }}>
       <h2>📄 OCR 업로드</h2>
 
-      {/* 파일 선택 */}
       <input
         type="file"
         accept="image/*"
         onChange={(e) => setFile(e.target.files?.[0] || null)}
       />
 
-      {/* 대상 입력 */}
       <div style={{ marginTop: 10 }}>
         <textarea
           placeholder="예: 박종규,B박종규,B"
@@ -108,7 +103,6 @@ export default function UploadPage() {
         />
       </div>
 
-      {/* OCR 실행 */}
       <button
         onClick={handleUpload}
         disabled={loading}
@@ -125,7 +119,6 @@ export default function UploadPage() {
         {loading ? "처리중..." : "OCR 실행"}
       </button>
 
-      {/* 🔥 추가된 버튼 (핵심) */}
       <button
         onClick={() => router.push("/flights")}
         style={{
@@ -142,18 +135,10 @@ export default function UploadPage() {
         ✈️ 편명 조회 이동
       </button>
 
-      {/* 에러 */}
-      {error && (
-        <div style={{ color: "red", marginTop: 10 }}>
-          {error}
-        </div>
-      )}
+      {error && <div style={{ color: "red", marginTop: 10 }}>{error}</div>}
 
-      {/* 결과 */}
       {result && (
-        <pre style={{ marginTop: 20 }}>
-          {JSON.stringify(result, null, 2)}
-        </pre>
+        <pre style={{ marginTop: 20 }}>{JSON.stringify(result, null, 2)}</pre>
       )}
     </div>
   );

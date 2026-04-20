@@ -2,25 +2,53 @@
 
 import { useState } from "react";
 
-export default function FlightPage() {
+const BACKEND_URL = "https://cargo-ops-backend.onrender.com";
+
+type FlightRow = {
+  status?: string;
+  flightId?: string;
+  departureCode?: string;
+  departureName?: string;
+  arrivalCode?: string;
+  arrivalName?: string;
+  formattedScheduleTime?: string;
+  formattedEstimatedTime?: string;
+  gatenumber?: string;
+  terminalid?: string;
+  masterflightid?: string;
+  codeshare?: string;
+};
+
+function getStatusColor(status?: string) {
+  if (status === "출발") return "#ef4444";
+  if (status === "도착") return "#3b82f6";
+  return "#f3f7ff";
+}
+
+export default function FlightLookupPage() {
   const [input, setInput] = useState("");
-  const [rows, setRows] = useState<any[]>([]);
+  const [rows, setRows] = useState<FlightRow[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
   const fetchFlights = async () => {
-    if (!input.trim()) return;
+    if (!input.trim()) {
+      setError("편명을 입력하세요.");
+      return;
+    }
 
     setLoading(true);
     setError("");
+    setRows([]);
 
     try {
       const res = await fetch(
-        `https://cargo-ops-backend.onrender.com/flights/lookup?flight_no=${input}`
+        `${BACKEND_URL}/flights/lookup?flight_no=${encodeURIComponent(input)}`
       );
 
       if (!res.ok) {
-        throw new Error(`서버 오류 ${res.status}`);
+        const text = await res.text();
+        throw new Error(`서버 오류 (${res.status}) : ${text}`);
       }
 
       const json = await res.json();
@@ -32,26 +60,14 @@ export default function FlightPage() {
     }
   };
 
-  const format = (t: string) => {
-    if (!t || t.length !== 12) return "-";
-    return `${t.slice(0,4)}/${t.slice(4,6)}/${t.slice(6,8)} ${t.slice(8,10)}:${t.slice(10,12)}`;
-  };
-
-  const status = (s: string, e: string) => {
-    if (!s || !e) return { text: "", color: "" };
-    if (s === e) return { text: "정시", color: "#00e676" };
-    return { text: "지연", color: "#ff5252" };
-  };
-
   return (
     <div style={{ padding: 40, color: "white" }}>
       <h2>✈️ 편명 조회</h2>
 
-      {/* 입력 */}
       <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
         <input
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => setInput(e.target.value.toUpperCase())}
           placeholder="예: KJ282,KJ285"
           style={{
             flex: 1,
@@ -59,7 +75,7 @@ export default function FlightPage() {
             background: "#111",
             border: "1px solid #444",
             borderRadius: 6,
-            color: "white"
+            color: "white",
           }}
         />
         <button
@@ -69,7 +85,8 @@ export default function FlightPage() {
             background: "#4f8cff",
             border: "none",
             borderRadius: 6,
-            color: "white"
+            color: "white",
+            cursor: "pointer",
           }}
         >
           조회
@@ -79,7 +96,6 @@ export default function FlightPage() {
       {loading && <p style={{ marginTop: 20 }}>조회중...</p>}
       {error && <p style={{ marginTop: 20, color: "red" }}>{error}</p>}
 
-      {/* 테이블 */}
       {rows.length > 0 && (
         <div style={{ marginTop: 30, overflowX: "auto" }}>
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
@@ -87,31 +103,37 @@ export default function FlightPage() {
               <tr style={{ background: "#222" }}>
                 <th>현황</th>
                 <th>편명</th>
-                <th>출발지</th>
-                <th>도착지</th>
-                <th>예정</th>
-                <th>변경</th>
+                <th>출발지코드</th>
+                <th>출발지공항명</th>
+                <th>도착지코드</th>
+                <th>도착지공항명</th>
+                <th>예정일시</th>
+                <th>변경일시</th>
                 <th>게이트</th>
                 <th>터미널</th>
+                <th>마스터 편명</th>
+                <th>코드쉐어</th>
               </tr>
             </thead>
             <tbody>
-              {rows.map((r, i) => {
-                const st = status(r.scheduleDateTime, r.estimatedDateTime);
-
-                return (
-                  <tr key={i} style={{ borderBottom: "1px solid #333" }}>
-                    <td style={{ color: st.color }}>{st.text}</td>
-                    <td>{r.flightId}</td>
-                    <td>{r.departureCode}</td>
-                    <td>{r.arrivalCode}</td>
-                    <td>{format(r.scheduleDateTime)}</td>
-                    <td>{format(r.estimatedDateTime)}</td>
-                    <td>{r.gatenumber || "-"}</td>
-                    <td>{r.terminalid || "-"}</td>
-                  </tr>
-                );
-              })}
+              {rows.map((r, i) => (
+                <tr key={i} style={{ borderBottom: "1px solid #333" }}>
+                  <td style={{ color: getStatusColor(r.status), fontWeight: 700 }}>
+                    {r.status || ""}
+                  </td>
+                  <td>{r.flightId || "-"}</td>
+                  <td>{r.departureCode || "-"}</td>
+                  <td>{r.departureName || "-"}</td>
+                  <td>{r.arrivalCode || "-"}</td>
+                  <td>{r.arrivalName || "-"}</td>
+                  <td>{r.formattedScheduleTime || "-"}</td>
+                  <td>{r.formattedEstimatedTime || "-"}</td>
+                  <td>{r.gatenumber || "-"}</td>
+                  <td>{r.terminalid || "-"}</td>
+                  <td>{r.masterflightid || "-"}</td>
+                  <td>{r.codeshare || "-"}</td>
+                </tr>
+              ))}
             </tbody>
           </table>
         </div>

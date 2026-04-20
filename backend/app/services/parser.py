@@ -3,10 +3,31 @@ from typing import List, Dict
 
 
 # -----------------------------
-# 편명 추출 (NEW)
+# ✈ 편명 추출 (OCR 보정 포함)
 # -----------------------------
 def extract_flights(text: str) -> List[str]:
-    return list(set(re.findall(r"\b[A-Z]{2}\d{3,4}\b", text or "")))
+    if not text:
+        return []
+
+    text = text.upper()
+
+    # OCR 오류 보정
+    text = text.replace("O", "0")
+    text = text.replace("I", "1")
+    text = text.replace(" ", "")
+
+    patterns = [
+        r"KJ\d{3,4}",
+        r"[A-Z]{2}\d{3,4}"
+    ]
+
+    results = set()
+
+    for pattern in patterns:
+        matches = re.findall(pattern, text)
+        results.update(matches)
+
+    return list(results)
 
 
 # -----------------------------
@@ -17,15 +38,15 @@ def extract_flight_numbers(text: str) -> List[str]:
 
 
 # -----------------------------
-# 주기장 추출 (C01, A12 등)
+# 🅿 주기장 추출 (674R 포함)
 # -----------------------------
 def extract_parking(text: str) -> str:
-    m = re.search(r"\b[A-Z]\d{2}\b", text)
+    m = re.search(r"\b\d{3}[A-Z]?\b", text)
     return m.group(0) if m else ""
 
 
 # -----------------------------
-# 이름 추출 (이름 기준 우선)
+# 👤 이름 추출
 # -----------------------------
 def extract_name(line: str, target_names: List[str]) -> str:
     for name in target_names:
@@ -35,14 +56,14 @@ def extract_name(line: str, target_names: List[str]) -> str:
 
 
 # -----------------------------
-# 코드 추출 (A/B/C)
+# 🔤 코드 추출 (A/B/C)
 # -----------------------------
 def extract_codes(line: str) -> List[str]:
     return re.findall(r"\b[A-C]\b", line)
 
 
 # -----------------------------
-# 범례 추출
+# 📌 범례 추출
 # 예: A박종규 B김기성 C이기영
 # -----------------------------
 def extract_legend(text: str) -> Dict[str, str]:
@@ -57,7 +78,7 @@ def extract_legend(text: str) -> Dict[str, str]:
 
 
 # -----------------------------
-# OCR 전체 파싱
+# 🔥 OCR 전체 파싱 (핵심)
 # -----------------------------
 def parse_ocr_text(
     text: str,
@@ -67,7 +88,7 @@ def parse_ocr_text(
 
     legend = extract_legend(text)
 
-    # fallback 입력값이 있으면 덮어쓰기
+    # fallback 입력값 있으면 덮어쓰기
     if fallback_legend:
         legend.update(fallback_legend)
 
@@ -87,7 +108,7 @@ def parse_ocr_text(
         parking = extract_parking(line)
 
         # -----------------------------
-        # 1️⃣ 이름이 있는 경우 (최우선)
+        # 1️⃣ 이름 있으면 무조건 이름 기준
         # -----------------------------
         name = extract_name(line, target_names)
 
@@ -100,7 +121,7 @@ def parse_ocr_text(
             continue
 
         # -----------------------------
-        # 2️⃣ 코드만 있는 경우 (A/B/C)
+        # 2️⃣ 이름 없고 A/B/C만 있는 경우
         # -----------------------------
         codes = extract_codes(line)
 

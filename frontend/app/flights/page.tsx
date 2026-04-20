@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useMemo, useState } from "react";
 
 const BACKEND_URL = "https://cargo-ops-backend.onrender.com";
 
@@ -19,6 +19,23 @@ type FlightRow = {
   codeshare?: string;
 };
 
+function getTodayString() {
+  const d = new Date();
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
+function getTomorrowString() {
+  const d = new Date();
+  d.setDate(d.getDate() + 1);
+  const yyyy = d.getFullYear();
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const dd = String(d.getDate()).padStart(2, "0");
+  return `${yyyy}-${mm}-${dd}`;
+}
+
 function getStatusColor(status?: string) {
   if (status === "출발") return "#ef4444";
   if (status === "도착") return "#3b82f6";
@@ -31,6 +48,11 @@ export default function FlightLookupPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  const [startDate, setStartDate] = useState(getTodayString());
+  const [endDate, setEndDate] = useState(getTomorrowString());
+
+  const dateInfo = useMemo(() => `${startDate} ~ ${endDate}`, [startDate, endDate]);
+
   const fetchFlights = async () => {
     if (!input.trim()) {
       setError("편명을 입력하세요.");
@@ -42,9 +64,13 @@ export default function FlightLookupPage() {
     setRows([]);
 
     try {
-      const res = await fetch(
-        `${BACKEND_URL}/flights/lookup?flight_no=${encodeURIComponent(input)}`
-      );
+      const url =
+        `${BACKEND_URL}/flights/lookup` +
+        `?flight_no=${encodeURIComponent(input)}` +
+        `&start_date=${encodeURIComponent(startDate)}` +
+        `&end_date=${encodeURIComponent(endDate)}`;
+
+      const res = await fetch(url);
 
       if (!res.ok) {
         const text = await res.text();
@@ -68,7 +94,7 @@ export default function FlightLookupPage() {
         <input
           value={input}
           onChange={(e) => setInput(e.target.value.toUpperCase())}
-          placeholder="예: KJ282,KJ285"
+          placeholder="예: KJ282,KJ913"
           style={{
             flex: 1,
             padding: 10,
@@ -91,6 +117,40 @@ export default function FlightLookupPage() {
         >
           조회
         </button>
+      </div>
+
+      <div style={{ display: "flex", gap: 10, marginTop: 14, alignItems: "center" }}>
+        <label style={{ minWidth: 70 }}>시작일</label>
+        <input
+          type="date"
+          value={startDate}
+          onChange={(e) => setStartDate(e.target.value)}
+          style={{
+            padding: 10,
+            background: "#111",
+            border: "1px solid #444",
+            borderRadius: 6,
+            color: "white",
+          }}
+        />
+
+        <label style={{ minWidth: 70, marginLeft: 10 }}>종료일</label>
+        <input
+          type="date"
+          value={endDate}
+          onChange={(e) => setEndDate(e.target.value)}
+          style={{
+            padding: 10,
+            background: "#111",
+            border: "1px solid #444",
+            borderRadius: 6,
+            color: "white",
+          }}
+        />
+      </div>
+
+      <div style={{ marginTop: 10, color: "#9fb3c8", fontSize: 14 }}>
+        기본 조회 범위: D, D+1 / 현재 조회 범위: {dateInfo}
       </div>
 
       {loading && <p style={{ marginTop: 20 }}>조회중...</p>}

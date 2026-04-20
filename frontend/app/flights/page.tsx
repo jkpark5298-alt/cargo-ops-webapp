@@ -1,6 +1,7 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "next/navigation";
 
 const BACKEND_URL = "https://cargo-ops-backend.onrender.com";
 
@@ -17,32 +18,57 @@ type FlightRow = {
   terminalid?: string;
   masterflightid?: string;
   codeshare?: string;
+  delay?: boolean;
+  canceled?: boolean;
+  gateChanged?: boolean;
 };
 
 function getTodayString() {
   const d = new Date();
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+  return d.toISOString().slice(0, 10);
 }
 
 function getTomorrowString() {
   const d = new Date();
   d.setDate(d.getDate() + 1);
-  const yyyy = d.getFullYear();
-  const mm = String(d.getMonth() + 1).padStart(2, "0");
-  const dd = String(d.getDate()).padStart(2, "0");
-  return `${yyyy}-${mm}-${dd}`;
+  return d.toISOString().slice(0, 10);
 }
 
-function getStatusColor(status?: string) {
-  if (status === "출발") return "#ef4444";
-  if (status === "도착") return "#3b82f6";
-  return "#f3f7ff";
+function isArrived(row: FlightRow) {
+  if (!row.formattedEstimatedTime) return false;
+
+  const now = new Date();
+  const eta = new Date(row.formattedEstimatedTime.replace(" ", "T"));
+
+  return eta < now;
+}
+
+function getStatusText(row: FlightRow) {
+  if (row.canceled) return "결항";
+  if (row.gateChanged) return "게이트 변경";
+
+  if (row.delay) {
+    return isArrived(row) ? "도착(지연)" : "출발(지연)";
+  }
+
+  if (isArrived(row)) return "도착";
+
+  return "출발";
+}
+
+function getStatusColor(row: FlightRow) {
+  if (row.canceled) return "#111111";
+  if (row.gateChanged) return "#a855f7";
+  if (row.delay) return "#f59e0b";
+
+  if (isArrived(row)) return "#3b82f6"; // 파란색 (도착)
+
+  return "#ef4444"; // 빨간색 (출발)
 }
 
 export default function FlightLookupPage() {
+  const searchParams = useSearchParams();
+
   const [input, setInput] = useState("");
   const [rows, setRows] = useState<FlightRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -53,8 +79,10 @@ export default function FlightLookupPage() {
 
   const dateInfo = useMemo(() => `${startDate} ~ ${endDate}`, [startDate, endDate]);
 
-  const fetchFlights = async () => {
-    if (!input.trim()) {
+  const fetchFlights = async (flightNoArg?: string) => {
+    const finalInput = (flightNoArg ?? input).trim();
+
+    if (!finalInput) {
       setError("편명을 입력하세요.");
       return;
     }
@@ -66,7 +94,7 @@ export default function FlightLookupPage() {
     try {
       const url =
         `${BACKEND_URL}/flights/lookup` +
-        `?flight_no=${encodeURIComponent(input)}` +
+        `?flight_no=${encodeURIComponent(finalInput)}` +
         `&start_date=${encodeURIComponent(startDate)}` +
         `&end_date=${encodeURIComponent(endDate)}`;
 
@@ -85,6 +113,14 @@ export default function FlightLookupPage() {
       setLoading(false);
     }
   };
+
+  useEffect(() => {
+    const q = searchParams.get("flight_no");
+    if (q) {
+      setInput(q.toUpperCase());
+      fetchFlights(q.toUpperCase());
+    }
+  }, [searchParams]);
 
   return (
     <div style={{ padding: 40, color: "white" }}>
@@ -105,7 +141,7 @@ export default function FlightLookupPage() {
           }}
         />
         <button
-          onClick={fetchFlights}
+          onClick={() => fetchFlights()}
           style={{
             padding: "10px 20px",
             background: "#4f8cff",
@@ -119,84 +155,47 @@ export default function FlightLookupPage() {
         </button>
       </div>
 
-      <div style={{ display: "flex", gap: 10, marginTop: 14, alignItems: "center" }}>
-        <label style={{ minWidth: 70 }}>시작일</label>
-        <input
-          type="date"
-          value={startDate}
-          onChange={(e) => setStartDate(e.target.value)}
-          style={{
-            padding: 10,
-            background: "#111",
-            border: "1px solid #444",
-            borderRadius: 6,
-            color: "white",
-          }}
-        />
-
-        <label style={{ minWidth: 70, marginLeft: 10 }}>종료일</label>
-        <input
-          type="date"
-          value={endDate}
-          onChange={(e) => setEndDate(e.target.value)}
-          style={{
-            padding: 10,
-            background: "#111",
-            border: "1px solid #444",
-            borderRadius: 6,
-            color: "white",
-          }}
-        />
+      <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+        <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} />
+        <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} />
       </div>
 
-      <div style={{ marginTop: 10, color: "#9fb3c8", fontSize: 14 }}>
-        기본 조회 범위: D, D+1 / 현재 조회 범위: {dateInfo}
+      <div style={{ marginTop: 10, color: "#9fb3c8" }}>
+        기본 조회 범위: D, D+1 / 현재: {dateInfo}
       </div>
 
-      {loading && <p style={{ marginTop: 20 }}>조회중...</p>}
-      {error && <p style={{ marginTop: 20, color: "red" }}>{error}</p>}
+      {loading && <p>조회중...</p>}
+      {error && <p style={{ color: "red" }}>{error}</p>}
 
       {rows.length > 0 && (
-        <div style={{ marginTop: 30, overflowX: "auto" }}>
-          <table style={{ width: "100%", borderCollapse: "collapse" }}>
-            <thead>
-              <tr style={{ background: "#222" }}>
-                <th>현황</th>
-                <th>편명</th>
-                <th>출발지코드</th>
-                <th>출발지공항명</th>
-                <th>도착지코드</th>
-                <th>도착지공항명</th>
-                <th>예정일시</th>
-                <th>변경일시</th>
-                <th>게이트</th>
-                <th>터미널</th>
-                <th>마스터 편명</th>
-                <th>코드쉐어</th>
+        <table style={{ width: "100%", marginTop: 20 }}>
+          <thead>
+            <tr>
+              <th>현황</th>
+              <th>편명</th>
+              <th>출발</th>
+              <th>도착</th>
+              <th>예정</th>
+              <th>변경</th>
+              <th>게이트</th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r, i) => (
+              <tr key={i}>
+                <td style={{ color: getStatusColor(r), fontWeight: 700 }}>
+                  {getStatusText(r)}
+                </td>
+                <td>{r.flightId}</td>
+                <td>{r.departureCode}</td>
+                <td>{r.arrivalCode}</td>
+                <td>{r.formattedScheduleTime}</td>
+                <td>{r.formattedEstimatedTime}</td>
+                <td>{r.gatenumber}</td>
               </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr key={i} style={{ borderBottom: "1px solid #333" }}>
-                  <td style={{ color: getStatusColor(r.status), fontWeight: 700 }}>
-                    {r.status || ""}
-                  </td>
-                  <td>{r.flightId || "-"}</td>
-                  <td>{r.departureCode || "-"}</td>
-                  <td>{r.departureName || "-"}</td>
-                  <td>{r.arrivalCode || "-"}</td>
-                  <td>{r.arrivalName || "-"}</td>
-                  <td>{r.formattedScheduleTime || "-"}</td>
-                  <td>{r.formattedEstimatedTime || "-"}</td>
-                  <td>{r.gatenumber || "-"}</td>
-                  <td>{r.terminalid || "-"}</td>
-                  <td>{r.masterflightid || "-"}</td>
-                  <td>{r.codeshare || "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+            ))}
+          </tbody>
+        </table>
       )}
     </div>
   );

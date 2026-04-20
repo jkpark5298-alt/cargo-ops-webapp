@@ -1,5 +1,7 @@
 "use client";
 
+export const dynamic = "force-dynamic";
+
 import { useEffect, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 
@@ -28,6 +30,8 @@ export default function FlightsPage() {
   // 최초 진입 (OCR → 자동 조회)
   // -------------------------------
   useEffect(() => {
+    if (typeof window === "undefined") return;
+
     const flightParam = searchParams.get("flight");
     if (flightParam) {
       setInput(flightParam);
@@ -67,13 +71,17 @@ export default function FlightsPage() {
     const now = new Date();
 
     const etd = row.etd ? new Date(row.etd) : null;
-    const atd = row.atd ? new Date(row.atd) : null;
 
+    // 결항
     if (row.remark?.includes("결항")) return "cancel";
+
+    // 지연
     if (row.remark?.includes("지연")) return "delay";
 
+    // 도착 (현재시간 > 예정시간)
     if (etd && now > etd) return "arrived";
 
+    // 게이트 변경
     if (row.gate && row.prev_gate && row.gate !== row.prev_gate)
       return "gate";
 
@@ -94,7 +102,7 @@ export default function FlightsPage() {
       case "gate":
         return "#a855f7"; // 보라
       default:
-        return "#e5e7eb"; // 기본
+        return "#e5e7eb";
     }
   };
 
@@ -134,7 +142,16 @@ export default function FlightsPage() {
             color: "white",
           }}
         />
-        <button onClick={() => fetchFlights()} style={{ padding: "10px 20px", background: "#2563eb" }}>
+        <button
+          onClick={() => fetchFlights()}
+          style={{
+            padding: "10px 20px",
+            background: "#2563eb",
+            color: "white",
+            border: "none",
+            cursor: "pointer",
+          }}
+        >
           조회
         </button>
       </div>
@@ -143,6 +160,7 @@ export default function FlightsPage() {
       <div style={{ display: "flex", gap: 20, marginBottom: 10 }}>
         <div>
           시작일
+          <br />
           <input
             type="date"
             value={startDate}
@@ -152,6 +170,7 @@ export default function FlightsPage() {
 
         <div>
           종료일
+          <br />
           <input
             type="date"
             value={endDate}
@@ -172,10 +191,11 @@ export default function FlightsPage() {
             <th>편명</th>
             <th>출발</th>
             <th>도착</th>
-            <th>예정</th>
+            <th>예정시간</th>
             <th>게이트</th>
           </tr>
         </thead>
+
         <tbody>
           {data.map((row, i) => {
             const status = getStatus(row);
@@ -196,7 +216,7 @@ export default function FlightsPage() {
         </tbody>
       </table>
 
-      {loading && <p>로딩중...</p>}
+      {loading && <p style={{ marginTop: 20 }}>로딩중...</p>}
     </div>
   );
 }

@@ -44,7 +44,7 @@ type MonitorRoom = {
   rows: FlightRow[];
 };
 
-const STORAGE_KEY = "cargo_ops_monitor_rooms_v3";
+const STORAGE_KEY = "cargo_ops_monitor_rooms_v4";
 
 function toDateTimeLocalString(date: Date) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
@@ -88,40 +88,84 @@ function saveRooms(rooms: MonitorRoom[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(rooms));
 }
 
-function getStatusText(row: FlightRow) {
+function parseFlightTime(row: FlightRow): Date | null {
+  const raw =
+    row.formattedEstimatedTime ||
+    row.formattedScheduleTime ||
+    row.estimatedDateTime ||
+    row.scheduleDateTime;
+
+  if (!raw) return null;
+
+  let normalized = raw.trim();
+
+  normalized = normalized.replace(/\./g, "-");
+  normalized = normalized.replace(/\//g, "-");
+  normalized = normalized.replace("T", " ");
+
+  const date = new Date(normalized);
+  if (!Number.isNaN(date.getTime())) return date;
+
+  return null;
+}
+
+function getComputedStatus(row: FlightRow) {
   if (row.canceled) return "결항";
   if (row.gateChanged) return "게이트 변경";
+
   if (row.delay) {
     if (row.status === "도착") return "도착(지연)";
     if (row.status === "출발") return "출발(지연)";
     return "지연";
   }
+
   if (row.status === "출발") return "출발";
   if (row.status === "도착") return "도착";
+
+  // fallback: status가 비어있으면 시간 기준으로 추정
+  const dt = parseFlightTime(row);
+  const now = new Date();
+
+  if (dt && dt.getTime() <= now.getTime()) {
+    if ((row.departureCode || "").toUpperCase() === "ICN") {
+      return "출발";
+    }
+    if ((row.arrivalCode || "").toUpperCase() === "ICN") {
+      return "도착";
+    }
+  }
+
   return "-";
 }
 
 function getStatusColor(row: FlightRow) {
-  if (row.canceled) return "#111111";
-  if (row.gateChanged) return "#a855f7";
-  if (row.delay) return "#f59e0b";
-  if (row.status === "출발") return "#ef4444";
-  if (row.status === "도착") return "#3b82f6";
+  const status = getComputedStatus(row);
+
+  if (status === "결항") return "#111111";
+  if (status === "게이트 변경") return "#a855f7";
+  if (status.includes("지연")) return "#f59e0b";
+  if (status === "출발") return "#ef4444";
+  if (status === "도착") return "#3b82f6";
   return "#e5e7eb";
 }
 
 function getAlertCounts(rows: FlightRow[]) {
+  const computed = rows.map((r) => getComputedStatus(r));
   return {
-    delay: rows.filter((r) => !!r.delay && !r.canceled).length,
-    gateChanged: rows.filter((r) => !!r.gateChanged).length,
-    canceled: rows.filter((r) => !!r.canceled).length,
+    delay: computed.filter((s) => s.includes("지연")).length,
+    gateChanged: computed.filter((s) => s === "게이트 변경").length,
+    canceled: computed.filter((s) => s === "결항").length,
   };
 }
 
 function getRowBackground(row: FlightRow) {
-  if (row.canceled) return "rgba(239, 68, 68, 0.12)";
-  if (row.gateChanged) return "rgba(168, 85, 247, 0.14)";
-  if (row.delay) return "rgba(245, 158, 11, 0.12)";
+  const status = getComputedStatus(row);
+
+  if (status === "결항") return "rgba(239, 68, 68, 0.12)";
+  if (status === "게이트 변경") return "rgba(168, 85, 247, 0.14)";
+  if (status.includes("지연")) return "rgba(245, 158, 11, 0.12)";
+  if (status === "출발") return "rgba(239, 68, 68, 0.06)";
+  if (status === "도착") return "rgba(59, 130, 246, 0.06)";
   return "transparent";
 }
 
@@ -258,6 +302,66 @@ export default function FlightsPage() {
     }
   };
 
+  const refreshSelectedRoom = async () => {
+    if (!selectedRoom) return;
+
+    setInput(selectedRoom.flightsInput);
+    setStartDateTime(selectedRoom.startDateTime);
+    setEndDateTime(selectedRoom.endDateTime);
+    setFixed(selectedRoom.fixed);
+
+    setLoading(true);
+    setError("");
+
+    try {
+      const flights = selectedRoom.flightsInput
+        .split(",")
+        .map((v) => v.trim().toUpperCase())
+        .filter(Boolean);
+
+      const res = await fetch(`${BACKEND_URL}/flights/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          flights,
+          start: selectedRoom.startDateTime,
+          end: selectedRoom.endDateTime,
+        }),
+      });
+
+      const json = await res.json();
+
+      if (!res.ok || json.success === false) {
+        throw new Error(json.message || `서버 오류 (${res.status})`);
+      }
+
+      const nextRows = json.data || [];
+      const fetchedAt = new Date().toLocaleString("ko-KR");
+
+      setRows(nextRows);
+      setLastFetchedAt(fetchedAt);
+
+      const nextRooms = rooms.map((room) =>
+        room.id === selectedRoom.id
+          ? {
+              ...room,
+              rows: nextRows,
+              lastFetchedAt: fetchedAt,
+            }
+          : room
+      );
+
+      setRooms(nextRooms);
+      saveRooms(nextRooms);
+    } catch (e: any) {
+      setError(e.message || "조회 실패");
+    } finally {
+      setLoading(false);
+    }
+  };
+
   const handleCreateMonitor = () => {
     const trimmedInput = input.trim();
 
@@ -313,6 +417,11 @@ export default function FlightsPage() {
       persistRoom(selectedRoomId, rows, lastFetchedAt, nextFixed);
     }
   };
+
+  const selectedRoomCounts = useMemo(
+    () => (selectedRoom ? getAlertCounts(selectedRoom.rows) : null),
+    [selectedRoom]
+  );
 
   return (
     <div
@@ -536,29 +645,68 @@ export default function FlightsPage() {
           <div
             style={{
               marginTop: 20,
-              padding: 14,
+              padding: 18,
               background: "#0d1a30",
-              border: "1px solid #23314f",
-              borderRadius: 8,
+              border: "1px solid #2b4269",
+              borderRadius: 10,
             }}
           >
-            <div style={{ fontWeight: 700, marginBottom: 10 }}>
-              선택된 Monitor: {selectedRoom.name}
-            </div>
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                gap: 20,
+                alignItems: "flex-start",
+                flexWrap: "wrap",
+              }}
+            >
+              <div>
+                <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 10 }}>
+                  선택된 Monitor 상세
+                </div>
+                <div style={{ fontSize: 18, fontWeight: 700, marginBottom: 8 }}>
+                  {selectedRoom.name}
+                </div>
+                <div style={{ color: "#cbd5e1", marginBottom: 6 }}>
+                  편명: {selectedRoom.flightsInput}
+                </div>
+                <div style={{ color: "#cbd5e1", marginBottom: 6 }}>
+                  조회 범위: {selectedRoom.startDateTime.replace("T", " ")} ~{" "}
+                  {selectedRoom.endDateTime.replace("T", " ")}
+                </div>
+                <div style={{ color: "#cbd5e1", marginBottom: 6 }}>
+                  마지막 조회: {selectedRoom.lastFetchedAt || "-"}
+                </div>
+                <div style={{ color: selectedRoom.fixed ? "#facc15" : "#cbd5e1" }}>
+                  상태: {selectedRoom.fixed ? "FIXED" : "일반"}
+                </div>
+              </div>
 
-            <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
-              {alertCounts.delay > 0 && (
-                <span style={badgeOrange}>지연 {alertCounts.delay}건</span>
-              )}
-              {alertCounts.gateChanged > 0 && (
-                <span style={badgePurple}>게이트 변경 {alertCounts.gateChanged}건</span>
-              )}
-              {alertCounts.canceled > 0 && (
-                <span style={badgeRed}>결항 {alertCounts.canceled}건</span>
-              )}
-              {alertCounts.delay + alertCounts.gateChanged + alertCounts.canceled === 0 && (
-                <span style={badgeNormal}>이상 없음</span>
-              )}
+              <div style={{ minWidth: 260 }}>
+                <div style={{ fontWeight: 700, marginBottom: 10 }}>이상 현황</div>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 14 }}>
+                  {selectedRoomCounts && selectedRoomCounts.delay > 0 && (
+                    <span style={badgeOrange}>지연 {selectedRoomCounts.delay}건</span>
+                  )}
+                  {selectedRoomCounts && selectedRoomCounts.gateChanged > 0 && (
+                    <span style={badgePurple}>
+                      게이트 변경 {selectedRoomCounts.gateChanged}건
+                    </span>
+                  )}
+                  {selectedRoomCounts && selectedRoomCounts.canceled > 0 && (
+                    <span style={badgeRed}>결항 {selectedRoomCounts.canceled}건</span>
+                  )}
+                  {selectedRoomCounts &&
+                    selectedRoomCounts.delay +
+                      selectedRoomCounts.gateChanged +
+                      selectedRoomCounts.canceled ===
+                      0 && <span style={badgeNormal}>이상 없음</span>}
+                </div>
+
+                <button onClick={refreshSelectedRoom} disabled={loading} style={refreshBtn}>
+                  선택된 Monitor 다시 조회
+                </button>
+              </div>
             </div>
           </div>
         )}
@@ -606,7 +754,7 @@ export default function FlightsPage() {
                       fontWeight: 700,
                     }}
                   >
-                    {getStatusText(r)}
+                    {getComputedStatus(r)}
                   </td>
                   <td style={tdStyle}>{r.flightId || r.flightNo || "-"}</td>
                   <td style={tdStyle}>{r.departureCode || "-"}</td>
@@ -659,6 +807,16 @@ const primaryBtn: React.CSSProperties = {
   padding: "10px 18px",
   background: "#ffffff",
   color: "#111111",
+  border: "none",
+  borderRadius: 4,
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const refreshBtn: React.CSSProperties = {
+  padding: "10px 18px",
+  background: "#2563eb",
+  color: "#ffffff",
   border: "none",
   borderRadius: 4,
   cursor: "pointer",

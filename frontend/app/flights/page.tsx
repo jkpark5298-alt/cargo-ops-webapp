@@ -777,20 +777,23 @@ export default function FlightsPage() {
                   style={{
                     width: "100%",
                     borderCollapse: "collapse",
-                    minWidth: 700,
+                    minWidth: 900,
                   }}
                 >
                   <thead>
                     <tr style={{ background: "#18263f" }}>
                       <th style={detailThStyle}>편명</th>
                       <th style={detailThStyle}>현황</th>
+                      <th style={detailThStyle}>출발지코드</th>
+                      <th style={detailThStyle}>도착지코드</th>
                       <th style={detailThStyle}>변경일시</th>
+                      <th style={detailThStyle}>게이트</th>
                     </tr>
                   </thead>
                   <tbody>
                     {selectedRoom.rows.length === 0 && (
                       <tr>
-                        <td style={detailTdStyle} colSpan={3}>
+                        <td style={detailTdStyle} colSpan={6}>
                           저장된 상세 데이터가 없습니다.
                         </td>
                       </tr>
@@ -815,7 +818,10 @@ export default function FlightsPage() {
                         >
                           {getComputedStatus(row)}
                         </td>
+                        <td style={detailTdStyle}>{row.departureCode || "-"}</td>
+                        <td style={detailTdStyle}>{row.arrivalCode || "-"}</td>
                         <td style={detailTdStyle}>{getChangedDateTime(row)}</td>
+                        <td style={detailTdStyle}>{row.gatenumber || "-"}</td>
                       </tr>
                     ))}
                   </tbody>

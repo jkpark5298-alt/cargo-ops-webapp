@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_API_URL || "https://cargo-ops-backend.onrender.com";
@@ -44,7 +44,7 @@ type MonitorRoom = {
   rows: FlightRow[];
 };
 
-const STORAGE_KEY = "cargo_ops_monitor_rooms_v5";
+const STORAGE_KEY = "cargo_ops_monitor_rooms_v6";
 
 function toDateTimeLocalString(date: Date) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
@@ -229,6 +229,206 @@ function getChangedDateTime(row: FlightRow) {
   );
 }
 
+function getRegistrationNo(row: FlightRow) {
+  return row.fid || "-";
+}
+
+function getFlightDisplay(row: FlightRow) {
+  return row.flightId || row.flightNo || "-";
+}
+
+function getRowKey(row: FlightRow, idx: number) {
+  return [
+    getFlightDisplay(row),
+    row.scheduleDateTime || "",
+    row.estimatedDateTime || "",
+    row.departureCode || "",
+    row.arrivalCode || "",
+    row.gatenumber || "",
+    idx,
+  ].join("|");
+}
+
+function normalizeFlightsInput(rawInput: string) {
+  return rawInput
+    .split(/[\s,\n]+/)
+    .map((value) => value.trim().toUpperCase())
+    .filter(Boolean)
+    .map((value) => {
+      if (/^\d{3,4}$/.test(value)) {
+        return `KJ${value}`;
+      }
+      return value;
+    });
+}
+
+function buildFixedDetailRows(row: FlightRow) {
+  return [
+    { label: "현황", value: getComputedStatus(row) },
+    { label: "편명", value: getFlightDisplay(row) },
+    { label: "출발지코드", value: row.departureCode || "-" },
+    { label: "출발지공항명", value: row.departureName || "-" },
+    { label: "도착지코드", value: row.arrivalCode || "-" },
+    { label: "도착지공항명", value: row.arrivalName || "-" },
+    { label: "예정일시", value: row.formattedScheduleTime || "-" },
+    { label: "변경일시", value: row.formattedEstimatedTime || "-" },
+    { label: "게이트", value: row.gatenumber || "-" },
+    { label: "터미널", value: row.terminalid || "-" },
+    { label: "등록기호", value: getRegistrationNo(row) },
+    { label: "코드쉐어", value: row.codeshare || "-" },
+  ];
+}
+
+function DetailToggleButton({
+  expanded,
+  onClick,
+}: {
+  expanded: boolean;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      style={{
+        minWidth: 34,
+        height: 30,
+        padding: "0 10px",
+        borderRadius: 6,
+        border: "1px solid #36527f",
+        background: expanded ? "#1d4ed8" : "#10213d",
+        color: "white",
+        fontWeight: 800,
+        cursor: "pointer",
+      }}
+      aria-label="detail"
+      title="DETAIL"
+    >
+      D
+    </button>
+  );
+}
+
+function FixedResultsTable({
+  rows,
+  expandedKeys,
+  onToggleDetail,
+}: {
+  rows: FlightRow[];
+  expandedKeys: Record<string, boolean>;
+  onToggleDetail: (key: string) => void;
+}) {
+  return (
+    <div style={{ marginTop: 30, overflowX: "auto" }}>
+      <table
+        style={{
+          width: "100%",
+          borderCollapse: "collapse",
+          minWidth: 980,
+          background: "#081427",
+          border: "1px solid #22314e",
+        }}
+      >
+        <thead>
+          <tr style={{ background: "#18263f" }}>
+            <th style={thStyle}>편명</th>
+            <th style={thStyle}>구분</th>
+            <th style={thStyle}>출발</th>
+            <th style={thStyle}>도착</th>
+            <th style={thStyle}>변경일시</th>
+            <th style={thStyle}>게이트</th>
+            <th style={thStyle}>등록기호</th>
+            <th style={thStyle}>D</th>
+          </tr>
+        </thead>
+        <tbody>
+          {rows.length === 0 && (
+            <tr>
+              <td style={tdStyle} colSpan={8}>
+                조회 결과가 없습니다.
+              </td>
+            </tr>
+          )}
+
+          {rows.map((row, idx) => {
+            const rowKey = getRowKey(row, idx);
+            const expanded = Boolean(expandedKeys[rowKey]);
+            const detailRows = buildFixedDetailRows(row);
+
+            return (
+              <FragmentRow key={rowKey}>
+                <tr
+                  style={{
+                    borderBottom: expanded
+                      ? "1px solid transparent"
+                      : "1px solid #2b4269",
+                    background: getRowBackground(row),
+                  }}
+                >
+                  <td style={tdStyle}>{getFlightDisplay(row)}</td>
+                  <td
+                    style={{
+                      ...tdStyle,
+                      color: getStatusColor(row),
+                      fontWeight: 800,
+                    }}
+                  >
+                    {getComputedStatus(row)}
+                  </td>
+                  <td style={tdStyle}>{row.departureCode || "-"}</td>
+                  <td style={tdStyle}>{row.arrivalCode || "-"}</td>
+                  <td style={tdStyle}>{getChangedDateTime(row)}</td>
+                  <td style={tdStyle}>{row.gatenumber || "-"}</td>
+                  <td style={tdStyle}>{getRegistrationNo(row)}</td>
+                  <td style={tdStyle}>
+                    <DetailToggleButton
+                      expanded={expanded}
+                      onClick={() => onToggleDetail(rowKey)}
+                    />
+                  </td>
+                </tr>
+
+                {expanded && (
+                  <tr style={{ background: "#0c1a31", borderBottom: "1px solid #2b4269" }}>
+                    <td colSpan={8} style={{ padding: 14 }}>
+                      <table
+                        style={{
+                          width: "100%",
+                          borderCollapse: "collapse",
+                          background: "#0a1528",
+                          border: "1px solid #2b4269",
+                        }}
+                      >
+                        <thead>
+                          <tr style={{ background: "#15233b" }}>
+                            <th style={detailThStyle}>항목</th>
+                            <th style={detailThStyle}>값</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {detailRows.map((detail) => (
+                            <tr key={`${rowKey}-${detail.label}`} style={{ borderBottom: "1px solid #22314e" }}>
+                              <td style={detailTdLabelStyle}>{detail.label}</td>
+                              <td style={detailTdStyle}>{detail.value}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </td>
+                  </tr>
+                )}
+              </FragmentRow>
+            );
+          })}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function FragmentRow({ children }: { children: ReactNode }) {
+  return <>{children}</>;
+}
+
 export default function FlightsPage() {
   const [input, setInput] = useState("");
   const [rows, setRows] = useState<FlightRow[]>([]);
@@ -243,6 +443,7 @@ export default function FlightsPage() {
 
   const [rooms, setRooms] = useState<MonitorRoom[]>([]);
   const [selectedRoomId, setSelectedRoomId] = useState("");
+  const [expandedDetailKeys, setExpandedDetailKeys] = useState<Record<string, boolean>>({});
 
   const currentRangeText = useMemo(() => {
     return `${startDateTime.replace("T", " ")} ~ ${endDateTime.replace("T", " ")}`;
@@ -306,10 +507,7 @@ export default function FlightsPage() {
       return;
     }
 
-    const flights = finalInput
-      .split(",")
-      .map((v) => v.trim().toUpperCase())
-      .filter(Boolean);
+    const flights = normalizeFlightsInput(finalInput);
 
     if (flights.length === 0) {
       setError("편명을 입력하세요.");
@@ -343,6 +541,7 @@ export default function FlightsPage() {
 
       setRows(nextRows);
       setLastFetchedAt(fetchedAt);
+      setExpandedDetailKeys({});
 
       if (selectedRoomId) {
         persistRoom(
@@ -350,7 +549,7 @@ export default function FlightsPage() {
           nextRows,
           fetchedAt,
           fixed,
-          finalInput,
+          flights.join(", "),
           startDateTime,
           endDateTime
         );
@@ -374,10 +573,7 @@ export default function FlightsPage() {
     setError("");
 
     try {
-      const flights = selectedRoom.flightsInput
-        .split(",")
-        .map((v) => v.trim().toUpperCase())
-        .filter(Boolean);
+      const flights = normalizeFlightsInput(selectedRoom.flightsInput);
 
       const res = await fetch(`${BACKEND_URL}/flights/`, {
         method: "POST",
@@ -402,6 +598,7 @@ export default function FlightsPage() {
 
       setRows(nextRows);
       setLastFetchedAt(fetchedAt);
+      setExpandedDetailKeys({});
 
       const nextRooms = rooms.map((room) =>
         room.id === selectedRoom.id
@@ -431,10 +628,11 @@ export default function FlightsPage() {
     }
 
     const now = new Date();
+    const normalizedInput = normalizeFlightsInput(trimmedInput).join(", ");
     const newRoom: MonitorRoom = {
       id: `${now.getTime()}`,
       name: formatMonitorRoomName(now),
-      flightsInput: trimmedInput,
+      flightsInput: normalizedInput,
       startDateTime,
       endDateTime,
       fixed,
@@ -446,6 +644,7 @@ export default function FlightsPage() {
     setRooms(nextRooms);
     saveRooms(nextRooms);
     setSelectedRoomId(newRoom.id);
+    setInput(normalizedInput);
   };
 
   const handleSelectRoom = (room: MonitorRoom) => {
@@ -456,6 +655,7 @@ export default function FlightsPage() {
     setFixed(room.fixed);
     setLastFetchedAt(room.lastFetchedAt);
     setRows(room.rows);
+    setExpandedDetailKeys({});
     setError("");
   };
 
@@ -472,10 +672,18 @@ export default function FlightsPage() {
   const handleToggleFixed = () => {
     const nextFixed = !fixed;
     setFixed(nextFixed);
+    setExpandedDetailKeys({});
 
     if (selectedRoomId) {
       persistRoom(selectedRoomId, rows, lastFetchedAt, nextFixed);
     }
+  };
+
+  const handleToggleDetail = (rowKey: string) => {
+    setExpandedDetailKeys((prev) => ({
+      ...prev,
+      [rowKey]: !prev[rowKey],
+    }));
   };
 
   const selectedRoomCounts = useMemo(
@@ -633,7 +841,7 @@ export default function FlightsPage() {
           <input
             value={input}
             onChange={(e) => setInput(e.target.value.toUpperCase())}
-            placeholder="예: KJ247,KJ972"
+            placeholder="예: 247,972 또는 KJ247,KJ972"
             style={{
               flex: 1,
               padding: 12,
@@ -644,6 +852,10 @@ export default function FlightsPage() {
               fontSize: 16,
             }}
           />
+        </div>
+
+        <div style={{ marginTop: 8, color: "#9fb3c8", fontSize: 13 }}>
+          숫자 3~4자리만 입력하면 KJ를 자동으로 붙여 조회합니다.
         </div>
 
         <div
@@ -691,7 +903,7 @@ export default function FlightsPage() {
 
         {fixed && (
           <div style={{ marginTop: 6, color: "#facc15", fontSize: 14 }}>
-            FIXED 상태: 현재 화면을 유지하며, 조회 버튼을 눌렀을 때만 최신 정보를 반영합니다.
+            FIXED 상태: 기본 7개 정보만 표시되며, D를 눌러 상세 12개 정보를 확인합니다.
           </div>
         )}
 
@@ -700,6 +912,25 @@ export default function FlightsPage() {
             마지막 조회 시각: {lastFetchedAt}
           </div>
         )}
+
+        <div
+          style={{
+            marginTop: 18,
+            display: "flex",
+            gap: 8,
+            flexWrap: "wrap",
+          }}
+        >
+          {alertCounts.delay > 0 && <span style={badgeOrange}>지연 {alertCounts.delay}</span>}
+          {alertCounts.gateChanged > 0 && (
+            <span style={badgePurple}>게이트 변경 {alertCounts.gateChanged}</span>
+          )}
+          {alertCounts.canceled > 0 && <span style={badgeRed}>결항 {alertCounts.canceled}</span>}
+          {rows.length > 0 &&
+            alertCounts.delay + alertCounts.gateChanged + alertCounts.canceled === 0 && (
+              <span style={badgeNormal}>이상 없음</span>
+            )}
+        </div>
 
         {selectedRoom && (
           <div
@@ -718,7 +949,6 @@ export default function FlightsPage() {
                 gap: 20,
                 alignItems: "flex-start",
                 flexWrap: "wrap",
-                marginBottom: 18,
               }}
             >
               <div>
@@ -769,129 +999,89 @@ export default function FlightsPage() {
                 </button>
               </div>
             </div>
-
-            <div style={{ marginTop: 8 }}>
-              <div style={{ fontWeight: 700, marginBottom: 10 }}>Monitor 상세 목록</div>
-              <div style={{ overflowX: "auto" }}>
-                <table
-                  style={{
-                    width: "100%",
-                    borderCollapse: "collapse",
-                    minWidth: 900,
-                  }}
-                >
-                  <thead>
-                    <tr style={{ background: "#18263f" }}>
-                      <th style={detailThStyle}>편명</th>
-                      <th style={detailThStyle}>현황</th>
-                      <th style={detailThStyle}>출발지코드</th>
-                      <th style={detailThStyle}>도착지코드</th>
-                      <th style={detailThStyle}>변경일시</th>
-                      <th style={detailThStyle}>게이트</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    {selectedRoom.rows.length === 0 && (
-                      <tr>
-                        <td style={detailTdStyle} colSpan={6}>
-                          저장된 상세 데이터가 없습니다.
-                        </td>
-                      </tr>
-                    )}
-                    {selectedRoom.rows.map((row, idx) => (
-                      <tr
-                        key={`${row.flightId || row.flightNo || idx}-${idx}`}
-                        style={{
-                          borderBottom: "1px solid #2b4269",
-                          background: getRowBackground(row),
-                        }}
-                      >
-                        <td style={detailTdStyle}>
-                          {row.flightId || row.flightNo || "-"}
-                        </td>
-                        <td
-                          style={{
-                            ...detailTdStyle,
-                            color: getStatusColor(row),
-                            fontWeight: 700,
-                          }}
-                        >
-                          {getComputedStatus(row)}
-                        </td>
-                        <td style={detailTdStyle}>{row.departureCode || "-"}</td>
-                        <td style={detailTdStyle}>{row.arrivalCode || "-"}</td>
-                        <td style={detailTdStyle}>{getChangedDateTime(row)}</td>
-                        <td style={detailTdStyle}>{row.gatenumber || "-"}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
           </div>
         )}
 
         {loading && <p style={{ marginTop: 20 }}>조회중...</p>}
-        {error && <p style={{ marginTop: 20, color: "red" }}>{error}</p>}
+        {error && <p style={{ marginTop: 20, color: "#f87171" }}>{error}</p>}
 
-        <div style={{ marginTop: 30, overflowX: "auto" }}>
-          <table
-            style={{
-              width: "100%",
-              borderCollapse: "collapse",
-              minWidth: 1200,
-            }}
-          >
-            <thead>
-              <tr style={{ background: "#222" }}>
-                <th style={thStyle}>현황</th>
-                <th style={thStyle}>편명</th>
-                <th style={thStyle}>출발지코드</th>
-                <th style={thStyle}>출발지공항명</th>
-                <th style={thStyle}>도착지코드</th>
-                <th style={thStyle}>도착지공항명</th>
-                <th style={thStyle}>예정일시</th>
-                <th style={thStyle}>변경일시</th>
-                <th style={thStyle}>게이트</th>
-                <th style={thStyle}>터미널</th>
-                <th style={thStyle}>마스터 편명</th>
-                <th style={thStyle}>코드쉐어</th>
-              </tr>
-            </thead>
-            <tbody>
-              {rows.map((r, i) => (
-                <tr
-                  key={i}
-                  style={{
-                    borderBottom: "1px solid #333",
-                    background: getRowBackground(r),
-                  }}
-                >
-                  <td
+        {!fixed && (
+          <div style={{ marginTop: 30, overflowX: "auto" }}>
+            <table
+              style={{
+                width: "100%",
+                borderCollapse: "collapse",
+                minWidth: 1200,
+                background: "#081427",
+                border: "1px solid #22314e",
+              }}
+            >
+              <thead>
+                <tr style={{ background: "#18263f" }}>
+                  <th style={thStyle}>현황</th>
+                  <th style={thStyle}>편명</th>
+                  <th style={thStyle}>출발지코드</th>
+                  <th style={thStyle}>출발지공항명</th>
+                  <th style={thStyle}>도착지코드</th>
+                  <th style={thStyle}>도착지공항명</th>
+                  <th style={thStyle}>예정일시</th>
+                  <th style={thStyle}>변경일시</th>
+                  <th style={thStyle}>게이트</th>
+                  <th style={thStyle}>터미널</th>
+                  <th style={thStyle}>마스터 편명</th>
+                  <th style={thStyle}>코드쉐어</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.length === 0 && (
+                  <tr>
+                    <td style={tdStyle} colSpan={12}>
+                      조회 결과가 없습니다.
+                    </td>
+                  </tr>
+                )}
+                {rows.map((r, i) => (
+                  <tr
+                    key={getRowKey(r, i)}
                     style={{
-                      ...tdStyle,
-                      color: getStatusColor(r),
-                      fontWeight: 700,
+                      borderBottom: "1px solid #2b4269",
+                      background: getRowBackground(r),
                     }}
                   >
-                    {getComputedStatus(r)}
-                  </td>
-                  <td style={tdStyle}>{r.flightId || r.flightNo || "-"}</td>
-                  <td style={tdStyle}>{r.departureCode || "-"}</td>
-                  <td style={tdStyle}>{r.departureName || "-"}</td>
-                  <td style={tdStyle}>{r.arrivalCode || "-"}</td>
-                  <td style={tdStyle}>{r.arrivalName || "-"}</td>
-                  <td style={tdStyle}>{r.formattedScheduleTime || "-"}</td>
-                  <td style={tdStyle}>{r.formattedEstimatedTime || "-"}</td>
-                  <td style={tdStyle}>{r.gatenumber || "-"}</td>
-                  <td style={tdStyle}>{r.terminalid || "-"}</td>
-                  <td style={tdStyle}>{r.masterflightid || "-"}</td>
-                  <td style={tdStyle}>{r.codeshare || "-"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+                    <td
+                      style={{
+                        ...tdStyle,
+                        color: getStatusColor(r),
+                        fontWeight: 700,
+                      }}
+                    >
+                      {getComputedStatus(r)}
+                    </td>
+                    <td style={tdStyle}>{getFlightDisplay(r)}</td>
+                    <td style={tdStyle}>{r.departureCode || "-"}</td>
+                    <td style={tdStyle}>{r.departureName || "-"}</td>
+                    <td style={tdStyle}>{r.arrivalCode || "-"}</td>
+                    <td style={tdStyle}>{r.arrivalName || "-"}</td>
+                    <td style={tdStyle}>{r.formattedScheduleTime || "-"}</td>
+                    <td style={tdStyle}>{r.formattedEstimatedTime || "-"}</td>
+                    <td style={tdStyle}>{r.gatenumber || "-"}</td>
+                    <td style={tdStyle}>{r.terminalid || "-"}</td>
+                    <td style={tdStyle}>{r.masterflightid || "-"}</td>
+                    <td style={tdStyle}>{r.codeshare || "-"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+
+        {fixed && (
+          <FixedResultsTable
+            rows={rows}
+            expandedKeys={expandedDetailKeys}
+            onToggleDetail={handleToggleDetail}
+          />
+        )}
 
         {!loading && !error && rows.length === 0 && (
           <div style={{ marginTop: 30, color: "#9fb3c8" }}>
@@ -903,110 +1093,127 @@ export default function FlightsPage() {
   );
 }
 
-const thStyle: React.CSSProperties = {
+const thStyle: CSSProperties = {
+  borderBottom: "1px solid #334155",
   padding: "12px 10px",
   textAlign: "left",
-  borderBottom: "1px solid #333",
+  fontSize: 14,
+  color: "#e2e8f0",
   whiteSpace: "nowrap",
 };
 
-const tdStyle: React.CSSProperties = {
+const tdStyle: CSSProperties = {
+  borderBottom: "1px solid #1f2937",
   padding: "12px 10px",
+  fontSize: 14,
+  verticalAlign: "top",
   whiteSpace: "nowrap",
 };
 
-const detailThStyle: React.CSSProperties = {
-  padding: "12px 14px",
+const detailThStyle: CSSProperties = {
+  borderBottom: "1px solid #334155",
+  padding: "10px 12px",
   textAlign: "left",
-  borderBottom: "1px solid #2b4269",
+  fontSize: 13,
+  color: "#e2e8f0",
   whiteSpace: "nowrap",
 };
 
-const detailTdStyle: React.CSSProperties = {
-  padding: "12px 14px",
+const detailTdStyle: CSSProperties = {
+  borderBottom: "1px solid #22314e",
+  padding: "10px 12px",
+  fontSize: 13,
+  color: "#e5edf7",
+};
+
+const detailTdLabelStyle: CSSProperties = {
+  ...detailTdStyle,
+  width: 180,
+  color: "#a7b7ce",
+  fontWeight: 700,
   whiteSpace: "nowrap",
 };
 
-const dateInputStyle: React.CSSProperties = {
-  padding: 10,
+const dateInputStyle: CSSProperties = {
+  padding: "10px 12px",
   background: "#111",
   border: "1px solid #444",
   borderRadius: 6,
   color: "white",
+  fontSize: 14,
 };
 
-const primaryBtn: React.CSSProperties = {
-  padding: "10px 18px",
-  background: "#ffffff",
-  color: "#111111",
-  border: "none",
-  borderRadius: 4,
-  cursor: "pointer",
-  fontWeight: 700,
-};
-
-const refreshBtn: React.CSSProperties = {
+const primaryBtn: CSSProperties = {
   padding: "10px 18px",
   background: "#2563eb",
-  color: "#ffffff",
+  color: "white",
   border: "none",
-  borderRadius: 4,
+  borderRadius: 6,
   cursor: "pointer",
   fontWeight: 700,
 };
 
-const fixedOnBtn: React.CSSProperties = {
+const fixedOnBtn: CSSProperties = {
   padding: "10px 18px",
-  background: "#16a34a",
-  color: "#ffffff",
+  background: "#facc15",
+  color: "#111827",
   border: "none",
-  borderRadius: 4,
+  borderRadius: 6,
   cursor: "pointer",
-  fontWeight: 700,
+  fontWeight: 800,
 };
 
-const fixedOffBtn: React.CSSProperties = {
+const fixedOffBtn: CSSProperties = {
   padding: "10px 18px",
-  background: "#ffffff",
-  color: "#111111",
+  background: "#334155",
+  color: "white",
   border: "none",
-  borderRadius: 4,
+  borderRadius: 6,
   cursor: "pointer",
   fontWeight: 700,
 };
 
-const badgeBase: React.CSSProperties = {
-  display: "inline-block",
+const refreshBtn: CSSProperties = {
+  width: "100%",
+  padding: "10px 12px",
+  background: "#2563eb",
+  color: "white",
+  border: "none",
+  borderRadius: 6,
+  cursor: "pointer",
+  fontWeight: 700,
+};
+
+const badgeBase: CSSProperties = {
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
   padding: "4px 8px",
-  borderRadius: 999,
+  borderRadius: 9999,
   fontSize: 12,
   fontWeight: 700,
 };
 
-const badgeOrange: React.CSSProperties = {
+const badgeOrange: CSSProperties = {
   ...badgeBase,
   background: "rgba(245, 158, 11, 0.18)",
-  color: "#f59e0b",
-  border: "1px solid rgba(245, 158, 11, 0.35)",
+  color: "#fbbf24",
 };
 
-const badgePurple: React.CSSProperties = {
+const badgePurple: CSSProperties = {
   ...badgeBase,
   background: "rgba(168, 85, 247, 0.18)",
   color: "#c084fc",
-  border: "1px solid rgba(168, 85, 247, 0.35)",
 };
 
-const badgeRed: React.CSSProperties = {
+const badgeRed: CSSProperties = {
   ...badgeBase,
   background: "rgba(239, 68, 68, 0.18)",
   color: "#f87171",
-  border: "1px solid rgba(239, 68, 68, 0.35)",
 };
 
-const badgeNormal: React.CSSProperties = {
+const badgeNormal: CSSProperties = {
   ...badgeBase,
   background: "rgba(148, 163, 184, 0.16)",
   color: "#cbd5e1",
-  border: "1px solid rgba(148, 163, 184, 0.28)",
 };

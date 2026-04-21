@@ -44,7 +44,7 @@ type MonitorRoom = {
   rows: FlightRow[];
 };
 
-const STORAGE_KEY = "cargo_ops_monitor_rooms_v4";
+const STORAGE_KEY = "cargo_ops_monitor_rooms_v5";
 
 function toDateTimeLocalString(date: Date) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
@@ -97,42 +97,92 @@ function parseFlightTime(row: FlightRow): Date | null {
 
   if (!raw) return null;
 
-  let normalized = raw.trim();
+  const normalized = raw
+    .trim()
+    .replace(/\./g, "-")
+    .replace(/\//g, "-")
+    .replace("T", " ");
 
-  normalized = normalized.replace(/\./g, "-");
-  normalized = normalized.replace(/\//g, "-");
-  normalized = normalized.replace("T", " ");
+  const direct = new Date(normalized);
+  if (!Number.isNaN(direct.getTime())) return direct;
 
-  const date = new Date(normalized);
-  if (!Number.isNaN(date.getTime())) return date;
+  const compactMatch = normalized.match(
+    /^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/
+  );
+  if (compactMatch) {
+    const [, y, m, d, hh, mm, ss] = compactMatch;
+    return new Date(
+      Number(y),
+      Number(m) - 1,
+      Number(d),
+      Number(hh),
+      Number(mm),
+      Number(ss || "0")
+    );
+  }
 
   return null;
 }
 
+function getRemarkStatus(row: FlightRow): string {
+  return `${row.status || ""} ${row.remark || ""}`.trim().toUpperCase();
+}
+
 function getComputedStatus(row: FlightRow) {
-  if (row.canceled) return "결항";
+  const remarkStatus = getRemarkStatus(row);
+
+  if (row.canceled || remarkStatus.includes("CANCEL")) return "결항";
   if (row.gateChanged) return "게이트 변경";
 
-  if (row.delay) {
-    if (row.status === "도착") return "도착(지연)";
-    if (row.status === "출발") return "출발(지연)";
+  if (
+    remarkStatus.includes("DELAY") ||
+    remarkStatus.includes("지연") ||
+    row.delay
+  ) {
+    if (
+      remarkStatus.includes("ARRIV") ||
+      remarkStatus.includes("도착") ||
+      row.status === "도착"
+    ) {
+      return "도착(지연)";
+    }
+    if (
+      remarkStatus.includes("DEPAR") ||
+      remarkStatus.includes("출발") ||
+      row.status === "출발"
+    ) {
+      return "출발(지연)";
+    }
     return "지연";
   }
 
-  if (row.status === "출발") return "출발";
-  if (row.status === "도착") return "도착";
+  if (
+    row.status === "출발" ||
+    remarkStatus.includes("DEPART") ||
+    remarkStatus.includes("DEP") ||
+    remarkStatus.includes("출발")
+  ) {
+    return "출발";
+  }
 
-  // fallback: status가 비어있으면 시간 기준으로 추정
+  if (
+    row.status === "도착" ||
+    remarkStatus.includes("ARRIV") ||
+    remarkStatus.includes("ARR") ||
+    remarkStatus.includes("도착")
+  ) {
+    return "도착";
+  }
+
   const dt = parseFlightTime(row);
   const now = new Date();
 
   if (dt && dt.getTime() <= now.getTime()) {
-    if ((row.departureCode || "").toUpperCase() === "ICN") {
-      return "출발";
-    }
-    if ((row.arrivalCode || "").toUpperCase() === "ICN") {
-      return "도착";
-    }
+    const dep = (row.departureCode || "").toUpperCase();
+    const arr = (row.arrivalCode || "").toUpperCase();
+
+    if (dep === "ICN") return "출발";
+    if (arr === "ICN") return "도착";
   }
 
   return "-";
@@ -167,6 +217,16 @@ function getRowBackground(row: FlightRow) {
   if (status === "출발") return "rgba(239, 68, 68, 0.06)";
   if (status === "도착") return "rgba(59, 130, 246, 0.06)";
   return "transparent";
+}
+
+function getChangedDateTime(row: FlightRow) {
+  return (
+    row.formattedEstimatedTime ||
+    row.estimatedDateTime ||
+    row.formattedScheduleTime ||
+    row.scheduleDateTime ||
+    "-"
+  );
 }
 
 export default function FlightsPage() {
@@ -658,6 +718,7 @@ export default function FlightsPage() {
                 gap: 20,
                 alignItems: "flex-start",
                 flexWrap: "wrap",
+                marginBottom: 18,
               }}
             >
               <div>
@@ -706,6 +767,59 @@ export default function FlightsPage() {
                 <button onClick={refreshSelectedRoom} disabled={loading} style={refreshBtn}>
                   선택된 Monitor 다시 조회
                 </button>
+              </div>
+            </div>
+
+            <div style={{ marginTop: 8 }}>
+              <div style={{ fontWeight: 700, marginBottom: 10 }}>Monitor 상세 목록</div>
+              <div style={{ overflowX: "auto" }}>
+                <table
+                  style={{
+                    width: "100%",
+                    borderCollapse: "collapse",
+                    minWidth: 700,
+                  }}
+                >
+                  <thead>
+                    <tr style={{ background: "#18263f" }}>
+                      <th style={detailThStyle}>편명</th>
+                      <th style={detailThStyle}>현황</th>
+                      <th style={detailThStyle}>변경일시</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {selectedRoom.rows.length === 0 && (
+                      <tr>
+                        <td style={detailTdStyle} colSpan={3}>
+                          저장된 상세 데이터가 없습니다.
+                        </td>
+                      </tr>
+                    )}
+                    {selectedRoom.rows.map((row, idx) => (
+                      <tr
+                        key={`${row.flightId || row.flightNo || idx}-${idx}`}
+                        style={{
+                          borderBottom: "1px solid #2b4269",
+                          background: getRowBackground(row),
+                        }}
+                      >
+                        <td style={detailTdStyle}>
+                          {row.flightId || row.flightNo || "-"}
+                        </td>
+                        <td
+                          style={{
+                            ...detailTdStyle,
+                            color: getStatusColor(row),
+                            fontWeight: 700,
+                          }}
+                        >
+                          {getComputedStatus(row)}
+                        </td>
+                        <td style={detailTdStyle}>{getChangedDateTime(row)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           </div>
@@ -792,6 +906,18 @@ const thStyle: React.CSSProperties = {
 
 const tdStyle: React.CSSProperties = {
   padding: "12px 10px",
+  whiteSpace: "nowrap",
+};
+
+const detailThStyle: React.CSSProperties = {
+  padding: "12px 14px",
+  textAlign: "left",
+  borderBottom: "1px solid #2b4269",
+  whiteSpace: "nowrap",
+};
+
+const detailTdStyle: React.CSSProperties = {
+  padding: "12px 14px",
   whiteSpace: "nowrap",
 };
 

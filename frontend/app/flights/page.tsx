@@ -323,7 +323,7 @@ function FixedResultsTable({
         style={{
           width: "100%",
           borderCollapse: "collapse",
-          minWidth: 980,
+          minWidth: 900,
           background: "#081427",
           border: "1px solid #22314e",
         }}
@@ -336,14 +336,13 @@ function FixedResultsTable({
             <th style={thStyle}>도착</th>
             <th style={thStyle}>변경일시</th>
             <th style={thStyle}>게이트</th>
-            <th style={thStyle}>등록기호</th>
             <th style={thStyle}>D</th>
           </tr>
         </thead>
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td style={tdStyle} colSpan={8}>
+              <td style={tdStyle} colSpan={7}>
                 조회 결과가 없습니다.
               </td>
             </tr>
@@ -378,7 +377,6 @@ function FixedResultsTable({
                   <td style={tdStyle}>{row.arrivalCode || "-"}</td>
                   <td style={tdStyle}>{getChangedDateTime(row)}</td>
                   <td style={tdStyle}>{row.gatenumber || "-"}</td>
-                  <td style={tdStyle}>{getRegistrationNo(row)}</td>
                   <td style={tdStyle}>
                     <DetailToggleButton
                       expanded={expanded}
@@ -389,7 +387,7 @@ function FixedResultsTable({
 
                 {expanded && (
                   <tr style={{ background: "#0c1a31", borderBottom: "1px solid #2b4269" }}>
-                    <td colSpan={8} style={{ padding: 14 }}>
+                    <td colSpan={7} style={{ padding: 14 }}>
                       <table
                         style={{
                           width: "100%",
@@ -903,7 +901,7 @@ export default function FlightsPage() {
 
         {fixed && (
           <div style={{ marginTop: 6, color: "#facc15", fontSize: 14 }}>
-            FIXED 상태: 기본 7개 정보만 표시되며, D를 눌러 상세 12개 정보를 확인합니다.
+            FIXED 상태: 기본 6개 정보만 표시되며, D를 눌러 상세 12개 정보를 확인합니다.
           </div>
         )}
 

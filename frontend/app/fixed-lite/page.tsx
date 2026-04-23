@@ -51,6 +51,7 @@ type WidgetSummaryItem = {
   departureCode: string;
   arrivalCode: string;
   displayTime: string;
+  gate: string;
 };
 
 type WidgetSummaryResponse = {
@@ -308,7 +309,7 @@ export default function FixedLitePage() {
           <div style={{ color: "#b8c7db", fontSize: 13, lineHeight: 1.5 }}>
             아이폰 홈 화면에 추가해서 빠르게 여는 전용 화면입니다.
             <br />
-            편명 / 현황 / 출발코드 / 도착코드 / 예정일시만 간단히 표시합니다.
+            편명 / 현황 / 출발코드 / 도착코드 / 예정일시 / 주기장만 간단히 표시합니다.
           </div>
         </section>
 
@@ -531,7 +532,7 @@ export default function FixedLitePage() {
 
               {summary?.items.map((item) => (
                 <div
-                  key={`${item.flight}-${item.departureCode}-${item.arrivalCode}-${item.displayTime}`}
+                  key={`${item.flight}-${item.departureCode}-${item.arrivalCode}-${item.displayTime}-${item.gate}`}
                   style={{
                     background: "#091326",
                     border: "1px solid #1f2c43",
@@ -581,6 +582,7 @@ export default function FixedLitePage() {
                       gridTemplateColumns: "1fr auto",
                       gap: 8,
                       alignItems: "center",
+                      marginBottom: 8,
                     }}
                   >
                     <div
@@ -601,6 +603,29 @@ export default function FixedLitePage() {
                       }}
                     >
                       {item.displayTime}
+                    </div>
+                  </div>
+
+                  <div
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
+                    <div style={{ color: "#92a7c5", fontSize: 12 }}>
+                      주기장 / 게이트
+                    </div>
+                    <div
+                      style={{
+                        fontSize: 14,
+                        fontWeight: 800,
+                        color: "white",
+                        fontVariantNumeric: "tabular-nums",
+                      }}
+                    >
+                      {item.gate || "-"}
                     </div>
                   </div>
                 </div>

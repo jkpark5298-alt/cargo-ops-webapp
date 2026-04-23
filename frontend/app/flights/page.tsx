@@ -689,6 +689,10 @@ export default function FlightsPage() {
     [selectedRoom]
   );
 
+  const selectedRoomFixedLiteHref = selectedRoom
+    ? `/fixed-lite?roomId=${encodeURIComponent(selectedRoom.id)}`
+    : "/fixed-lite";
+
   return (
     <div
       style={{
@@ -992,9 +996,19 @@ export default function FlightsPage() {
                       0 && <span style={badgeNormal}>이상 없음</span>}
                 </div>
 
-                <button onClick={refreshSelectedRoom} disabled={loading} style={refreshBtn}>
-                  선택된 Monitor 다시 조회
-                </button>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <button onClick={refreshSelectedRoom} disabled={loading} style={refreshBtn}>
+                    선택된 Monitor 다시 조회
+                  </button>
+
+                  <a
+                    href={selectedRoomFixedLiteHref}
+                    style={fixedLiteLinkBtn}
+                    title="아이폰용 FIXED Lite 화면 열기"
+                  >
+                    FIXED Lite 열기
+                  </a>
+                </div>
               </div>
             </div>
           </div>
@@ -1172,13 +1186,28 @@ const fixedOffBtn: CSSProperties = {
 };
 
 const refreshBtn: CSSProperties = {
-  width: "100%",
+  flex: 1,
+  minWidth: 180,
   padding: "10px 12px",
   background: "#2563eb",
   color: "white",
   border: "none",
   borderRadius: 6,
   cursor: "pointer",
+  fontWeight: 700,
+};
+
+const fixedLiteLinkBtn: CSSProperties = {
+  flex: 1,
+  minWidth: 160,
+  display: "inline-flex",
+  alignItems: "center",
+  justifyContent: "center",
+  padding: "10px 12px",
+  background: "#0f766e",
+  color: "white",
+  borderRadius: 6,
+  textDecoration: "none",
   fontWeight: 700,
 };
 

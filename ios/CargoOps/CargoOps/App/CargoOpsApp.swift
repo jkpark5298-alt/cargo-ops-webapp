@@ -25,12 +25,7 @@ private struct RootContainerView: View {
             Group {
                 switch currentRoute {
                 case .fixedRoom(let roomId):
-                    FixedRoomPlaceholderView(
-                        roomId: roomId,
-                        onResetRoute: {
-                            currentRoute = nil
-                        }
-                    )
+                    FixedRoomView(roomId: roomId)
 
                 case .none:
                     HomePlaceholderView()
@@ -53,50 +48,11 @@ private struct HomePlaceholderView: View {
                 .font(.title2)
                 .fontWeight(.bold)
 
-            Text("다음 단계에서 FIXED ROOM 관리 화면을 연결합니다.")
+            Text("위젯 또는 FIXED ROOM 화면에서 진입하면 해당 편명 관리 화면이 열립니다.")
                 .font(.body)
                 .foregroundStyle(.secondary)
                 .multilineTextAlignment(.center)
                 .padding(.horizontal, 24)
-        }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .background(Color(.systemBackground))
-    }
-}
-
-private struct FixedRoomPlaceholderView: View {
-    let roomId: String
-    let onResetRoute: () -> Void
-
-    var body: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "pin.fill")
-                .font(.system(size: 36))
-                .foregroundStyle(.orange)
-
-            Text("FIXED ROOM 진입")
-                .font(.title3)
-                .fontWeight(.bold)
-
-            Text("roomId")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-
-            Text(roomId)
-                .font(.body.monospaced())
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
-
-            Text("다음 단계에서 이 화면을 실제 FIXED ROOM 관리 화면으로 교체합니다.")
-                .font(.body)
-                .foregroundStyle(.secondary)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 24)
-
-            Button("홈으로") {
-                onResetRoute()
-            }
-            .buttonStyle(.borderedProminent)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         .background(Color(.systemBackground))

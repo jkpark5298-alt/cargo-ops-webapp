@@ -119,6 +119,50 @@ function roomButtonStyle(active: boolean): CSSProperties {
   };
 }
 
+function formatMonthDayTime(value: string) {
+  if (!value) return "-";
+
+  const direct = new Date(value);
+  if (!Number.isNaN(direct.getTime())) {
+    return new Intl.DateTimeFormat("ko-KR", {
+      month: "2-digit",
+      day: "2-digit",
+      hour: "2-digit",
+      minute: "2-digit",
+      hour12: false,
+    }).format(direct);
+  }
+
+  const normalized = value.replace("T", " ");
+  const match = normalized.match(
+    /^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/
+  );
+
+  if (match) {
+    const [, y, m, d, hh, mm, ss] = match;
+    const parsed = new Date(
+      Number(y),
+      Number(m) - 1,
+      Number(d),
+      Number(hh),
+      Number(mm),
+      Number(ss || "0")
+    );
+
+    if (!Number.isNaN(parsed.getTime())) {
+      return new Intl.DateTimeFormat("ko-KR", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(parsed);
+    }
+  }
+
+  return value;
+}
+
 export default function FixedLitePage() {
   const [roomIdFromQuery, setRoomIdFromQuery] = useState("");
   const [rooms, setRooms] = useState<MonitorRoom[]>([]);
@@ -261,6 +305,8 @@ export default function FixedLitePage() {
     if (!date) return "-";
 
     return new Intl.DateTimeFormat("ko-KR", {
+      month: "2-digit",
+      day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,
@@ -455,7 +501,7 @@ export default function FixedLitePage() {
                     위젯 대체 갱신 시각
                   </div>
                   <div style={{ fontWeight: 800, fontSize: 15 }}>
-                    {summary?.updatedAt || "-"}
+                    {summary?.updatedAt ? formatMonthDayTime(summary.updatedAt) : "-"}
                   </div>
                 </div>
 

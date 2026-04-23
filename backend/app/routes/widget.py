@@ -166,6 +166,13 @@ def _dedupe_key(row: Dict[str, Any]) -> Tuple[str, str, str]:
     return (flight, departure, arrival)
 
 
+def _extract_gate(row: Dict[str, Any]) -> str:
+    gate = str(row.get("gatenumber") or "").strip()
+    if gate:
+        return gate
+    return "-"
+
+
 def _build_widget_items(rows: List[Dict[str, Any]], limit: int) -> List[Dict[str, str]]:
     sorted_rows = sorted(rows, key=_get_sort_key)
 
@@ -187,6 +194,7 @@ def _build_widget_items(rows: List[Dict[str, Any]], limit: int) -> List[Dict[str
                 "departureCode": str(row.get("departureCode") or "-"),
                 "arrivalCode": str(row.get("arrivalCode") or "-"),
                 "displayTime": _extract_display_time(row),
+                "gate": _extract_gate(row),
             }
         )
 

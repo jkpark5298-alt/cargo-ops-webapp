@@ -159,12 +159,27 @@ def _get_sort_key(row: Dict[str, Any]) -> Tuple[int, datetime, str]:
     return (0, dt, str(row.get("flightId", "") or ""))
 
 
+def _dedupe_key(row: Dict[str, Any]) -> Tuple[str, str, str]:
+    flight = str(row.get("flightId") or row.get("flightNo") or "-").strip().upper()
+    departure = str(row.get("departureCode") or "-").strip().upper()
+    arrival = str(row.get("arrivalCode") or "-").strip().upper()
+    return (flight, departure, arrival)
+
+
 def _build_widget_items(rows: List[Dict[str, Any]], limit: int) -> List[Dict[str, str]]:
     sorted_rows = sorted(rows, key=_get_sort_key)
 
     items: List[Dict[str, str]] = []
+    seen_keys = set()
 
-    for row in sorted_rows[:limit]:
+    for row in sorted_rows:
+        dedupe_key = _dedupe_key(row)
+
+        if dedupe_key in seen_keys:
+            continue
+
+        seen_keys.add(dedupe_key)
+
         items.append(
             {
                 "flight": str(row.get("flightId") or row.get("flightNo") or "-"),
@@ -174,6 +189,9 @@ def _build_widget_items(rows: List[Dict[str, Any]], limit: int) -> List[Dict[str
                 "displayTime": _extract_display_time(row),
             }
         )
+
+        if len(items) >= limit:
+            break
 
     return items
 

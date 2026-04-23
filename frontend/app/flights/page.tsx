@@ -462,6 +462,22 @@ export default function FlightsPage() {
 
     const params = new URLSearchParams(window.location.search);
     const q = params.get("flight");
+    const roomId = params.get("roomId");
+
+    if (roomId) {
+      const foundRoom = savedRooms.find((room) => room.id === roomId);
+      if (foundRoom) {
+        setSelectedRoomId(foundRoom.id);
+        setInput(foundRoom.flightsInput);
+        setStartDateTime(foundRoom.startDateTime);
+        setEndDateTime(foundRoom.endDateTime);
+        setFixed(foundRoom.fixed);
+        setLastFetchedAt(foundRoom.lastFetchedAt);
+        setRows(foundRoom.rows);
+        setExpandedDetailKeys({});
+        return;
+      }
+    }
 
     if (q) {
       const upper = q.toUpperCase();

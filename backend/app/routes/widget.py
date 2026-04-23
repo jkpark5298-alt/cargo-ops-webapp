@@ -69,6 +69,36 @@ def _parse_compact_datetime(value: str) -> Optional[datetime]:
     return None
 
 
+def _parse_flexible_datetime(value: str) -> Optional[datetime]:
+    if not value:
+        return None
+
+    value = str(value).strip()
+    if not value or value == "-":
+        return None
+
+    parsed = _parse_compact_datetime(value)
+    if parsed:
+        return parsed
+
+    candidates = [
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y/%m/%d %H:%M",
+        "%Y/%m/%d %H:%M:%S",
+    ]
+
+    normalized = value.replace("T", " ")
+
+    for fmt in candidates:
+        try:
+            return datetime.strptime(normalized, fmt)
+        except ValueError:
+            continue
+
+    return None
+
+
 def _get_remark_status(row: Dict[str, Any]) -> str:
     status = str(row.get("status", "") or "").strip()
     remark = str(row.get("remark", "") or "").strip()
@@ -138,12 +168,9 @@ def _extract_display_time(row: Dict[str, Any]) -> str:
     if not value or value == "-":
         return "-"
 
-    if len(value) >= 16:
-        return value[-5:]
-
-    parsed = _parse_compact_datetime(value)
+    parsed = _parse_flexible_datetime(value)
     if parsed:
-        return parsed.strftime("%H:%M")
+        return parsed.strftime("%m/%d %H:%M")
 
     return value
 

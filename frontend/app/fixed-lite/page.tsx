@@ -1,6 +1,13 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import {
+  Suspense,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+  type CSSProperties,
+} from "react";
 import { useSearchParams } from "next/navigation";
 
 const BACKEND_URL =
@@ -119,7 +126,53 @@ function roomButtonStyle(active: boolean): CSSProperties {
   };
 }
 
-export default function FixedLitePage() {
+function FixedLiteFallback() {
+  return (
+    <div
+      style={{
+        minHeight: "100dvh",
+        background: "#07152b",
+        color: "white",
+        padding: "16px 14px 28px",
+        fontFamily:
+          "Inter, Apple SD Gothic Neo, SF Pro Display, Segoe UI, sans-serif",
+      }}
+    >
+      <div
+        style={{
+          maxWidth: 560,
+          margin: "0 auto",
+          display: "flex",
+          flexDirection: "column",
+          gap: 14,
+        }}
+      >
+        <section
+          style={{
+            background: "#0a1528",
+            border: "1px solid #22314e",
+            borderRadius: 16,
+            padding: 16,
+          }}
+        >
+          <div
+            style={{
+              fontSize: 22,
+              fontWeight: 800,
+              marginBottom: 6,
+              letterSpacing: -0.3,
+            }}
+          >
+            FIXED Lite
+          </div>
+          <div style={{ color: "#b8c7db", fontSize: 14 }}>불러오는 중...</div>
+        </section>
+      </div>
+    </div>
+  );
+}
+
+function FixedLiteContent() {
   const searchParams = useSearchParams();
   const roomIdFromQuery = searchParams.get("roomId") || "";
 
@@ -610,5 +663,13 @@ export default function FixedLitePage() {
         )}
       </div>
     </div>
+  );
+}
+
+export default function FixedLitePage() {
+  return (
+    <Suspense fallback={<FixedLiteFallback />}>
+      <FixedLiteContent />
+    </Suspense>
   );
 }

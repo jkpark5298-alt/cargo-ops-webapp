@@ -135,6 +135,10 @@ export default function FixedLitePage() {
     [fixedRooms, selectedRoomId]
   );
 
+  const backToFlightsHref = selectedRoomId
+    ? `/flights?roomId=${encodeURIComponent(selectedRoomId)}`
+    : "/flights";
+
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -381,6 +385,7 @@ export default function FixedLitePage() {
                   alignItems: "flex-start",
                   gap: 12,
                   marginBottom: 14,
+                  flexWrap: "wrap",
                 }}
               >
                 <div>
@@ -392,22 +397,42 @@ export default function FixedLitePage() {
                   </div>
                 </div>
 
-                <button
-                  onClick={() => void fetchSummary(selectedRoom)}
-                  disabled={loading}
-                  style={{
-                    border: "none",
-                    background: "#2563eb",
-                    color: "white",
-                    borderRadius: 10,
-                    padding: "10px 14px",
-                    fontWeight: 800,
-                    cursor: "pointer",
-                    minWidth: 96,
-                  }}
-                >
-                  {loading ? "조회중..." : "다시 조회"}
-                </button>
+                <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+                  <button
+                    onClick={() => void fetchSummary(selectedRoom)}
+                    disabled={loading}
+                    style={{
+                      border: "none",
+                      background: "#2563eb",
+                      color: "white",
+                      borderRadius: 10,
+                      padding: "10px 14px",
+                      fontWeight: 800,
+                      cursor: "pointer",
+                      minWidth: 96,
+                    }}
+                  >
+                    {loading ? "조회중..." : "다시 조회"}
+                  </button>
+
+                  <a
+                    href={backToFlightsHref}
+                    style={{
+                      display: "inline-flex",
+                      alignItems: "center",
+                      justifyContent: "center",
+                      background: "#0f766e",
+                      color: "white",
+                      borderRadius: 10,
+                      padding: "10px 14px",
+                      fontWeight: 800,
+                      textDecoration: "none",
+                      minWidth: 150,
+                    }}
+                  >
+                    FIXED ROOM으로 돌아가기
+                  </a>
+                </div>
               </div>
 
               <div

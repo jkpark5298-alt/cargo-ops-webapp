@@ -1,14 +1,6 @@
 "use client";
 
-import {
-  Suspense,
-  useEffect,
-  useMemo,
-  useRef,
-  useState,
-  type CSSProperties,
-} from "react";
-import { useSearchParams } from "next/navigation";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_API_URL || "https://cargo-ops-backend.onrender.com";
@@ -126,56 +118,8 @@ function roomButtonStyle(active: boolean): CSSProperties {
   };
 }
 
-function FixedLiteFallback() {
-  return (
-    <div
-      style={{
-        minHeight: "100dvh",
-        background: "#07152b",
-        color: "white",
-        padding: "16px 14px 28px",
-        fontFamily:
-          "Inter, Apple SD Gothic Neo, SF Pro Display, Segoe UI, sans-serif",
-      }}
-    >
-      <div
-        style={{
-          maxWidth: 560,
-          margin: "0 auto",
-          display: "flex",
-          flexDirection: "column",
-          gap: 14,
-        }}
-      >
-        <section
-          style={{
-            background: "#0a1528",
-            border: "1px solid #22314e",
-            borderRadius: 16,
-            padding: 16,
-          }}
-        >
-          <div
-            style={{
-              fontSize: 22,
-              fontWeight: 800,
-              marginBottom: 6,
-              letterSpacing: -0.3,
-            }}
-          >
-            FIXED Lite
-          </div>
-          <div style={{ color: "#b8c7db", fontSize: 14 }}>불러오는 중...</div>
-        </section>
-      </div>
-    </div>
-  );
-}
-
-function FixedLiteContent() {
-  const searchParams = useSearchParams();
-  const roomIdFromQuery = searchParams.get("roomId") || "";
-
+export default function FixedLitePage() {
+  const [roomIdFromQuery, setRoomIdFromQuery] = useState("");
   const [rooms, setRooms] = useState<MonitorRoom[]>([]);
   const [selectedRoomId, setSelectedRoomId] = useState("");
   const [summary, setSummary] = useState<WidgetSummaryResponse | null>(null);
@@ -190,6 +134,13 @@ function FixedLiteContent() {
     () => fixedRooms.find((room) => room.id === selectedRoomId) || null,
     [fixedRooms, selectedRoomId]
   );
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const params = new URLSearchParams(window.location.search);
+    setRoomIdFromQuery(params.get("roomId") || "");
+  }, []);
 
   useEffect(() => {
     const savedRooms = loadRooms();
@@ -663,13 +614,5 @@ function FixedLiteContent() {
         )}
       </div>
     </div>
-  );
-}
-
-export default function FixedLitePage() {
-  return (
-    <Suspense fallback={<FixedLiteFallback />}>
-      <FixedLiteContent />
-    </Suspense>
   );
 }

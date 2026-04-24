@@ -3,6 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_API_URL || "https://cargo-ops-backend.onrender.com";
@@ -430,6 +431,8 @@ function FragmentRow({ children }: { children: ReactNode }) {
 }
 
 export default function FlightsPage() {
+  const router = useRouter();
+
   const [input, setInput] = useState("");
   const [rows, setRows] = useState<FlightRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -816,14 +819,19 @@ export default function FlightsPage() {
     }));
   };
 
+  const openFixedLite = () => {
+    if (!selectedRoom) {
+      setError("선택된 Monitor가 없습니다.");
+      return;
+    }
+
+    router.push(`/fixed-lite?roomId=${encodeURIComponent(selectedRoom.id)}`);
+  };
+
   const selectedRoomCounts = useMemo(
     () => (selectedRoom ? getAlertCounts(selectedRoom.rows) : null),
     [selectedRoom]
   );
-
-  const selectedRoomFixedLiteHref = selectedRoom
-    ? `/fixed-lite?roomId=${encodeURIComponent(selectedRoom.id)}`
-    : "/fixed-lite";
 
   const formattedNextAutoRefreshAt = nextAutoRefreshAt
     ? new Intl.DateTimeFormat("ko-KR", {
@@ -1211,10 +1219,7 @@ export default function FlightsPage() {
                   </button>
 
                   <button
-                    onClick={() => {
-                      if (!selectedRoomFixedLiteHref) return;
-                      window.location.href = selectedRoomFixedLiteHref;
-                    }}
+                    onClick={openFixedLite}
                     style={fixedLiteLinkBtn}
                     title="아이폰용 FIXED Lite 화면 열기"
                   >

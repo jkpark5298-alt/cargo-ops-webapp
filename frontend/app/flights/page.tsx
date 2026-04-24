@@ -254,7 +254,7 @@ function getRowKey(row: FlightRow, idx: number) {
 
 function normalizeFlightsInput(rawInput: string) {
   return rawInput
-    .split(/[\s,\n]+/)
+    .split(/[\s,\n,]+/)
     .map((value) => value.trim().toUpperCase())
     .filter(Boolean)
     .map((value) => {
@@ -280,6 +280,25 @@ function buildFixedDetailRows(row: FlightRow) {
     { label: "등록기호", value: getRegistrationNo(row) },
     { label: "코드쉐어", value: row.codeshare || "-" },
   ];
+}
+
+function getDatePart(value: string) {
+  if (!value) return "";
+  if (value.includes("T")) return value.split("T")[0];
+  if (value.includes(" ")) return value.split(" ")[0];
+  return value.slice(0, 10);
+}
+
+function getTimePart(value: string) {
+  if (!value) return "00:00";
+  if (value.includes("T")) return value.split("T")[1]?.slice(0, 5) || "00:00";
+  if (value.includes(" ")) return value.split(" ")[1]?.slice(0, 5) || "00:00";
+  return "00:00";
+}
+
+function buildDateTime(datePart: string, timePart: string) {
+  if (!datePart) return "";
+  return `${datePart}T${timePart || "00:00"}`;
 }
 
 function DetailToggleButton({
@@ -515,6 +534,22 @@ export default function FlightsPage() {
     updateSelectedRoomDraft({ endDateTime: value });
   };
 
+  const handleStartDateChange = (value: string) => {
+    handleStartDateTimeChange(buildDateTime(value, getTimePart(startDateTime)));
+  };
+
+  const handleStartTimeChange = (value: string) => {
+    handleStartDateTimeChange(buildDateTime(getDatePart(startDateTime), value));
+  };
+
+  const handleEndDateChange = (value: string) => {
+    handleEndDateTimeChange(buildDateTime(value, getTimePart(endDateTime)));
+  };
+
+  const handleEndTimeChange = (value: string) => {
+    handleEndDateTimeChange(buildDateTime(getDatePart(endDateTime), value));
+  };
+
   const refreshRoomData = async (room: MonitorRoom, showLoading = true) => {
     if (showLoading) {
       setLoading(true);
@@ -540,7 +575,7 @@ export default function FlightsPage() {
       const json = await res.json();
 
       if (!res.ok || json.success === false) {
-        throw new Error(json.message || `서버 오류 (${res.status})`);
+        throw new Error(json.message || json.detail || `서버 오류 (${res.status})`);
       }
 
       const nextRows = json.data || [];
@@ -719,7 +754,7 @@ export default function FlightsPage() {
       const json = await res.json();
 
       if (!res.ok || json.success === false) {
-        throw new Error(json.message || `서버 오류 (${res.status})`);
+        throw new Error(json.message || json.detail || `서버 오류 (${res.status})`);
       }
 
       const nextRows = json.data || [];
@@ -1014,26 +1049,52 @@ export default function FlightsPage() {
           <>
             <div
               style={{
-                display: "flex",
-                gap: 14,
+                display: "grid",
+                gridTemplateColumns: "90px 180px 90px 140px",
+                gap: 12,
                 marginTop: 16,
                 alignItems: "center",
-                flexWrap: "wrap",
               }}
             >
-              <label style={{ minWidth: 50 }}>시작일</label>
+              <label>시작일</label>
               <input
-                type="datetime-local"
-                value={startDateTime}
-                onChange={(e) => handleStartDateTimeChange(e.target.value)}
+                type="date"
+                value={getDatePart(startDateTime)}
+                onChange={(e) => handleStartDateChange(e.target.value)}
                 style={dateInputStyle}
               />
 
-              <label style={{ minWidth: 50, marginLeft: 8 }}>종료일</label>
+              <label>시작시간</label>
               <input
-                type="datetime-local"
-                value={endDateTime}
-                onChange={(e) => handleEndDateTimeChange(e.target.value)}
+                type="time"
+                value={getTimePart(startDateTime)}
+                onChange={(e) => handleStartTimeChange(e.target.value)}
+                style={dateInputStyle}
+              />
+            </div>
+
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "90px 180px 90px 140px",
+                gap: 12,
+                marginTop: 12,
+                alignItems: "center",
+              }}
+            >
+              <label>종료일</label>
+              <input
+                type="date"
+                value={getDatePart(endDateTime)}
+                onChange={(e) => handleEndDateChange(e.target.value)}
+                style={dateInputStyle}
+              />
+
+              <label>종료시간</label>
+              <input
+                type="time"
+                value={getTimePart(endDateTime)}
+                onChange={(e) => handleEndTimeChange(e.target.value)}
                 style={dateInputStyle}
               />
             </div>
@@ -1150,17 +1211,25 @@ export default function FlightsPage() {
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "110px 1fr",
+                        gridTemplateColumns: "90px 1fr 90px 140px",
                         gap: 10,
                         alignItems: "center",
                         marginBottom: 10,
                       }}
                     >
-                      <label style={{ color: "#9fb3c8", fontSize: 13 }}>시작일 / 시간</label>
+                      <label style={{ color: "#9fb3c8", fontSize: 13 }}>시작일</label>
                       <input
-                        type="datetime-local"
-                        value={startDateTime}
-                        onChange={(e) => handleStartDateTimeChange(e.target.value)}
+                        type="date"
+                        value={getDatePart(startDateTime)}
+                        onChange={(e) => handleStartDateChange(e.target.value)}
+                        style={inlineDateInputStyle}
+                      />
+
+                      <label style={{ color: "#9fb3c8", fontSize: 13 }}>시작시간</label>
+                      <input
+                        type="time"
+                        value={getTimePart(startDateTime)}
+                        onChange={(e) => handleStartTimeChange(e.target.value)}
                         style={inlineDateInputStyle}
                       />
                     </div>
@@ -1168,16 +1237,24 @@ export default function FlightsPage() {
                     <div
                       style={{
                         display: "grid",
-                        gridTemplateColumns: "110px 1fr",
+                        gridTemplateColumns: "90px 1fr 90px 140px",
                         gap: 10,
                         alignItems: "center",
                       }}
                     >
-                      <label style={{ color: "#9fb3c8", fontSize: 13 }}>종료일 / 시간</label>
+                      <label style={{ color: "#9fb3c8", fontSize: 13 }}>종료일</label>
                       <input
-                        type="datetime-local"
-                        value={endDateTime}
-                        onChange={(e) => handleEndDateTimeChange(e.target.value)}
+                        type="date"
+                        value={getDatePart(endDateTime)}
+                        onChange={(e) => handleEndDateChange(e.target.value)}
+                        style={inlineDateInputStyle}
+                      />
+
+                      <label style={{ color: "#9fb3c8", fontSize: 13 }}>종료시간</label>
+                      <input
+                        type="time"
+                        value={getTimePart(endDateTime)}
+                        onChange={(e) => handleEndTimeChange(e.target.value)}
                         style={inlineDateInputStyle}
                       />
                     </div>

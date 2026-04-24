@@ -127,6 +127,28 @@ def _get_row_datetime(row: Dict[str, Any]) -> Optional[datetime]:
     return None
 
 
+def _row_matches_time_range(
+    row: Dict[str, Any],
+    start_dt: Optional[datetime],
+    end_dt: Optional[datetime],
+) -> bool:
+    if start_dt is None and end_dt is None:
+        return True
+
+    row_dt = _get_row_datetime(row)
+
+    if row_dt is None:
+        return True
+
+    if start_dt is not None and row_dt < start_dt:
+        return False
+
+    if end_dt is not None and row_dt > end_dt:
+        return False
+
+    return True
+
+
 def _get_row_sort_key(row: Dict[str, Any]):
     dt = _get_row_datetime(row)
     flight = str(row.get("flightId") or row.get("flightNo") or "")
@@ -139,19 +161,11 @@ def _get_row_sort_key(row: Dict[str, Any]):
 async def search_flights(payload: FlightQueryRequest) -> Dict[str, Any]:
     normalized_flights = _normalize_flights(payload.flights)
 
-    print("[FLIGHTS DEBUG] raw payload.flights =", payload.flights)
-    print("[FLIGHTS DEBUG] normalized_flights =", normalized_flights)
-    print("[FLIGHTS DEBUG] payload.start =", payload.start)
-    print("[FLIGHTS DEBUG] payload.end =", payload.end)
-
     if not normalized_flights:
         raise HTTPException(status_code=400, detail="조회할 편명이 없습니다.")
 
     start_dt = _parse_request_datetime(payload.start)
     end_dt = _parse_request_datetime(payload.end)
-
-    print("[FLIGHTS DEBUG] parsed start_dt =", start_dt)
-    print("[FLIGHTS DEBUG] parsed end_dt =", end_dt)
 
     if start_dt is None or end_dt is None:
         raise HTTPException(status_code=400, detail="시작일시 또는 종료일시 형식이 올바르지 않습니다.")
@@ -161,9 +175,6 @@ async def search_flights(payload: FlightQueryRequest) -> Dict[str, Any]:
 
     start_date = _extract_date(payload.start)
     end_date = _extract_date(payload.end)
-
-    print("[FLIGHTS DEBUG] extracted start_date =", start_date)
-    print("[FLIGHTS DEBUG] extracted end_date =", end_date)
 
     if not start_date or not end_date:
         raise HTTPException(status_code=400, detail="시작일 또는 종료일이 필요합니다.")
@@ -177,16 +188,15 @@ async def search_flights(payload: FlightQueryRequest) -> Dict[str, Any]:
             end_date=end_date,
         )
 
-        print("[FLIGHTS DEBUG] flight_no =", flight_no)
-        print("[FLIGHTS DEBUG] rows_count =", len(rows))
-        if rows:
-            print("[FLIGHTS DEBUG] first_row =", rows[0])
+        filtered_rows = [
+            row
+            for row in rows
+            if _row_matches_time_range(row, start_dt, end_dt)
+        ]
 
-        all_rows.extend(rows)
+        all_rows.extend(filtered_rows)
 
     all_rows.sort(key=_get_row_sort_key)
-
-    print("[FLIGHTS DEBUG] total_rows =", len(all_rows))
 
     return {
         "success": True,
@@ -195,8 +205,4 @@ async def search_flights(payload: FlightQueryRequest) -> Dict[str, Any]:
         "queriedFlights": normalized_flights,
         "start": payload.start,
         "end": payload.end,
-        "debug": {
-            "start_date_only": start_date,
-            "end_date_only": end_date,
-        },
     }

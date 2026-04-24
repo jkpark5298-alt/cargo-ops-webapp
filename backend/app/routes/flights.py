@@ -20,7 +20,7 @@ class FlightQueryRequest(BaseModel):
 def _normalize_flight_code(value: str) -> str:
     code = (value or "").strip().upper()
     if not code:
-      return ""
+        return ""
 
     if code.isdigit() and len(code) in {3, 4}:
         return f"KJ{code}"
@@ -33,7 +33,6 @@ def _normalize_flights(values: List[str]) -> List[str]:
     seen = set()
 
     for value in values:
-        # 쉼표로 한 덩어리 들어오는 경우도 방어
         for part in str(value).replace("\n", ",").replace(" ", ",").split(","):
             code = _normalize_flight_code(part)
             if not code:
@@ -140,11 +139,19 @@ def _get_row_sort_key(row: Dict[str, Any]):
 async def search_flights(payload: FlightQueryRequest) -> Dict[str, Any]:
     normalized_flights = _normalize_flights(payload.flights)
 
+    print("[DEBUG] raw payload.flights =", payload.flights)
+    print("[DEBUG] normalized_flights =", normalized_flights)
+    print("[DEBUG] payload.start =", payload.start)
+    print("[DEBUG] payload.end =", payload.end)
+
     if not normalized_flights:
         raise HTTPException(status_code=400, detail="조회할 편명이 없습니다.")
 
     start_dt = _parse_request_datetime(payload.start)
     end_dt = _parse_request_datetime(payload.end)
+
+    print("[DEBUG] parsed start_dt =", start_dt)
+    print("[DEBUG] parsed end_dt =", end_dt)
 
     if start_dt is None or end_dt is None:
         raise HTTPException(status_code=400, detail="시작일시 또는 종료일시 형식이 올바르지 않습니다.")
@@ -154,6 +161,9 @@ async def search_flights(payload: FlightQueryRequest) -> Dict[str, Any]:
 
     start_date = _extract_date(payload.start)
     end_date = _extract_date(payload.end)
+
+    print("[DEBUG] extracted start_date =", start_date)
+    print("[DEBUG] extracted end_date =", end_date)
 
     if not start_date or not end_date:
         raise HTTPException(status_code=400, detail="시작일 또는 종료일이 필요합니다.")
@@ -167,10 +177,17 @@ async def search_flights(payload: FlightQueryRequest) -> Dict[str, Any]:
             end_date=end_date,
         )
 
-        # 진단용: 시간 재필터링 제거
+        print("[DEBUG] flight_no =", flight_no)
+        print("[DEBUG] rows_count =", len(rows))
+
+        if rows:
+            print("[DEBUG] first_row =", rows[0])
+
         all_rows.extend(rows)
 
     all_rows.sort(key=_get_row_sort_key)
+
+    print("[DEBUG] total_rows =", len(all_rows))
 
     return {
         "success": True,

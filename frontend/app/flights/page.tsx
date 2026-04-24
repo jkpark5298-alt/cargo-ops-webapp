@@ -461,6 +461,8 @@ export default function FlightsPage() {
     [rooms, selectedRoomId]
   );
 
+  const isSelectedFixedRoom = Boolean(selectedRoom?.fixed);
+
   useEffect(() => {
     selectedRoomRef.current = selectedRoom;
   }, [selectedRoom]);
@@ -1000,31 +1002,45 @@ export default function FlightsPage() {
           숫자 3~4자리만 입력하면 KJ를 자동으로 붙여 조회합니다.
         </div>
 
-        <div
-          style={{
-            display: "flex",
-            gap: 14,
-            marginTop: 16,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <label style={{ minWidth: 50 }}>시작일</label>
-          <input
-            type="datetime-local"
-            value={startDateTime}
-            onChange={(e) => handleStartDateTimeChange(e.target.value)}
-            style={dateInputStyle}
-          />
+        {!isSelectedFixedRoom && (
+          <>
+            <div
+              style={{
+                display: "flex",
+                gap: 14,
+                marginTop: 16,
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              <label style={{ minWidth: 50 }}>시작일</label>
+              <input
+                type="datetime-local"
+                value={startDateTime}
+                onChange={(e) => handleStartDateTimeChange(e.target.value)}
+                style={dateInputStyle}
+              />
 
-          <label style={{ minWidth: 50, marginLeft: 8 }}>종료일</label>
-          <input
-            type="datetime-local"
-            value={endDateTime}
-            onChange={(e) => handleEndDateTimeChange(e.target.value)}
-            style={dateInputStyle}
-          />
-        </div>
+              <label style={{ minWidth: 50, marginLeft: 8 }}>종료일</label>
+              <input
+                type="datetime-local"
+                value={endDateTime}
+                onChange={(e) => handleEndDateTimeChange(e.target.value)}
+                style={dateInputStyle}
+              />
+            </div>
+
+            <div style={{ marginTop: 10, color: "#9fb3c8", fontSize: 14 }}>
+              현재 조회 범위: {currentRangeText}
+            </div>
+          </>
+        )}
+
+        {isSelectedFixedRoom && (
+          <div style={{ marginTop: 14, color: "#93c5fd", fontSize: 14 }}>
+            FIXED ROOM 선택 중입니다. 조회 기간은 아래 상세 영역에서 수정합니다.
+          </div>
+        )}
 
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button onClick={() => fetchFlights()} disabled={loading} style={primaryBtn}>
@@ -1037,10 +1053,6 @@ export default function FlightsPage() {
           >
             FIXED
           </button>
-        </div>
-
-        <div style={{ marginTop: 10, color: "#9fb3c8", fontSize: 14 }}>
-          현재 조회 범위: {currentRangeText}
         </div>
 
         {fixed && (

@@ -20,7 +20,7 @@ class FlightQueryRequest(BaseModel):
 def _normalize_flight_code(value: str) -> str:
     code = (value or "").strip().upper()
     if not code:
-        return ""
+      return ""
 
     if code.isdigit() and len(code) in {3, 4}:
         return f"KJ{code}"
@@ -33,13 +33,15 @@ def _normalize_flights(values: List[str]) -> List[str]:
     seen = set()
 
     for value in values:
-        code = _normalize_flight_code(value)
-        if not code:
-            continue
-        if code in seen:
-            continue
-        seen.add(code)
-        normalized.append(code)
+        # 쉼표로 한 덩어리 들어오는 경우도 방어
+        for part in str(value).replace("\n", ",").replace(" ", ",").split(","):
+            code = _normalize_flight_code(part)
+            if not code:
+                continue
+            if code in seen:
+                continue
+            seen.add(code)
+            normalized.append(code)
 
     return normalized
 
@@ -134,30 +136,6 @@ def _get_row_sort_key(row: Dict[str, Any]):
     return (0, dt, flight)
 
 
-def _row_matches_time_range(
-    row: Dict[str, Any],
-    start_dt: Optional[datetime],
-    end_dt: Optional[datetime],
-) -> bool:
-    if start_dt is None and end_dt is None:
-        return True
-
-    row_dt = _get_row_datetime(row)
-
-    # 시간 파싱이 안 되는 row는 일단 유지
-    # 필요하면 나중에 False로 바꿔 더 엄격하게 걸러도 됩니다.
-    if row_dt is None:
-        return True
-
-    if start_dt is not None and row_dt < start_dt:
-        return False
-
-    if end_dt is not None and row_dt > end_dt:
-        return False
-
-    return True
-
-
 @router.post("/")
 async def search_flights(payload: FlightQueryRequest) -> Dict[str, Any]:
     normalized_flights = _normalize_flights(payload.flights)
@@ -189,13 +167,8 @@ async def search_flights(payload: FlightQueryRequest) -> Dict[str, Any]:
             end_date=end_date,
         )
 
-        filtered_rows = [
-            row
-            for row in rows
-            if _row_matches_time_range(row, start_dt, end_dt)
-        ]
-
-        all_rows.extend(filtered_rows)
+        # 진단용: 시간 재필터링 제거
+        all_rows.extend(rows)
 
     all_rows.sort(key=_get_row_sort_key)
 
@@ -206,4 +179,9 @@ async def search_flights(payload: FlightQueryRequest) -> Dict[str, Any]:
         "queriedFlights": normalized_flights,
         "start": payload.start,
         "end": payload.end,
+        "debug": {
+            "time_filtering": "disabled",
+            "start_date_only": start_date,
+            "end_date_only": end_date,
+        },
     }

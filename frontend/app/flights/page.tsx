@@ -2,10 +2,12 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
 
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_API_URL || "https://cargo-ops-backend.onrender.com";
+
+const REFRESH_INTERVAL_MINUTES = 10;
 
 type FlightRow = {
   airline?: string;
@@ -438,10 +440,15 @@ export default function FlightsPage() {
 
   const [fixed, setFixed] = useState(false);
   const [lastFetchedAt, setLastFetchedAt] = useState("");
+  const [nextAutoRefreshAt, setNextAutoRefreshAt] = useState<Date | null>(null);
 
   const [rooms, setRooms] = useState<MonitorRoom[]>([]);
   const [selectedRoomId, setSelectedRoomId] = useState("");
   const [expandedDetailKeys, setExpandedDetailKeys] = useState<Record<string, boolean>>({});
+
+  const selectedRoomRef = useRef<MonitorRoom | null>(null);
+  const autoRefreshTimerRef = useRef<number | null>(null);
+  const autoRefreshLockRef = useRef(false);
 
   const currentRangeText = useMemo(() => {
     return `${startDateTime.replace("T", " ")} ~ ${endDateTime.replace("T", " ")}`;
@@ -453,6 +460,131 @@ export default function FlightsPage() {
     () => rooms.find((room) => room.id === selectedRoomId) || null,
     [rooms, selectedRoomId]
   );
+
+  useEffect(() => {
+    selectedRoomRef.current = selectedRoom;
+  }, [selectedRoom]);
+
+  const resetNextAutoRefreshAt = () => {
+    setNextAutoRefreshAt(
+      new Date(Date.now() + REFRESH_INTERVAL_MINUTES * 60 * 1000)
+    );
+  };
+
+  const clearAutoRefreshTimer = () => {
+    if (autoRefreshTimerRef.current) {
+      window.clearInterval(autoRefreshTimerRef.current);
+      autoRefreshTimerRef.current = null;
+    }
+    setNextAutoRefreshAt(null);
+  };
+
+  const updateSelectedRoomDraft = (updates: Partial<MonitorRoom>) => {
+    if (!selectedRoomId) return;
+
+    setRooms((prevRooms) => {
+      let updatedSelectedRoom: MonitorRoom | null = null;
+
+      const nextRooms = prevRooms.map((room) => {
+        if (room.id !== selectedRoomId) return room;
+        updatedSelectedRoom = { ...room, ...updates };
+        return updatedSelectedRoom;
+      });
+
+      if (updatedSelectedRoom) {
+        selectedRoomRef.current = updatedSelectedRoom;
+      }
+
+      saveRooms(nextRooms);
+      return nextRooms;
+    });
+  };
+
+  const handleStartDateTimeChange = (value: string) => {
+    setStartDateTime(value);
+    updateSelectedRoomDraft({ startDateTime: value });
+  };
+
+  const handleEndDateTimeChange = (value: string) => {
+    setEndDateTime(value);
+    updateSelectedRoomDraft({ endDateTime: value });
+  };
+
+  const refreshRoomData = async (room: MonitorRoom, showLoading = true) => {
+    if (showLoading) {
+      setLoading(true);
+    }
+
+    setError("");
+
+    try {
+      const flights = normalizeFlightsInput(room.flightsInput);
+
+      const res = await fetch(`${BACKEND_URL}/flights/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          flights,
+          start: room.startDateTime,
+          end: room.endDateTime,
+        }),
+      });
+
+      const json = await res.json();
+
+      if (!res.ok || json.success === false) {
+        throw new Error(json.message || `서버 오류 (${res.status})`);
+      }
+
+      const nextRows = json.data || [];
+      const fetchedAt = new Date().toLocaleString("ko-KR");
+      const updatedRoom: MonitorRoom = {
+        ...room,
+        rows: nextRows,
+        lastFetchedAt: fetchedAt,
+      };
+
+      setRooms((prevRooms) => {
+        const nextRooms = prevRooms.map((prevRoom) =>
+          prevRoom.id === updatedRoom.id ? updatedRoom : prevRoom
+        );
+        saveRooms(nextRooms);
+        return nextRooms;
+      });
+
+      selectedRoomRef.current = updatedRoom;
+
+      if (selectedRoomId === updatedRoom.id) {
+        setInput(updatedRoom.flightsInput);
+        setStartDateTime(updatedRoom.startDateTime);
+        setEndDateTime(updatedRoom.endDateTime);
+        setFixed(updatedRoom.fixed);
+        setRows(nextRows);
+        setLastFetchedAt(fetchedAt);
+        setExpandedDetailKeys({});
+      }
+
+      if (updatedRoom.fixed && selectedRoomId === updatedRoom.id) {
+        resetNextAutoRefreshAt();
+      }
+    } catch (e: any) {
+      setError(
+        showLoading
+          ? e.message || "조회 실패"
+          : `자동 조회 실패: ${e.message || "조회 실패"}`
+      );
+
+      if (room.fixed && selectedRoomId === room.id) {
+        resetNextAutoRefreshAt();
+      }
+    } finally {
+      if (showLoading) {
+        setLoading(false);
+      }
+    }
+  };
 
   useEffect(() => {
     const savedRooms = loadRooms();
@@ -486,6 +618,41 @@ export default function FlightsPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    clearAutoRefreshTimer();
+
+    if (!selectedRoom || !selectedRoom.fixed) {
+      return;
+    }
+
+    resetNextAutoRefreshAt();
+
+    autoRefreshTimerRef.current = window.setInterval(async () => {
+      const currentRoom = selectedRoomRef.current;
+
+      if (!currentRoom || !currentRoom.fixed) {
+        return;
+      }
+
+      if (autoRefreshLockRef.current) {
+        return;
+      }
+
+      autoRefreshLockRef.current = true;
+
+      try {
+        await refreshRoomData(currentRoom, false);
+      } finally {
+        autoRefreshLockRef.current = false;
+      }
+    }, REFRESH_INTERVAL_MINUTES * 60 * 1000);
+
+    return () => {
+      clearAutoRefreshTimer();
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedRoomId, selectedRoom?.fixed]);
 
   const persistRoom = (
     roomId: string,
@@ -577,60 +744,7 @@ export default function FlightsPage() {
 
   const refreshSelectedRoom = async () => {
     if (!selectedRoom) return;
-
-    setInput(selectedRoom.flightsInput);
-    setStartDateTime(selectedRoom.startDateTime);
-    setEndDateTime(selectedRoom.endDateTime);
-    setFixed(selectedRoom.fixed);
-
-    setLoading(true);
-    setError("");
-
-    try {
-      const flights = normalizeFlightsInput(selectedRoom.flightsInput);
-
-      const res = await fetch(`${BACKEND_URL}/flights/`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          flights,
-          start: selectedRoom.startDateTime,
-          end: selectedRoom.endDateTime,
-        }),
-      });
-
-      const json = await res.json();
-
-      if (!res.ok || json.success === false) {
-        throw new Error(json.message || `서버 오류 (${res.status})`);
-      }
-
-      const nextRows = json.data || [];
-      const fetchedAt = new Date().toLocaleString("ko-KR");
-
-      setRows(nextRows);
-      setLastFetchedAt(fetchedAt);
-      setExpandedDetailKeys({});
-
-      const nextRooms = rooms.map((room) =>
-        room.id === selectedRoom.id
-          ? {
-              ...room,
-              rows: nextRows,
-              lastFetchedAt: fetchedAt,
-            }
-          : room
-      );
-
-      setRooms(nextRooms);
-      saveRooms(nextRooms);
-    } catch (e: any) {
-      setError(e.message || "조회 실패");
-    } finally {
-      setLoading(false);
-    }
+    await refreshRoomData(selectedRoom, true);
   };
 
   const handleCreateMonitor = () => {
@@ -708,6 +822,16 @@ export default function FlightsPage() {
   const selectedRoomFixedLiteHref = selectedRoom
     ? `/fixed-lite?roomId=${encodeURIComponent(selectedRoom.id)}`
     : "/fixed-lite";
+
+  const formattedNextAutoRefreshAt = nextAutoRefreshAt
+    ? new Intl.DateTimeFormat("ko-KR", {
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        hour12: false,
+      }).format(nextAutoRefreshAt)
+    : "-";
 
   return (
     <div
@@ -889,7 +1013,7 @@ export default function FlightsPage() {
           <input
             type="datetime-local"
             value={startDateTime}
-            onChange={(e) => setStartDateTime(e.target.value)}
+            onChange={(e) => handleStartDateTimeChange(e.target.value)}
             style={dateInputStyle}
           />
 
@@ -897,7 +1021,7 @@ export default function FlightsPage() {
           <input
             type="datetime-local"
             value={endDateTime}
-            onChange={(e) => setEndDateTime(e.target.value)}
+            onChange={(e) => handleEndDateTimeChange(e.target.value)}
             style={dateInputStyle}
           />
         </div>
@@ -969,7 +1093,7 @@ export default function FlightsPage() {
                 flexWrap: "wrap",
               }}
             >
-              <div>
+              <div style={{ flex: 1, minWidth: 360 }}>
                 <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 10 }}>
                   선택된 Monitor 상세
                 </div>
@@ -980,15 +1104,72 @@ export default function FlightsPage() {
                   편명: {selectedRoom.flightsInput}
                 </div>
                 <div style={{ color: "#cbd5e1", marginBottom: 6 }}>
-                  조회 범위: {selectedRoom.startDateTime.replace("T", " ")} ~{" "}
-                  {selectedRoom.endDateTime.replace("T", " ")}
+                  조회 범위: {startDateTime.replace("T", " ")} ~ {endDateTime.replace("T", " ")}
                 </div>
                 <div style={{ color: "#cbd5e1", marginBottom: 6 }}>
                   마지막 조회: {selectedRoom.lastFetchedAt || "-"}
                 </div>
-                <div style={{ color: selectedRoom.fixed ? "#facc15" : "#cbd5e1" }}>
+                <div style={{ color: selectedRoom.fixed ? "#facc15" : "#cbd5e1", marginBottom: 12 }}>
                   상태: {selectedRoom.fixed ? "FIXED" : "일반"}
                 </div>
+
+                {selectedRoom.fixed && (
+                  <div
+                    style={{
+                      marginTop: 14,
+                      padding: 14,
+                      background: "#0a1528",
+                      border: "1px solid #28436b",
+                      borderRadius: 8,
+                    }}
+                  >
+                    <div style={{ fontWeight: 800, marginBottom: 12, color: "#e5edf7" }}>
+                      FIXED ROOM 조회 기간 수정
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "110px 1fr",
+                        gap: 10,
+                        alignItems: "center",
+                        marginBottom: 10,
+                      }}
+                    >
+                      <label style={{ color: "#9fb3c8", fontSize: 13 }}>시작일 / 시간</label>
+                      <input
+                        type="datetime-local"
+                        value={startDateTime}
+                        onChange={(e) => handleStartDateTimeChange(e.target.value)}
+                        style={inlineDateInputStyle}
+                      />
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "110px 1fr",
+                        gap: 10,
+                        alignItems: "center",
+                      }}
+                    >
+                      <label style={{ color: "#9fb3c8", fontSize: 13 }}>종료일 / 시간</label>
+                      <input
+                        type="datetime-local"
+                        value={endDateTime}
+                        onChange={(e) => handleEndDateTimeChange(e.target.value)}
+                        style={inlineDateInputStyle}
+                      />
+                    </div>
+
+                    <div style={{ color: "#93c5fd", marginTop: 12, fontSize: 13 }}>
+                      FIXED ROOM 자동 조회: {REFRESH_INTERVAL_MINUTES}분마다 적용
+                    </div>
+                    <div style={{ color: "#93c5fd", marginTop: 4, fontSize: 13 }}>
+                      다음 자동 조회 예정: {formattedNextAutoRefreshAt}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div style={{ minWidth: 260 }}>
@@ -1163,6 +1344,16 @@ const detailTdLabelStyle: CSSProperties = {
 };
 
 const dateInputStyle: CSSProperties = {
+  padding: "10px 12px",
+  background: "#111",
+  border: "1px solid #444",
+  borderRadius: 6,
+  color: "white",
+  fontSize: 14,
+};
+
+const inlineDateInputStyle: CSSProperties = {
+  width: "100%",
   padding: "10px 12px",
   background: "#111",
   border: "1px solid #444",

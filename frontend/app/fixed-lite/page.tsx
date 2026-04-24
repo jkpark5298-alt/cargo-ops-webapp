@@ -3,6 +3,7 @@
 export const dynamic = "force-dynamic";
 
 import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useRouter } from "next/navigation";
 
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_API_URL || "https://cargo-ops-backend.onrender.com";
@@ -430,6 +431,8 @@ function FragmentRow({ children }: { children: ReactNode }) {
 }
 
 export default function FlightsPage() {
+  const router = useRouter();
+
   const [input, setInput] = useState("");
   const [rows, setRows] = useState<FlightRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -460,6 +463,8 @@ export default function FlightsPage() {
     () => rooms.find((room) => room.id === selectedRoomId) || null,
     [rooms, selectedRoomId]
   );
+
+  const isSelectedFixedRoom = Boolean(selectedRoom?.fixed);
 
   useEffect(() => {
     selectedRoomRef.current = selectedRoom;
@@ -814,14 +819,19 @@ export default function FlightsPage() {
     }));
   };
 
+  const openFixedLite = () => {
+    if (!selectedRoom) {
+      setError("선택된 Monitor가 없습니다.");
+      return;
+    }
+
+    router.push(`/fixed-lite?roomId=${encodeURIComponent(selectedRoom.id)}`);
+  };
+
   const selectedRoomCounts = useMemo(
     () => (selectedRoom ? getAlertCounts(selectedRoom.rows) : null),
     [selectedRoom]
   );
-
-  const selectedRoomFixedLiteHref = selectedRoom
-    ? `/fixed-lite?roomId=${encodeURIComponent(selectedRoom.id)}`
-    : "/fixed-lite";
 
   const formattedNextAutoRefreshAt = nextAutoRefreshAt
     ? new Intl.DateTimeFormat("ko-KR", {
@@ -1000,31 +1010,45 @@ export default function FlightsPage() {
           숫자 3~4자리만 입력하면 KJ를 자동으로 붙여 조회합니다.
         </div>
 
-        <div
-          style={{
-            display: "flex",
-            gap: 14,
-            marginTop: 16,
-            alignItems: "center",
-            flexWrap: "wrap",
-          }}
-        >
-          <label style={{ minWidth: 50 }}>시작일</label>
-          <input
-            type="datetime-local"
-            value={startDateTime}
-            onChange={(e) => handleStartDateTimeChange(e.target.value)}
-            style={dateInputStyle}
-          />
+        {!isSelectedFixedRoom && (
+          <>
+            <div
+              style={{
+                display: "flex",
+                gap: 14,
+                marginTop: 16,
+                alignItems: "center",
+                flexWrap: "wrap",
+              }}
+            >
+              <label style={{ minWidth: 50 }}>시작일</label>
+              <input
+                type="datetime-local"
+                value={startDateTime}
+                onChange={(e) => handleStartDateTimeChange(e.target.value)}
+                style={dateInputStyle}
+              />
 
-          <label style={{ minWidth: 50, marginLeft: 8 }}>종료일</label>
-          <input
-            type="datetime-local"
-            value={endDateTime}
-            onChange={(e) => handleEndDateTimeChange(e.target.value)}
-            style={dateInputStyle}
-          />
-        </div>
+              <label style={{ minWidth: 50, marginLeft: 8 }}>종료일</label>
+              <input
+                type="datetime-local"
+                value={endDateTime}
+                onChange={(e) => handleEndDateTimeChange(e.target.value)}
+                style={dateInputStyle}
+              />
+            </div>
+
+            <div style={{ marginTop: 10, color: "#9fb3c8", fontSize: 14 }}>
+              현재 조회 범위: {currentRangeText}
+            </div>
+          </>
+        )}
+
+        {isSelectedFixedRoom && (
+          <div style={{ marginTop: 14, color: "#93c5fd", fontSize: 14 }}>
+            FIXED ROOM 선택 중입니다. 조회 기간은 아래 상세 영역에서 수정합니다.
+          </div>
+        )}
 
         <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
           <button onClick={() => fetchFlights()} disabled={loading} style={primaryBtn}>
@@ -1037,10 +1061,6 @@ export default function FlightsPage() {
           >
             FIXED
           </button>
-        </div>
-
-        <div style={{ marginTop: 10, color: "#9fb3c8", fontSize: 14 }}>
-          현재 조회 범위: {currentRangeText}
         </div>
 
         {fixed && (
@@ -1093,7 +1113,7 @@ export default function FlightsPage() {
                 flexWrap: "wrap",
               }}
             >
-              <div>
+              <div style={{ flex: 1, minWidth: 360 }}>
                 <div style={{ fontSize: 24, fontWeight: 800, marginBottom: 10 }}>
                   선택된 Monitor 상세
                 </div>
@@ -1109,18 +1129,66 @@ export default function FlightsPage() {
                 <div style={{ color: "#cbd5e1", marginBottom: 6 }}>
                   마지막 조회: {selectedRoom.lastFetchedAt || "-"}
                 </div>
-                <div style={{ color: selectedRoom.fixed ? "#facc15" : "#cbd5e1" }}>
+                <div style={{ color: selectedRoom.fixed ? "#facc15" : "#cbd5e1", marginBottom: 12 }}>
                   상태: {selectedRoom.fixed ? "FIXED" : "일반"}
                 </div>
+
                 {selectedRoom.fixed && (
-                  <>
-                    <div style={{ color: "#93c5fd", marginTop: 8, fontSize: 13 }}>
+                  <div
+                    style={{
+                      marginTop: 14,
+                      padding: 14,
+                      background: "#0a1528",
+                      border: "1px solid #28436b",
+                      borderRadius: 8,
+                    }}
+                  >
+                    <div style={{ fontWeight: 800, marginBottom: 12, color: "#e5edf7" }}>
+                      FIXED ROOM 조회 기간 수정
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "110px 1fr",
+                        gap: 10,
+                        alignItems: "center",
+                        marginBottom: 10,
+                      }}
+                    >
+                      <label style={{ color: "#9fb3c8", fontSize: 13 }}>시작일 / 시간</label>
+                      <input
+                        type="datetime-local"
+                        value={startDateTime}
+                        onChange={(e) => handleStartDateTimeChange(e.target.value)}
+                        style={inlineDateInputStyle}
+                      />
+                    </div>
+
+                    <div
+                      style={{
+                        display: "grid",
+                        gridTemplateColumns: "110px 1fr",
+                        gap: 10,
+                        alignItems: "center",
+                      }}
+                    >
+                      <label style={{ color: "#9fb3c8", fontSize: 13 }}>종료일 / 시간</label>
+                      <input
+                        type="datetime-local"
+                        value={endDateTime}
+                        onChange={(e) => handleEndDateTimeChange(e.target.value)}
+                        style={inlineDateInputStyle}
+                      />
+                    </div>
+
+                    <div style={{ color: "#93c5fd", marginTop: 12, fontSize: 13 }}>
                       FIXED ROOM 자동 조회: {REFRESH_INTERVAL_MINUTES}분마다 적용
                     </div>
                     <div style={{ color: "#93c5fd", marginTop: 4, fontSize: 13 }}>
                       다음 자동 조회 예정: {formattedNextAutoRefreshAt}
                     </div>
-                  </>
+                  </div>
                 )}
               </div>
 
@@ -1150,13 +1218,13 @@ export default function FlightsPage() {
                     선택된 Monitor 다시 조회
                   </button>
 
-                  <a
-                    href={selectedRoomFixedLiteHref}
+                  <button
+                    onClick={openFixedLite}
                     style={fixedLiteLinkBtn}
                     title="아이폰용 FIXED Lite 화면 열기"
                   >
                     FIXED Lite 열기
-                  </a>
+                  </button>
                 </div>
               </div>
             </div>
@@ -1304,6 +1372,16 @@ const dateInputStyle: CSSProperties = {
   fontSize: 14,
 };
 
+const inlineDateInputStyle: CSSProperties = {
+  width: "100%",
+  padding: "10px 12px",
+  background: "#111",
+  border: "1px solid #444",
+  borderRadius: 6,
+  color: "white",
+  fontSize: 14,
+};
+
 const primaryBtn: CSSProperties = {
   padding: "10px 18px",
   background: "#2563eb",
@@ -1356,8 +1434,9 @@ const fixedLiteLinkBtn: CSSProperties = {
   background: "#0f766e",
   color: "white",
   borderRadius: 6,
-  textDecoration: "none",
   fontWeight: 700,
+  border: "none",
+  cursor: "pointer",
 };
 
 const badgeBase: CSSProperties = {

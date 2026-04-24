@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
-
-from app.services.incheon_api import get_flight_data
 
 router = APIRouter()
 
@@ -17,188 +14,12 @@ class FlightQueryRequest(BaseModel):
     end: str
 
 
-def _normalize_flight_code(value: str) -> str:
-    code = (value or "").strip().upper()
-    if not code:
-        return ""
-
-    if code.isdigit() and len(code) in {3, 4}:
-        return f"KJ{code}"
-
-    return code
-
-
-def _normalize_flights(values: List[str]) -> List[str]:
-    normalized: List[str] = []
-    seen = set()
-
-    for value in values:
-        for part in str(value).replace("\n", ",").replace(" ", ",").split(","):
-            code = _normalize_flight_code(part)
-            if not code:
-                continue
-            if code in seen:
-                continue
-            seen.add(code)
-            normalized.append(code)
-
-    return normalized
-
-
-def _extract_date(value: str) -> str:
-    raw = (value or "").strip()
-    if not raw:
-        return ""
-
-    if "T" in raw:
-        return raw.split("T")[0]
-
-    if " " in raw:
-        return raw.split(" ")[0]
-
-    return raw
-
-
-def _parse_request_datetime(value: str) -> Optional[datetime]:
-    raw = (value or "").strip()
-    if not raw:
-        return None
-
-    candidates = [
-        "%Y-%m-%dT%H:%M",
-        "%Y-%m-%d %H:%M",
-        "%Y-%m-%dT%H:%M:%S",
-        "%Y-%m-%d %H:%M:%S",
-    ]
-
-    for fmt in candidates:
-        try:
-            return datetime.strptime(raw, fmt)
-        except ValueError:
-            continue
-
-    return None
-
-
-def _parse_row_datetime(value: Any) -> Optional[datetime]:
-    if value is None:
-        return None
-
-    raw = str(value).strip()
-    if not raw or raw == "-":
-        return None
-
-    raw = raw.replace(".", "-").replace("/", "-").replace("T", " ")
-
-    candidates = [
-        "%Y-%m-%d %H:%M",
-        "%Y-%m-%d %H:%M:%S",
-    ]
-
-    for fmt in candidates:
-        try:
-            return datetime.strptime(raw, fmt)
-        except ValueError:
-            continue
-
-    digits = "".join(ch for ch in raw if ch.isdigit())
-    if len(digits) == 12:
-        try:
-            return datetime.strptime(digits, "%Y%m%d%H%M")
-        except ValueError:
-            return None
-
-    return None
-
-
-def _get_row_datetime(row: Dict[str, Any]) -> Optional[datetime]:
-    candidates = [
-        row.get("formattedEstimatedTime"),
-        row.get("formattedScheduleTime"),
-        row.get("estimatedDateTime"),
-        row.get("scheduleDateTime"),
-    ]
-
-    for candidate in candidates:
-        parsed = _parse_row_datetime(candidate)
-        if parsed is not None:
-            return parsed
-
-    return None
-
-
-def _get_row_sort_key(row: Dict[str, Any]):
-    dt = _get_row_datetime(row)
-    flight = str(row.get("flightId") or row.get("flightNo") or "")
-    if dt is None:
-        return (1, datetime.max, flight)
-    return (0, dt, flight)
-
-
 @router.post("/")
 async def search_flights(payload: FlightQueryRequest) -> Dict[str, Any]:
-    normalized_flights = _normalize_flights(payload.flights)
-
-    print("[DEBUG] raw payload.flights =", payload.flights)
-    print("[DEBUG] normalized_flights =", normalized_flights)
-    print("[DEBUG] payload.start =", payload.start)
-    print("[DEBUG] payload.end =", payload.end)
-
-    if not normalized_flights:
-        raise HTTPException(status_code=400, detail="조회할 편명이 없습니다.")
-
-    start_dt = _parse_request_datetime(payload.start)
-    end_dt = _parse_request_datetime(payload.end)
-
-    print("[DEBUG] parsed start_dt =", start_dt)
-    print("[DEBUG] parsed end_dt =", end_dt)
-
-    if start_dt is None or end_dt is None:
-        raise HTTPException(status_code=400, detail="시작일시 또는 종료일시 형식이 올바르지 않습니다.")
-
-    if start_dt > end_dt:
-        raise HTTPException(status_code=400, detail="시작일시는 종료일시보다 늦을 수 없습니다.")
-
-    start_date = _extract_date(payload.start)
-    end_date = _extract_date(payload.end)
-
-    print("[DEBUG] extracted start_date =", start_date)
-    print("[DEBUG] extracted end_date =", end_date)
-
-    if not start_date or not end_date:
-        raise HTTPException(status_code=400, detail="시작일 또는 종료일이 필요합니다.")
-
-    all_rows: List[Dict[str, Any]] = []
-
-    for flight_no in normalized_flights:
-        rows = await get_flight_data(
-            flight_no=flight_no,
-            start_date=start_date,
-            end_date=end_date,
-        )
-
-        print("[DEBUG] flight_no =", flight_no)
-        print("[DEBUG] rows_count =", len(rows))
-
-        if rows:
-            print("[DEBUG] first_row =", rows[0])
-
-        all_rows.extend(rows)
-
-    all_rows.sort(key=_get_row_sort_key)
-
-    print("[DEBUG] total_rows =", len(all_rows))
-
-    return {
-        "success": True,
-        "data": all_rows,
-        "count": len(all_rows),
-        "queriedFlights": normalized_flights,
-        "start": payload.start,
-        "end": payload.end,
-        "debug": {
-            "time_filtering": "disabled",
-            "start_date_only": start_date,
-            "end_date_only": end_date,
+    raise HTTPException(
+        status_code=418,
+        detail={
+            "message": "ROUTE_ACTIVE_BACKEND_APP_ROUTES_FLIGHTS",
+            "payload": payload.model_dump(),
         },
-    }
+    )

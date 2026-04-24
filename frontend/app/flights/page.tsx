@@ -1210,13 +1210,16 @@ export default function FlightsPage() {
                     선택된 Monitor 다시 조회
                   </button>
 
-                  <a
-                    href={selectedRoomFixedLiteHref}
+                  <button
+                    onClick={() => {
+                      if (!selectedRoomFixedLiteHref) return;
+                      window.location.href = selectedRoomFixedLiteHref;
+                    }}
                     style={fixedLiteLinkBtn}
                     title="아이폰용 FIXED Lite 화면 열기"
                   >
                     FIXED Lite 열기
-                  </a>
+                  </button>
                 </div>
               </div>
             </div>
@@ -1426,8 +1429,9 @@ const fixedLiteLinkBtn: CSSProperties = {
   background: "#0f766e",
   color: "white",
   borderRadius: 6,
-  textDecoration: "none",
   fontWeight: 700,
+  border: "none",
+  cursor: "pointer",
 };
 
 const badgeBase: CSSProperties = {

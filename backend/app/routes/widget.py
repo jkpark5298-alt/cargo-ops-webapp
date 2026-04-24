@@ -9,7 +9,7 @@ from app.services.incheon_api import get_flight_data
 
 router = APIRouter()
 
-MAX_WIDGET_ITEMS = 3
+MAX_WIDGET_ITEMS = 7
 DEFAULT_REFRESH_INTERVAL_MINUTES = 10
 
 

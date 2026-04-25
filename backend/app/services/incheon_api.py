@@ -4,6 +4,11 @@ import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
 from typing import Any, Dict, List
 
+
+class IncheonApiQuotaExceededError(RuntimeError):
+    pass
+
+
 SERVICE_KEY = os.getenv("INCHEON_API_SERVICE_KEY", "").strip()
 
 BASE_URL = "https://apis.data.go.kr/B551177/StatusOfCargoFlightsDeOdp"
@@ -64,21 +69,13 @@ def _find_items(root: ET.Element) -> List[ET.Element]:
 def _parse_xml_items(xml_text: str, source_type: str) -> List[Dict[str, Any]]:
     try:
         root = ET.fromstring(xml_text)
-    except ET.ParseError as e:
-        print("[INCHEON DEBUG] XML parse error =", repr(e))
-        print("[INCHEON DEBUG] XML snippet =", xml_text[:500])
+    except ET.ParseError:
         return []
 
     result_code = _find_result_code(root)
     items = _find_items(root)
 
-    print("[INCHEON DEBUG] source_type =", source_type)
-    print("[INCHEON DEBUG] root.tag =", root.tag)
-    print("[INCHEON DEBUG] result_code =", result_code if result_code else "(empty)")
-    print("[INCHEON DEBUG] items_found =", len(items))
-
     if result_code not in {"00", "0", ""}:
-        print("[INCHEON DEBUG] non-success result_code, response snippet =", xml_text[:500])
         return []
 
     rows: List[Dict[str, Any]] = []
@@ -151,6 +148,11 @@ def _parse_xml_items(xml_text: str, source_type: str) -> List[Dict[str, Any]]:
     return rows
 
 
+def _is_quota_exceeded_response(status_code: int, body_text: str) -> bool:
+    lowered = (body_text or "").lower()
+    return status_code == 429 or "quota exceeded" in lowered or "api token quota exceeded" in lowered
+
+
 async def _fetch_one_day(
     client: httpx.AsyncClient,
     flight_no: str,
@@ -176,27 +178,23 @@ async def _fetch_one_day(
         (ARRIVALS_PATH, "arrival"),
     ]:
         url = f"{BASE_URL}{path}"
-        safe_params = {**common_params, "serviceKey": "***"}
-
-        print("[INCHEON DEBUG] request url =", url)
-        print("[INCHEON DEBUG] request params =", safe_params)
 
         try:
             res = await client.get(url, params=common_params)
-            print("[INCHEON DEBUG] status_code =", res.status_code)
+            body_text = res.text
+
+            if _is_quota_exceeded_response(res.status_code, body_text):
+                raise IncheonApiQuotaExceededError("한도 초과로 조회 불가")
 
             if res.status_code != 200:
-                print("[INCHEON DEBUG] non-200 body =", res.text[:500])
                 continue
 
-            print("[INCHEON DEBUG] response snippet =", res.text[:500])
-
-            parsed = _parse_xml_items(res.text, source_type=source_type)
-            print("[INCHEON DEBUG] parsed_count =", len(parsed))
+            parsed = _parse_xml_items(body_text, source_type=source_type)
             results.extend(parsed)
 
-        except Exception as e:
-            print("[INCHEON DEBUG] request exception =", repr(e))
+        except IncheonApiQuotaExceededError:
+            raise
+        except Exception:
             continue
 
     return results
@@ -226,19 +224,12 @@ async def get_flight_data(
     if not SERVICE_KEY:
         raise ValueError("INCHEON_API_SERVICE_KEY 환경변수가 비어 있습니다.")
 
-    print("[INCHEON DEBUG] get_flight_data flight_no =", flight_no)
-    print("[INCHEON DEBUG] get_flight_data start_date =", start_date)
-    print("[INCHEON DEBUG] get_flight_data end_date =", end_date)
-
     day_list = _date_range(start_date, end_date)
-    print("[INCHEON DEBUG] day_list =", day_list)
-
     all_rows: List[Dict[str, Any]] = []
 
     async with httpx.AsyncClient(timeout=20.0) as client:
         for day in day_list:
             rows = await _fetch_one_day(client, flight_no, day)
-            print("[INCHEON DEBUG] day =", day, "rows =", len(rows))
             all_rows.extend(rows)
 
     deduped: List[Dict[str, Any]] = []
@@ -266,5 +257,4 @@ async def get_flight_data(
         )
     )
 
-    print("[INCHEON DEBUG] deduped_count =", len(deduped))
     return deduped

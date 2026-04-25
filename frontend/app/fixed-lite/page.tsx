@@ -297,6 +297,35 @@ function formatMonthDayTime(value?: string | null) {
   return value;
 }
 
+function formatDisplayItemFromRow(flight: string, row: FlightRow): WidgetSummaryItem {
+  return {
+    flight,
+    status: getComputedStatus(row),
+    departureCode: row.departureCode || "-",
+    arrivalCode: row.arrivalCode || "-",
+    displayTime:
+      formatMonthDayTime(
+        row.formattedEstimatedTime ||
+          row.formattedScheduleTime ||
+          row.estimatedDateTime ||
+          row.scheduleDateTime ||
+          "-"
+      ) || "-",
+    gate: row.gatenumber || "-",
+  };
+}
+
+function formatFallbackDisplayItem(flight: string): WidgetSummaryItem {
+  return {
+    flight,
+    status: "-",
+    departureCode: "-",
+    arrivalCode: "-",
+    displayTime: "-",
+    gate: "-",
+  };
+}
+
 export default function FixedLitePage() {
   const [rooms, setRooms] = useState<MonitorRoom[]>([]);
   const [selectedRoomId, setSelectedRoomId] = useState("");
@@ -305,6 +334,9 @@ export default function FixedLitePage() {
   const [error, setError] = useState("");
   const [nextRefreshAt, setNextRefreshAt] = useState<Date | null>(null);
   const [completedFlightsByRoom, setCompletedFlightsByRoom] = useState<Record<string, string[]>>({});
+  const [lastKnownItemsByRoom, setLastKnownItemsByRoom] = useState<
+    Record<string, WidgetSummaryItem[]>
+  >({});
   const timerRef = useRef<number | null>(null);
 
   const fixedRooms = useMemo(() => rooms.filter((room) => room.fixed), [rooms]);
@@ -325,6 +357,28 @@ export default function FixedLitePage() {
       (flight) => !completedFromRows.has(flight) && !completedFromSummary.has(flight)
     );
   }, [selectedRoom, completedFlightsByRoom]);
+
+  const displayItemsForSelectedRoom = useMemo(() => {
+    if (!selectedRoom) return [];
+
+    const requested = normalizeFlightsInput(selectedRoom.flightsInput);
+    const latestRowMap = getLatestRowsByFlight(selectedRoom.rows);
+    const knownItemsMap = new Map(
+      (lastKnownItemsByRoom[selectedRoom.id] || []).map((item) => [item.flight, item])
+    );
+
+    return requested.map((flight) => {
+      const known = knownItemsMap.get(flight);
+      if (known) return known;
+
+      const latestRow = latestRowMap.get(flight)?.row;
+      if (latestRow) {
+        return formatDisplayItemFromRow(flight, latestRow);
+      }
+
+      return formatFallbackDisplayItem(flight);
+    });
+  }, [selectedRoom, lastKnownItemsByRoom]);
 
   const backToFlightsHref = selectedRoomId
     ? `/flights?roomId=${encodeURIComponent(selectedRoomId)}`
@@ -445,9 +499,31 @@ export default function FixedLitePage() {
         throw new Error(json.message || json.detail || "요약 조회에 실패했습니다.");
       }
 
+      setLastKnownItemsByRoom((prev) => {
+        const merged = new Map<string, WidgetSummaryItem>();
+
+        (prev[room.id] || []).forEach((item) => {
+          merged.set(item.flight, item);
+        });
+
+        json.items.forEach((item) => {
+          merged.set(item.flight, item);
+        });
+
+        return {
+          ...prev,
+          [room.id]: Array.from(merged.values()),
+        };
+      });
+
       const newlyCompleted = json.items
         .filter((item) => isFinalCompletedStatus(item.status))
         .map((item) => item.flight);
+
+      const nextCompletedSet = new Set<string>([
+        ...(completedFlightsByRoom[room.id] || []),
+        ...newlyCompleted,
+      ]);
 
       if (newlyCompleted.length > 0) {
         setCompletedFlightsByRoom((prev) => {
@@ -460,17 +536,13 @@ export default function FixedLitePage() {
         });
       }
 
-      const visibleItems = json.items.filter(
-        (item) => !isFinalCompletedStatus(item.status)
+      const nextActiveFlights = requestedFlights.filter(
+        (flight) => !completedFromRows.has(flight) && !nextCompletedSet.has(flight)
       );
 
-      setSummary({
-        ...json,
-        items: visibleItems,
-      });
-
+      setSummary(json);
       setNextRefreshAt(
-        visibleItems.length > 0
+        nextActiveFlights.length > 0
           ? new Date(Date.now() + REFRESH_INTERVAL_MINUTES * 60 * 1000)
           : null
       );
@@ -628,6 +700,9 @@ export default function FixedLitePage() {
                     마지막 저장 조회: {selectedRoom.lastFetchedAt || "-"}
                   </div>
                   <div style={{ color: "#92a7c5", fontSize: 12, marginTop: 6 }}>
+                    표시 대상: {displayItemsForSelectedRoom.length}개
+                  </div>
+                  <div style={{ color: "#92a7c5", fontSize: 12, marginTop: 2 }}>
                     자동조회 대상: {activeFlightsForSelectedRoom.length}개
                   </div>
                 </div>
@@ -719,112 +794,144 @@ export default function FixedLitePage() {
                 <div style={{ color: "#b8c7db", fontSize: 14 }}>조회중...</div>
               )}
 
-              {!error && summary && summary.items.length === 0 && (
+              {!error && displayItemsForSelectedRoom.length === 0 && (
                 <div style={{ color: "#b8c7db", fontSize: 14 }}>
-                  자동조회 대상 편명이 없습니다.
+                  표시할 편명이 없습니다.
                 </div>
               )}
 
-              {summary?.items.map((item) => (
-                <div
-                  key={`${item.flight}-${item.departureCode}-${item.arrivalCode}-${item.displayTime}-${item.gate}`}
-                  style={{
-                    background: "#091326",
-                    border: "1px solid #1f2c43",
-                    borderRadius: 14,
-                    padding: 14,
-                    marginBottom: 10,
-                  }}
-                >
+              {displayItemsForSelectedRoom.map((item) => {
+                const completed = isFinalCompletedStatus(item.status);
+
+                return (
                   <div
+                    key={`${item.flight}-${item.departureCode}-${item.arrivalCode}-${item.displayTime}-${item.gate}`}
                     style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: 8,
-                      marginBottom: 8,
+                      background: "#091326",
+                      border: "1px solid #1f2c43",
+                      borderRadius: 14,
+                      padding: 14,
+                      marginBottom: 10,
+                      opacity: completed ? 0.88 : 1,
                     }}
                   >
                     <div
                       style={{
-                        fontSize: 18,
-                        fontWeight: 900,
-                        letterSpacing: -0.2,
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: 8,
+                        marginBottom: 8,
                       }}
                     >
-                      {item.flight}
+                      <div
+                        style={{
+                          fontSize: 18,
+                          fontWeight: 900,
+                          letterSpacing: -0.2,
+                        }}
+                      >
+                        {item.flight}
+                      </div>
+
+                      <div
+                        style={{
+                          display: "flex",
+                          gap: 8,
+                          alignItems: "center",
+                          flexWrap: "wrap",
+                          justifyContent: "flex-end",
+                        }}
+                      >
+                        {completed && (
+                          <span
+                            style={{
+                              color: "#93c5fd",
+                              background: "#93c5fd22",
+                              border: "1px solid #93c5fd55",
+                              borderRadius: 999,
+                              padding: "5px 10px",
+                              fontSize: 12,
+                              fontWeight: 800,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            자동조회 제외
+                          </span>
+                        )}
+
+                        <div
+                          style={{
+                            color: statusColor(item.status),
+                            background: `${statusColor(item.status)}22`,
+                            border: `1px solid ${statusColor(item.status)}55`,
+                            borderRadius: 999,
+                            padding: "5px 10px",
+                            fontSize: 12,
+                            fontWeight: 800,
+                            whiteSpace: "nowrap",
+                          }}
+                        >
+                          {item.status}
+                        </div>
+                      </div>
                     </div>
 
                     <div
                       style={{
-                        color: statusColor(item.status),
-                        background: `${statusColor(item.status)}22`,
-                        border: `1px solid ${statusColor(item.status)}55`,
-                        borderRadius: 999,
-                        padding: "5px 10px",
-                        fontSize: 12,
-                        fontWeight: 800,
-                        whiteSpace: "nowrap",
+                        display: "grid",
+                        gridTemplateColumns: "1fr auto",
+                        gap: 8,
+                        alignItems: "center",
+                        marginBottom: 8,
                       }}
                     >
-                      {item.status}
+                      <div
+                        style={{
+                          fontSize: 16,
+                          fontWeight: 700,
+                          letterSpacing: 0.2,
+                        }}
+                      >
+                        {item.departureCode} → {item.arrivalCode}
+                      </div>
+
+                      <div
+                        style={{
+                          fontSize: 16,
+                          fontWeight: 800,
+                          fontVariantNumeric: "tabular-nums",
+                        }}
+                      >
+                        {item.displayTime}
+                      </div>
+                    </div>
+
+                    <div
+                      style={{
+                        display: "flex",
+                        justifyContent: "space-between",
+                        alignItems: "center",
+                        gap: 8,
+                      }}
+                    >
+                      <div style={{ color: "#92a7c5", fontSize: 12 }}>
+                        주기장 / 게이트
+                      </div>
+                      <div
+                        style={{
+                          fontSize: 14,
+                          fontWeight: 800,
+                          color: "white",
+                          fontVariantNumeric: "tabular-nums",
+                        }}
+                      >
+                        {item.gate || "-"}
+                      </div>
                     </div>
                   </div>
-
-                  <div
-                    style={{
-                      display: "grid",
-                      gridTemplateColumns: "1fr auto",
-                      gap: 8,
-                      alignItems: "center",
-                      marginBottom: 8,
-                    }}
-                  >
-                    <div
-                      style={{
-                        fontSize: 16,
-                        fontWeight: 700,
-                        letterSpacing: 0.2,
-                      }}
-                    >
-                      {item.departureCode} → {item.arrivalCode}
-                    </div>
-
-                    <div
-                      style={{
-                        fontSize: 16,
-                        fontWeight: 800,
-                        fontVariantNumeric: "tabular-nums",
-                      }}
-                    >
-                      {item.displayTime}
-                    </div>
-                  </div>
-
-                  <div
-                    style={{
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      gap: 8,
-                    }}
-                  >
-                    <div style={{ color: "#92a7c5", fontSize: 12 }}>
-                      주기장 / 게이트
-                    </div>
-                    <div
-                      style={{
-                        fontSize: 14,
-                        fontWeight: 800,
-                        color: "white",
-                        fontVariantNumeric: "tabular-nums",
-                      }}
-                    >
-                      {item.gate || "-"}
-                    </div>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </section>
           </>
         )}

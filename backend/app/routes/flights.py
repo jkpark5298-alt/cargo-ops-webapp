@@ -6,7 +6,10 @@ from typing import Any, Dict, List, Optional
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from app.services.incheon_api import get_flight_data
+from app.services.incheon_api import (
+    IncheonApiQuotaExceededError,
+    get_flight_data,
+)
 
 router = APIRouter()
 
@@ -181,20 +184,24 @@ async def search_flights(payload: FlightQueryRequest) -> Dict[str, Any]:
 
     all_rows: List[Dict[str, Any]] = []
 
-    for flight_no in normalized_flights:
-        rows = await get_flight_data(
-            flight_no=flight_no,
-            start_date=start_date,
-            end_date=end_date,
-        )
+    try:
+        for flight_no in normalized_flights:
+            rows = await get_flight_data(
+                flight_no=flight_no,
+                start_date=start_date,
+                end_date=end_date,
+            )
 
-        filtered_rows = [
-            row
-            for row in rows
-            if _row_matches_time_range(row, start_dt, end_dt)
-        ]
+            filtered_rows = [
+                row
+                for row in rows
+                if _row_matches_time_range(row, start_dt, end_dt)
+            ]
 
-        all_rows.extend(filtered_rows)
+            all_rows.extend(filtered_rows)
+
+    except IncheonApiQuotaExceededError:
+        raise HTTPException(status_code=429, detail="한도 초과로 조회 불가")
 
     all_rows.sort(key=_get_row_sort_key)
 

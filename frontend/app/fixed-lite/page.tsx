@@ -7,7 +7,6 @@ const BACKEND_URL =
 
 const STORAGE_KEY = "cargo_ops_monitor_rooms_v6";
 const REFRESH_INTERVAL_MINUTES = 10;
-const FIXED_LITE_MAX_ITEMS = 7;
 const COMPLETED_EXCLUDE_BUFFER_MINUTES = 10;
 
 type FlightRow = {
@@ -483,7 +482,7 @@ export default function FixedLitePage() {
       url.searchParams.set("end", room.endDateTime);
       url.searchParams.set("roomName", room.name);
       url.searchParams.set("refreshIntervalMinutes", String(REFRESH_INTERVAL_MINUTES));
-      url.searchParams.set("limit", String(FIXED_LITE_MAX_ITEMS));
+      url.searchParams.set("limit", String(activeFlights.length));
 
       const res = await fetch(url.toString(), {
         method: "GET",
@@ -609,10 +608,9 @@ export default function FixedLitePage() {
           </div>
 
           <div style={{ color: "#b8c7db", fontSize: 13, lineHeight: 1.5 }}>
-            아이폰 홈 화면에 추가해서 빠르게 여는 전용 화면입니다.
+            조회된 전체 편명은 계속 표시합니다.
             <br />
-            편명 / 현황 / 출발코드 / 도착코드 / 예정일시 / 주기장만 간단히 표시하며,
-            최대 7개까지 표시합니다.
+            자동조회는 아직 출발/도착 완료되지 않은 편명만 대상으로 합니다.
           </div>
         </section>
 

@@ -2,7 +2,7 @@
 
 export const dynamic = "force-dynamic";
 
-import { useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type CSSProperties, type ReactNode } from "react";
 import { useRouter } from "next/navigation";
 
 const BACKEND_URL =
@@ -60,7 +60,7 @@ function getDefaultStartDateTime() {
 
 function getDefaultEndDateTime() {
   const d = new Date();
-  d.setDate(d.getDate() + 1);
+  d.setHours(d.getHours() + 12);
   return toDateTimeLocalString(d);
 }
 
@@ -509,15 +509,10 @@ export default function FlightsPage() {
 
   const [fixed, setFixed] = useState(false);
   const [lastFetchedAt, setLastFetchedAt] = useState("");
-  const [nextAutoRefreshAt, setNextAutoRefreshAt] = useState<Date | null>(null);
 
   const [rooms, setRooms] = useState<MonitorRoom[]>([]);
   const [selectedRoomId, setSelectedRoomId] = useState("");
   const [expandedDetailKeys, setExpandedDetailKeys] = useState<Record<string, boolean>>({});
-
-  const selectedRoomRef = useRef<MonitorRoom | null>(null);
-  const autoRefreshTimerRef = useRef<number | null>(null);
-  const autoRefreshLockRef = useRef(false);
 
   const currentRangeText = useMemo(() => {
     return `${startDateTime.replace("T", " ")} ~ ${endDateTime.replace("T", " ")}`;
@@ -532,40 +527,13 @@ export default function FlightsPage() {
 
   const isSelectedFixedRoom = Boolean(selectedRoom?.fixed);
 
-  useEffect(() => {
-    selectedRoomRef.current = selectedRoom;
-  }, [selectedRoom]);
-
-  const resetNextAutoRefreshAt = () => {
-    setNextAutoRefreshAt(
-      new Date(Date.now() + REFRESH_INTERVAL_MINUTES * 60 * 1000)
-    );
-  };
-
-  const clearAutoRefreshTimer = () => {
-    if (autoRefreshTimerRef.current) {
-      window.clearInterval(autoRefreshTimerRef.current);
-      autoRefreshTimerRef.current = null;
-    }
-    setNextAutoRefreshAt(null);
-  };
-
   const updateSelectedRoomDraft = (updates: Partial<MonitorRoom>) => {
     if (!selectedRoomId) return;
 
     setRooms((prevRooms) => {
-      let updatedSelectedRoom: MonitorRoom | null = null;
-
-      const nextRooms = prevRooms.map((room) => {
-        if (room.id !== selectedRoomId) return room;
-        updatedSelectedRoom = { ...room, ...updates };
-        return updatedSelectedRoom;
-      });
-
-      if (updatedSelectedRoom) {
-        selectedRoomRef.current = updatedSelectedRoom;
-      }
-
+      const nextRooms = prevRooms.map((room) =>
+        room.id === selectedRoomId ? { ...room, ...updates } : room
+      );
       saveRooms(nextRooms);
       return nextRooms;
     });
@@ -641,8 +609,6 @@ export default function FlightsPage() {
         return nextRooms;
       });
 
-      selectedRoomRef.current = updatedRoom;
-
       if (selectedRoomId === updatedRoom.id) {
         setInput(updatedRoom.flightsInput);
         setStartDateTime(updatedRoom.startDateTime);
@@ -652,20 +618,8 @@ export default function FlightsPage() {
         setLastFetchedAt(fetchedAt);
         setExpandedDetailKeys({});
       }
-
-      if (updatedRoom.fixed && selectedRoomId === updatedRoom.id) {
-        resetNextAutoRefreshAt();
-      }
     } catch (e: any) {
-      setError(
-        showLoading
-          ? e.message || "조회 실패"
-          : `자동 조회 실패: ${e.message || "조회 실패"}`
-      );
-
-      if (room.fixed && selectedRoomId === room.id) {
-        resetNextAutoRefreshAt();
-      }
+      setError(e.message || "조회 실패");
     } finally {
       if (showLoading) {
         setLoading(false);
@@ -706,41 +660,6 @@ export default function FlightsPage() {
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
-
-  useEffect(() => {
-    clearAutoRefreshTimer();
-
-    if (!selectedRoom || !selectedRoom.fixed) {
-      return;
-    }
-
-    resetNextAutoRefreshAt();
-
-    autoRefreshTimerRef.current = window.setInterval(async () => {
-      const currentRoom = selectedRoomRef.current;
-
-      if (!currentRoom || !currentRoom.fixed) {
-        return;
-      }
-
-      if (autoRefreshLockRef.current) {
-        return;
-      }
-
-      autoRefreshLockRef.current = true;
-
-      try {
-        await refreshRoomData(currentRoom, false);
-      } finally {
-        autoRefreshLockRef.current = false;
-      }
-    }, REFRESH_INTERVAL_MINUTES * 60 * 1000);
-
-    return () => {
-      clearAutoRefreshTimer();
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedRoomId, selectedRoom?.fixed]);
 
   const persistRoom = (
     roomId: string,
@@ -921,16 +840,6 @@ export default function FlightsPage() {
     () => (selectedRoom ? getAlertCounts(selectedRoom.rows) : null),
     [selectedRoom]
   );
-
-  const formattedNextAutoRefreshAt = nextAutoRefreshAt
-    ? new Intl.DateTimeFormat("ko-KR", {
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      }).format(nextAutoRefreshAt)
-    : "-";
 
   return (
     <div
@@ -1310,10 +1219,10 @@ export default function FlightsPage() {
                     </div>
 
                     <div style={{ color: "#93c5fd", marginTop: 12, fontSize: 13 }}>
-                      FIXED ROOM 자동 조회: {REFRESH_INTERVAL_MINUTES}분마다 적용
+                      PC 화면은 자동조회하지 않습니다.
                     </div>
                     <div style={{ color: "#93c5fd", marginTop: 4, fontSize: 13 }}>
-                      다음 자동 조회 예정: {formattedNextAutoRefreshAt}
+                      자동조회는 FIXED Lite에서만 {REFRESH_INTERVAL_MINUTES}분마다 적용됩니다.
                     </div>
                   </div>
                 )}

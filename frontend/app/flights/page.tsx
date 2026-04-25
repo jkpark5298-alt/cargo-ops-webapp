@@ -412,7 +412,7 @@ function FixedResultsTable({
           {rows.length === 0 && (
             <tr>
               <td style={tdStyle} colSpan={7}>
-            조회 결과가 없습니다.
+                조회 결과가 없습니다.
               </td>
             </tr>
           )}
@@ -700,8 +700,9 @@ export default function FlightsPage() {
 
     if (q) {
       const upper = q.toUpperCase();
-      setInput(upper);
-      void fetchFlights(upper);
+      const normalized = normalizeFlightsInput(upper).join(", ");
+      setInput(normalized);
+      void fetchFlights(normalized);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -782,6 +783,7 @@ export default function FlightsPage() {
       return;
     }
 
+    setInput(flights.join(", "));
     setLoading(true);
     setError("");
 
@@ -1080,6 +1082,10 @@ export default function FlightsPage() {
           <input
             value={input}
             onChange={(e) => setInput(e.target.value.toUpperCase())}
+            onBlur={() => {
+              const normalized = normalizeFlightsInput(input).join(", ");
+              if (normalized) setInput(normalized);
+            }}
             placeholder="예: 247,972 또는 KJ247,KJ972"
             style={{
               flex: 1,

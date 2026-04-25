@@ -1,8 +1,10 @@
+import copy
 import os
+import time
 import httpx
 import xml.etree.ElementTree as ET
 from datetime import datetime, timedelta
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional, Tuple
 
 
 class IncheonApiQuotaExceededError(RuntimeError):
@@ -14,6 +16,9 @@ SERVICE_KEY = os.getenv("INCHEON_API_SERVICE_KEY", "").strip()
 BASE_URL = "https://apis.data.go.kr/B551177/StatusOfCargoFlightsDeOdp"
 DEPARTURES_PATH = "/getCargoDeparturesDeOdp"
 ARRIVALS_PATH = "/getCargoArrivalsDeOdp"
+
+CACHE_TTL_SECONDS = 60
+_flight_cache: Dict[Tuple[str, str, str], Tuple[float, List[Dict[str, Any]]]] = {}
 
 
 def _text(node: ET.Element, tag: str) -> str:
@@ -115,7 +120,7 @@ def _parse_xml_items(xml_text: str, source_type: str) -> List[Dict[str, Any]]:
         delay = bool(schedule and estimated and schedule != estimated and not canceled)
 
         if estimated and estimated <= now_str:
-            status_text = "출발" if is_departure else "도착"
+          status_text = "출발" if is_departure else "도착"
 
         rows.append(
             {
@@ -216,6 +221,36 @@ def _date_range(start_date: str, end_date: str) -> List[str]:
     return days
 
 
+def _get_cached_flight_data(
+    flight_no: str,
+    start_date: str,
+    end_date: str,
+) -> Optional[List[Dict[str, Any]]]:
+    key = (flight_no, start_date, end_date)
+    now = time.time()
+
+    cached = _flight_cache.get(key)
+    if not cached:
+        return None
+
+    expires_at, data = cached
+    if now > expires_at:
+        _flight_cache.pop(key, None)
+        return None
+
+    return copy.deepcopy(data)
+
+
+def _set_cached_flight_data(
+    flight_no: str,
+    start_date: str,
+    end_date: str,
+    rows: List[Dict[str, Any]],
+) -> None:
+    key = (flight_no, start_date, end_date)
+    _flight_cache[key] = (time.time() + CACHE_TTL_SECONDS, copy.deepcopy(rows))
+
+
 async def get_flight_data(
     flight_no: str,
     start_date: str,
@@ -223,6 +258,10 @@ async def get_flight_data(
 ) -> List[Dict[str, Any]]:
     if not SERVICE_KEY:
         raise ValueError("INCHEON_API_SERVICE_KEY 환경변수가 비어 있습니다.")
+
+    cached = _get_cached_flight_data(flight_no, start_date, end_date)
+    if cached is not None:
+        return cached
 
     day_list = _date_range(start_date, end_date)
     all_rows: List[Dict[str, Any]] = []
@@ -257,4 +296,5 @@ async def get_flight_data(
         )
     )
 
-    return deduped
+    _set_cached_flight_data(flight_no, start_date, end_date, deduped)
+    return copy.deepcopy(deduped)

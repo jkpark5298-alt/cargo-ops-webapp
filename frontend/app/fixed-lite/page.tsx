@@ -8,22 +8,31 @@ const BACKEND_URL =
 const STORAGE_KEY = "cargo_ops_monitor_rooms_v6";
 const REFRESH_INTERVAL_MINUTES = 10;
 const FIXED_LITE_MAX_ITEMS = 7;
+const COMPLETED_EXCLUDE_BUFFER_MINUTES = 10;
 
 type FlightRow = {
   flightId?: string;
   flightNo?: string;
   departureCode?: string;
+  departureName?: string;
   arrivalCode?: string;
+  arrivalName?: string;
   scheduleDateTime?: string;
   estimatedDateTime?: string;
   formattedScheduleTime?: string;
   formattedEstimatedTime?: string;
   gatenumber?: string;
+  terminalid?: string;
+  masterflightid?: string;
+  codeshare?: string;
+  typeOfFlight?: string;
   remark?: string;
   status?: string;
   delay?: boolean;
   canceled?: boolean;
   gateChanged?: boolean;
+  sourceType?: string;
+  fid?: string;
 };
 
 type MonitorRoom = {
@@ -74,26 +83,161 @@ function normalizeFlightsInput(rawInput: string) {
     .map((value) => value.trim().toUpperCase())
     .filter(Boolean)
     .map((value) => {
-      if (/^\d{3,4}$/.test(value)) return `KJ${value}`;
+      if (/^\d{3,4}$/.test(value)) {
+        return `KJ${value}`;
+      }
       return value;
     });
 }
 
-function statusColor(status: string) {
-  switch (status) {
-    case "출발":
-      return "#ef4444";
-    case "도착":
-      return "#3b82f6";
-    case "결항":
-      return "#94a3b8";
-    case "게이트 변경":
-      return "#a855f7";
-    case "지연":
-      return "#f59e0b";
-    default:
-      return "#e5e7eb";
+function parseFlightTime(row: FlightRow): Date | null {
+  const raw =
+    row.formattedEstimatedTime ||
+    row.formattedScheduleTime ||
+    row.estimatedDateTime ||
+    row.scheduleDateTime;
+
+  if (!raw) return null;
+
+  const normalized = raw
+    .trim()
+    .replace(/\./g, "-")
+    .replace(/\//g, "-")
+    .replace("T", " ");
+
+  const direct = new Date(normalized);
+  if (!Number.isNaN(direct.getTime())) return direct;
+
+  const compactMatch = normalized.match(
+    /^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/
+  );
+  if (compactMatch) {
+    const [, y, m, d, hh, mm, ss] = compactMatch;
+    return new Date(
+      Number(y),
+      Number(m) - 1,
+      Number(d),
+      Number(hh),
+      Number(mm),
+      Number(ss || "0")
+    );
   }
+
+  return null;
+}
+
+function getRemarkStatus(row: FlightRow): string {
+  return `${row.status || ""} ${row.remark || ""}`.trim().toUpperCase();
+}
+
+function getComputedStatus(row: FlightRow) {
+  const remarkStatus = getRemarkStatus(row);
+
+  if (row.canceled || remarkStatus.includes("CANCEL")) return "결항";
+  if (row.gateChanged) return "게이트 변경";
+
+  if (
+    remarkStatus.includes("DELAY") ||
+    remarkStatus.includes("지연") ||
+    row.delay
+  ) {
+    if (
+      remarkStatus.includes("ARRIV") ||
+      remarkStatus.includes("도착") ||
+      row.status === "도착"
+    ) {
+      return "도착(지연)";
+    }
+    if (
+      remarkStatus.includes("DEPAR") ||
+      remarkStatus.includes("출발") ||
+      row.status === "출발"
+    ) {
+      return "출발(지연)";
+    }
+    return "지연";
+  }
+
+  if (
+    row.status === "출발" ||
+    remarkStatus.includes("DEPART") ||
+    remarkStatus.includes("DEP") ||
+    remarkStatus.includes("출발")
+  ) {
+    return "출발";
+  }
+
+  if (
+    row.status === "도착" ||
+    remarkStatus.includes("ARRIV") ||
+    remarkStatus.includes("ARR") ||
+    remarkStatus.includes("도착")
+  ) {
+    return "도착";
+  }
+
+  const dt = parseFlightTime(row);
+  const now = new Date();
+
+  if (dt && dt.getTime() <= now.getTime()) {
+    const dep = (row.departureCode || "").toUpperCase();
+    const arr = (row.arrivalCode || "").toUpperCase();
+
+    if (dep === "ICN") return "출발";
+    if (arr === "ICN") return "도착";
+  }
+
+  return "-";
+}
+
+function isFinalCompletedStatus(status: string) {
+  return status === "출발" || status === "도착";
+}
+
+function getLatestRowsByFlight(rows: FlightRow[]) {
+  const map = new Map<string, { row: FlightRow; time: number }>();
+
+  for (const row of rows) {
+    const flight = row.flightId || row.flightNo || "";
+    if (!flight) continue;
+
+    const dt = parseFlightTime(row);
+    const time = dt ? dt.getTime() : -1;
+
+    const prev = map.get(flight);
+    if (!prev || time >= prev.time) {
+      map.set(flight, { row, time });
+    }
+  }
+
+  return map;
+}
+
+function getCompletedFlightSetFromRows(rows: FlightRow[]) {
+  const completed = new Set<string>();
+  const latestMap = getLatestRowsByFlight(rows);
+  const now = Date.now();
+  const bufferMs = COMPLETED_EXCLUDE_BUFFER_MINUTES * 60 * 1000;
+
+  latestMap.forEach(({ row, time }, flight) => {
+    const status = getComputedStatus(row);
+    if (!isFinalCompletedStatus(status)) return;
+    if (time < 0) return;
+    if (time <= now - bufferMs) {
+      completed.add(flight);
+    }
+  });
+
+  return completed;
+}
+
+function statusColor(status: string) {
+  if (status === "출발") return "#ef4444";
+  if (status === "도착") return "#3b82f6";
+  if (status.includes("지연")) return "#f59e0b";
+  if (status === "게이트 변경") return "#a855f7";
+  if (status === "결항") return "#94a3b8";
+  return "#e5e7eb";
 }
 
 function roomButtonStyle(active: boolean): CSSProperties {
@@ -160,6 +304,7 @@ export default function FixedLitePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [nextRefreshAt, setNextRefreshAt] = useState<Date | null>(null);
+  const [completedFlightsByRoom, setCompletedFlightsByRoom] = useState<Record<string, string[]>>({});
   const timerRef = useRef<number | null>(null);
 
   const fixedRooms = useMemo(() => rooms.filter((room) => room.fixed), [rooms]);
@@ -168,6 +313,18 @@ export default function FixedLitePage() {
     () => fixedRooms.find((room) => room.id === selectedRoomId) || null,
     [fixedRooms, selectedRoomId]
   );
+
+  const activeFlightsForSelectedRoom = useMemo(() => {
+    if (!selectedRoom) return [];
+
+    const requested = normalizeFlightsInput(selectedRoom.flightsInput);
+    const completedFromRows = getCompletedFlightSetFromRows(selectedRoom.rows);
+    const completedFromSummary = new Set(completedFlightsByRoom[selectedRoom.id] || []);
+
+    return requested.filter(
+      (flight) => !completedFromRows.has(flight) && !completedFromSummary.has(flight)
+    );
+  }, [selectedRoom, completedFlightsByRoom]);
 
   const backToFlightsHref = selectedRoomId
     ? `/flights?roomId=${encodeURIComponent(selectedRoomId)}`
@@ -218,6 +375,11 @@ export default function FixedLitePage() {
       timerRef.current = null;
     }
 
+    if (activeFlightsForSelectedRoom.length === 0) {
+      setNextRefreshAt(null);
+      return;
+    }
+
     timerRef.current = window.setInterval(() => {
       void fetchSummary(selectedRoom);
     }, REFRESH_INTERVAL_MINUTES * 60 * 1000);
@@ -229,14 +391,27 @@ export default function FixedLitePage() {
       }
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedRoomId]);
+  }, [selectedRoomId, activeFlightsForSelectedRoom.join("|")]);
 
   async function fetchSummary(room: MonitorRoom) {
-    const normalizedFlights = normalizeFlightsInput(room.flightsInput);
+    const requestedFlights = normalizeFlightsInput(room.flightsInput);
+    const completedFromRows = getCompletedFlightSetFromRows(room.rows);
+    const completedFromSummary = new Set(completedFlightsByRoom[room.id] || []);
 
-    if (normalizedFlights.length === 0) {
-      setError("선택된 FIXED ROOM에 편명이 없습니다.");
-      setSummary(null);
+    const activeFlights = requestedFlights.filter(
+      (flight) => !completedFromRows.has(flight) && !completedFromSummary.has(flight)
+    );
+
+    if (activeFlights.length === 0) {
+      setError("");
+      setSummary({
+        success: true,
+        roomId: room.id,
+        roomName: room.name,
+        updatedAt: new Date().toISOString(),
+        refreshIntervalMinutes: REFRESH_INTERVAL_MINUTES,
+        items: [],
+      });
       setNextRefreshAt(null);
       return;
     }
@@ -249,14 +424,11 @@ export default function FixedLitePage() {
         `${BACKEND_URL}/widget/fixed/${encodeURIComponent(room.id)}`
       );
 
-      url.searchParams.set("flights", normalizedFlights.join(","));
+      url.searchParams.set("flights", activeFlights.join(","));
       url.searchParams.set("start", room.startDateTime);
       url.searchParams.set("end", room.endDateTime);
       url.searchParams.set("roomName", room.name);
-      url.searchParams.set(
-        "refreshIntervalMinutes",
-        String(REFRESH_INTERVAL_MINUTES)
-      );
+      url.searchParams.set("refreshIntervalMinutes", String(REFRESH_INTERVAL_MINUTES));
       url.searchParams.set("limit", String(FIXED_LITE_MAX_ITEMS));
 
       const res = await fetch(url.toString(), {
@@ -273,9 +445,34 @@ export default function FixedLitePage() {
         throw new Error(json.message || json.detail || "요약 조회에 실패했습니다.");
       }
 
-      setSummary(json);
+      const newlyCompleted = json.items
+        .filter((item) => isFinalCompletedStatus(item.status))
+        .map((item) => item.flight);
+
+      if (newlyCompleted.length > 0) {
+        setCompletedFlightsByRoom((prev) => {
+          const prevSet = new Set(prev[room.id] || []);
+          newlyCompleted.forEach((flight) => prevSet.add(flight));
+          return {
+            ...prev,
+            [room.id]: Array.from(prevSet),
+          };
+        });
+      }
+
+      const visibleItems = json.items.filter(
+        (item) => !isFinalCompletedStatus(item.status)
+      );
+
+      setSummary({
+        ...json,
+        items: visibleItems,
+      });
+
       setNextRefreshAt(
-        new Date(Date.now() + REFRESH_INTERVAL_MINUTES * 60 * 1000)
+        visibleItems.length > 0
+          ? new Date(Date.now() + REFRESH_INTERVAL_MINUTES * 60 * 1000)
+          : null
       );
     } catch (e: any) {
       setError(e.message || "요약 조회에 실패했습니다.");
@@ -430,6 +627,9 @@ export default function FixedLitePage() {
                   <div style={{ color: "#b8c7db", fontSize: 12, marginTop: 4 }}>
                     마지막 저장 조회: {selectedRoom.lastFetchedAt || "-"}
                   </div>
+                  <div style={{ color: "#92a7c5", fontSize: 12, marginTop: 6 }}>
+                    자동조회 대상: {activeFlightsForSelectedRoom.length}개
+                  </div>
                 </div>
 
                 <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
@@ -521,7 +721,7 @@ export default function FixedLitePage() {
 
               {!error && summary && summary.items.length === 0 && (
                 <div style={{ color: "#b8c7db", fontSize: 14 }}>
-                  표시할 요약 편명이 없습니다.
+                  자동조회 대상 편명이 없습니다.
                 </div>
               )}
 

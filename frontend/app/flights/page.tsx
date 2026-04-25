@@ -9,7 +9,6 @@ const BACKEND_URL =
   process.env.NEXT_PUBLIC_API_URL || "https://cargo-ops-backend.onrender.com";
 
 const REFRESH_INTERVAL_MINUTES = 10;
-const COMPLETED_EXCLUDE_BUFFER_MINUTES = 10;
 
 type FlightRow = {
   airline?: string;
@@ -192,10 +191,6 @@ function getComputedStatus(row: FlightRow) {
   return "-";
 }
 
-function isFinalCompletedStatus(status: string) {
-  return status === "출발" || status === "도착";
-}
-
 function getStatusColor(row: FlightRow) {
   const status = getComputedStatus(row);
 
@@ -304,51 +299,6 @@ function getTimePart(value: string) {
 function buildDateTime(datePart: string, timePart: string) {
   if (!datePart) return "";
   return `${datePart}T${timePart || "00:00"}`;
-}
-
-function getLatestRowsByFlight(rows: FlightRow[]) {
-  const map = new Map<string, { row: FlightRow; time: number }>();
-
-  for (const row of rows) {
-    const flight = getFlightDisplay(row);
-    if (!flight || flight === "-") continue;
-
-    const dt = parseFlightTime(row);
-    const time = dt ? dt.getTime() : -1;
-
-    const prev = map.get(flight);
-    if (!prev || time >= prev.time) {
-      map.set(flight, { row, time });
-    }
-  }
-
-  return map;
-}
-
-function getCompletedFlightSetFromRows(rows: FlightRow[]) {
-  const completed = new Set<string>();
-  const latestMap = getLatestRowsByFlight(rows);
-  const now = Date.now();
-  const bufferMs = COMPLETED_EXCLUDE_BUFFER_MINUTES * 60 * 1000;
-
-  latestMap.forEach(({ row, time }, flight) => {
-    const status = getComputedStatus(row);
-    if (!isFinalCompletedStatus(status)) return;
-    if (time < 0) return;
-    if (time <= now - bufferMs) {
-      completed.add(flight);
-    }
-  });
-
-  return completed;
-}
-
-function getActiveFlightsForRoom(room: MonitorRoom) {
-  const requestedFlights = normalizeFlightsInput(room.flightsInput);
-  if (!room.fixed) return requestedFlights;
-
-  const completedSet = getCompletedFlightSetFromRows(room.rows);
-  return requestedFlights.filter((flight) => !completedSet.has(flight));
 }
 
 function DetailToggleButton({
@@ -462,7 +412,7 @@ function FixedResultsTable({
           {rows.length === 0 && (
             <tr>
               <td style={tdStyle} colSpan={7}>
-                조회 결과가 없습니다.
+            조회 결과가 없습니다.
               </td>
             </tr>
           )}
@@ -582,11 +532,6 @@ export default function FlightsPage() {
 
   const isSelectedFixedRoom = Boolean(selectedRoom?.fixed);
 
-  const activeAutoFlightsCount = useMemo(() => {
-    if (!selectedRoom) return 0;
-    return getActiveFlightsForRoom(selectedRoom).length;
-  }, [selectedRoom]);
-
   useEffect(() => {
     selectedRoomRef.current = selectedRoom;
   }, [selectedRoom]);
@@ -660,17 +605,7 @@ export default function FlightsPage() {
     setError("");
 
     try {
-      const flights = room.fixed
-        ? getActiveFlightsForRoom(room)
-        : normalizeFlightsInput(room.flightsInput);
-
-      if (room.fixed && flights.length === 0) {
-        if (selectedRoomId === room.id) {
-          setError("");
-          setNextAutoRefreshAt(null);
-        }
-        return;
-      }
+      const flights = normalizeFlightsInput(room.flightsInput);
 
       const res = await fetch(`${BACKEND_URL}/flights/`, {
         method: "POST",
@@ -719,12 +654,7 @@ export default function FlightsPage() {
       }
 
       if (updatedRoom.fixed && selectedRoomId === updatedRoom.id) {
-        const nextActiveFlights = getActiveFlightsForRoom(updatedRoom);
-        if (nextActiveFlights.length > 0) {
-          resetNextAutoRefreshAt();
-        } else {
-          setNextAutoRefreshAt(null);
-        }
+        resetNextAutoRefreshAt();
       }
     } catch (e: any) {
       setError(
@@ -734,12 +664,7 @@ export default function FlightsPage() {
       );
 
       if (room.fixed && selectedRoomId === room.id) {
-        const activeFlights = getActiveFlightsForRoom(room);
-        if (activeFlights.length > 0) {
-          resetNextAutoRefreshAt();
-        } else {
-          setNextAutoRefreshAt(null);
-        }
+        resetNextAutoRefreshAt();
       }
     } finally {
       if (showLoading) {
@@ -788,25 +713,12 @@ export default function FlightsPage() {
       return;
     }
 
-    const activeFlights = getActiveFlightsForRoom(selectedRoom);
-
-    if (activeFlights.length === 0) {
-      setNextAutoRefreshAt(null);
-      return;
-    }
-
     resetNextAutoRefreshAt();
 
     autoRefreshTimerRef.current = window.setInterval(async () => {
       const currentRoom = selectedRoomRef.current;
 
       if (!currentRoom || !currentRoom.fixed) {
-        return;
-      }
-
-      const currentActiveFlights = getActiveFlightsForRoom(currentRoom);
-      if (currentActiveFlights.length === 0) {
-        clearAutoRefreshTimer();
         return;
       }
 
@@ -827,7 +739,7 @@ export default function FlightsPage() {
       clearAutoRefreshTimer();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedRoomId, selectedRoom?.fixed, selectedRoom?.rows]);
+  }, [selectedRoomId, selectedRoom?.fixed]);
 
   const persistRoom = (
     roomId: string,
@@ -1326,11 +1238,8 @@ export default function FlightsPage() {
                 <div style={{ color: "#cbd5e1", marginBottom: 6 }}>
                   마지막 조회: {selectedRoom.lastFetchedAt || "-"}
                 </div>
-                <div style={{ color: selectedRoom.fixed ? "#facc15" : "#cbd5e1", marginBottom: 6 }}>
+                <div style={{ color: selectedRoom.fixed ? "#facc15" : "#cbd5e1", marginBottom: 12 }}>
                   상태: {selectedRoom.fixed ? "FIXED" : "일반"}
-                </div>
-                <div style={{ color: "#93c5fd", marginBottom: 12 }}>
-                  자동조회 대상: {selectedRoom.fixed ? activeAutoFlightsCount : normalizeFlightsInput(selectedRoom.flightsInput).length}개
                 </div>
 
                 {selectedRoom.fixed && (

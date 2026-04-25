@@ -1,65 +1,82 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
-from typing import Any, Dict, List, Optional, Tuple
+from datetime import datetime
+from typing import Any, Dict, List, Optional
 
 from fastapi import APIRouter, HTTPException, Query
 
-from app.services.incheon_api import get_flight_data
+from app.services.incheon_api import (
+    IncheonApiQuotaExceededError,
+    get_flight_data,
+)
 
 router = APIRouter()
 
-MAX_WIDGET_ITEMS = 7
-DEFAULT_REFRESH_INTERVAL_MINUTES = 10
 
-
-def _normalize_date(value: Optional[str]) -> str:
-    if not value:
+def _normalize_flight_code(value: str) -> str:
+    code = (value or "").strip().upper()
+    if not code:
         return ""
 
-    value = value.strip()
-    if not value:
-        return ""
+    if code.isdigit() and len(code) in {3, 4}:
+        return f"KJ{code}"
 
-    if "T" in value:
-        return value.split("T")[0]
-
-    if " " in value:
-        return value.split(" ")[0]
-
-    return value
+    return code
 
 
-def _normalize_flights(raw_flights: str) -> List[str]:
-    flights = raw_flights.replace("\n", ",").replace(" ", ",").split(",")
-
+def _normalize_flights_param(value: str) -> List[str]:
     normalized: List[str] = []
-
-    for flight in flights:
-        value = flight.strip().upper()
-        if not value:
-            continue
-
-        if value.isdigit() and len(value) in {3, 4}:
-            value = f"KJ{value}"
-
-        normalized.append(value)
-
     seen = set()
-    deduped: List[str] = []
 
-    for value in normalized:
-        if value in seen:
+    for part in str(value or "").replace("\n", ",").replace(" ", ",").split(","):
+        code = _normalize_flight_code(part)
+        if not code:
             continue
-        seen.add(value)
-        deduped.append(value)
+        if code in seen:
+            continue
+        seen.add(code)
+        normalized.append(code)
 
-    return deduped
+    return normalized
 
 
-def _parse_compact_datetime(value: str) -> Optional[datetime]:
-    digits = "".join(ch for ch in value if ch.isdigit())
+def _extract_date(value: str) -> str:
+    raw = (value or "").strip()
+    if not raw:
+        return ""
 
+    if "T" in raw:
+        return raw.split("T")[0]
+
+    if " " in raw:
+        return raw.split(" ")[0]
+
+    return raw
+
+
+def _parse_datetime(value: Any) -> Optional[datetime]:
+    if value is None:
+        return None
+
+    raw = str(value).strip()
+    if not raw or raw == "-":
+        return None
+
+    raw = raw.replace(".", "-").replace("/", "-").replace("T", " ")
+
+    candidates = [
+        "%Y-%m-%d %H:%M",
+        "%Y-%m-%d %H:%M:%S",
+        "%Y/%m/%d %H:%M",
+    ]
+
+    for fmt in candidates:
+        try:
+            return datetime.strptime(raw, fmt)
+        except ValueError:
+            continue
+
+    digits = "".join(ch for ch in raw if ch.isdigit())
     if len(digits) == 12:
         try:
             return datetime.strptime(digits, "%Y%m%d%H%M")
@@ -69,43 +86,27 @@ def _parse_compact_datetime(value: str) -> Optional[datetime]:
     return None
 
 
-def _parse_flexible_datetime(value: str) -> Optional[datetime]:
-    if not value:
-        return None
-
-    value = str(value).strip()
-    if not value or value == "-":
-        return None
-
-    parsed = _parse_compact_datetime(value)
-    if parsed:
-        return parsed
-
+def _get_row_time(row: Dict[str, Any]) -> Optional[datetime]:
     candidates = [
-        "%Y-%m-%d %H:%M",
-        "%Y-%m-%d %H:%M:%S",
-        "%Y/%m/%d %H:%M",
-        "%Y/%m/%d %H:%M:%S",
+        row.get("formattedEstimatedTime"),
+        row.get("formattedScheduleTime"),
+        row.get("estimatedDateTime"),
+        row.get("scheduleDateTime"),
     ]
 
-    normalized = value.replace("T", " ")
-
-    for fmt in candidates:
-        try:
-            return datetime.strptime(normalized, fmt)
-        except ValueError:
-            continue
+    for value in candidates:
+        parsed = _parse_datetime(value)
+        if parsed is not None:
+            return parsed
 
     return None
 
 
 def _get_remark_status(row: Dict[str, Any]) -> str:
-    status = str(row.get("status", "") or "").strip()
-    remark = str(row.get("remark", "") or "").strip()
-    return f"{status} {remark}".strip().upper()
+    return f"{row.get('status', '')} {row.get('remark', '')}".strip().upper()
 
 
-def _get_computed_status(row: Dict[str, Any]) -> str:
+def _compute_status(row: Dict[str, Any]) -> str:
     remark_status = _get_remark_status(row)
 
     if row.get("canceled") or "CANCEL" in remark_status:
@@ -115,164 +116,105 @@ def _get_computed_status(row: Dict[str, Any]) -> str:
         return "게이트 변경"
 
     if row.get("delay") or "DELAY" in remark_status or "지연" in remark_status:
-        if "ARRIV" in remark_status or "도착" in remark_status or row.get("status") == "도착":
-            return "도착"
-        if "DEPAR" in remark_status or "출발" in remark_status or row.get("status") == "출발":
-            return "출발"
+        if row.get("status") == "도착" or "ARRIV" in remark_status or "도착" in remark_status:
+            return "도착(지연)"
+        if row.get("status") == "출발" or "DEPAR" in remark_status or "출발" in remark_status:
+            return "출발(지연)"
         return "지연"
 
-    if (
-        row.get("status") == "출발"
-        or "DEPART" in remark_status
-        or "DEP" in remark_status
-        or "출발" in remark_status
-    ):
+    if row.get("status") == "출발" or "DEPAR" in remark_status or "출발" in remark_status:
         return "출발"
 
-    if (
-        row.get("status") == "도착"
-        or "ARRIV" in remark_status
-        or "ARR" in remark_status
-        or "도착" in remark_status
-    ):
+    if row.get("status") == "도착" or "ARRIV" in remark_status or "도착" in remark_status:
         return "도착"
-
-    estimated = str(row.get("estimatedDateTime", "") or "")
-    schedule = str(row.get("scheduleDateTime", "") or "")
-    dt = _parse_compact_datetime(estimated) or _parse_compact_datetime(schedule)
-
-    if dt:
-        now_kst = datetime.utcnow() + timedelta(hours=9)
-        if dt <= now_kst:
-            departure_code = str(row.get("departureCode", "") or "").upper()
-            arrival_code = str(row.get("arrivalCode", "") or "").upper()
-
-            if departure_code == "ICN":
-                return "출발"
-            if arrival_code == "ICN":
-                return "도착"
 
     return "-"
 
 
-def _extract_display_time(row: Dict[str, Any]) -> str:
-    candidate = (
+def _build_item_from_row(flight: str, row: Dict[str, Any]) -> Dict[str, Any]:
+    display_time = (
         row.get("formattedEstimatedTime")
         or row.get("formattedScheduleTime")
         or row.get("estimatedDateTime")
         or row.get("scheduleDateTime")
         or "-"
     )
-    value = str(candidate).strip()
 
-    if not value or value == "-":
-        return "-"
-
-    parsed = _parse_flexible_datetime(value)
-    if parsed:
-        return parsed.strftime("%m/%d %H:%M")
-
-    return value
-
-
-def _get_sort_key(row: Dict[str, Any]) -> Tuple[int, datetime, str]:
-    dt = _parse_compact_datetime(str(row.get("estimatedDateTime", "") or ""))
-    if dt is None:
-        dt = _parse_compact_datetime(str(row.get("scheduleDateTime", "") or ""))
-
-    if dt is None:
-        return (1, datetime.max, str(row.get("flightId", "") or ""))
-
-    return (0, dt, str(row.get("flightId", "") or ""))
-
-
-def _dedupe_key(row: Dict[str, Any]) -> Tuple[str, str, str]:
-    flight = str(row.get("flightId") or row.get("flightNo") or "-").strip().upper()
-    departure = str(row.get("departureCode") or "-").strip().upper()
-    arrival = str(row.get("arrivalCode") or "-").strip().upper()
-    return (flight, departure, arrival)
-
-
-def _extract_gate(row: Dict[str, Any]) -> str:
-    gate = str(row.get("gatenumber") or "").strip()
-    if gate:
-        return gate
-    return "-"
-
-
-def _build_widget_items(rows: List[Dict[str, Any]], limit: int) -> List[Dict[str, str]]:
-    sorted_rows = sorted(rows, key=_get_sort_key)
-
-    items: List[Dict[str, str]] = []
-    seen_keys = set()
-
-    for row in sorted_rows:
-        dedupe_key = _dedupe_key(row)
-
-        if dedupe_key in seen_keys:
-            continue
-
-        seen_keys.add(dedupe_key)
-
-        items.append(
-            {
-                "flight": str(row.get("flightId") or row.get("flightNo") or "-"),
-                "status": _get_computed_status(row),
-                "departureCode": str(row.get("departureCode") or "-"),
-                "arrivalCode": str(row.get("arrivalCode") or "-"),
-                "displayTime": _extract_display_time(row),
-                "gate": _extract_gate(row),
-            }
-        )
-
-        if len(items) >= limit:
-            break
-
-    return items
+    return {
+        "flight": flight,
+        "status": _compute_status(row),
+        "departureCode": row.get("departureCode") or "-",
+        "arrivalCode": row.get("arrivalCode") or "-",
+        "displayTime": display_time,
+        "gate": row.get("gatenumber") or "-",
+    }
 
 
 @router.get("/fixed/{room_id}")
 async def get_fixed_widget_summary(
     room_id: str,
-    flights: str = Query(..., description="쉼표 또는 공백으로 구분한 편명 목록"),
-    start: str = Query(..., description="조회 시작일. YYYY-MM-DD 또는 YYYY-MM-DDTHH:MM"),
-    end: str = Query(..., description="조회 종료일. YYYY-MM-DD 또는 YYYY-MM-DDTHH:MM"),
-    room_name: Optional[str] = Query(None, alias="roomName"),
-    limit: int = Query(MAX_WIDGET_ITEMS, ge=1, le=MAX_WIDGET_ITEMS),
-    refresh_interval_minutes: int = Query(
-        DEFAULT_REFRESH_INTERVAL_MINUTES,
-        alias="refreshIntervalMinutes",
-        ge=5,
-        le=60,
-    ),
+    flights: str = Query(default=""),
+    start: str = Query(default=""),
+    end: str = Query(default=""),
+    roomName: str = Query(default=""),
+    refreshIntervalMinutes: int = Query(default=10),
+    limit: int = Query(default=7),
 ) -> Dict[str, Any]:
-    normalized_flights = _normalize_flights(flights)
-    if not normalized_flights:
-        raise HTTPException(status_code=400, detail="조회할 편명이 없습니다.")
+    normalized_flights = _normalize_flights_param(flights)
 
-    start_date = _normalize_date(start)
-    end_date = _normalize_date(end)
+    if not normalized_flights:
+        return {
+            "success": True,
+            "roomId": room_id,
+            "roomName": roomName or room_id,
+            "updatedAt": datetime.utcnow().isoformat(),
+            "refreshIntervalMinutes": refreshIntervalMinutes,
+            "items": [],
+        }
+
+    start_date = _extract_date(start)
+    end_date = _extract_date(end)
 
     if not start_date or not end_date:
-        raise HTTPException(status_code=400, detail="시작일과 종료일이 필요합니다.")
+        raise HTTPException(status_code=400, detail="시작일 또는 종료일이 필요합니다.")
 
-    all_rows: List[Dict[str, Any]] = []
+    latest_rows_by_flight: Dict[str, Dict[str, Any]] = {}
+
+    try:
+        for flight_no in normalized_flights:
+            rows = await get_flight_data(
+                flight_no=flight_no,
+                start_date=start_date,
+                end_date=end_date,
+            )
+
+            if not rows:
+                continue
+
+            rows.sort(
+                key=lambda row: _get_row_time(row) or datetime.min,
+                reverse=True,
+            )
+            latest_rows_by_flight[flight_no] = rows[0]
+
+    except IncheonApiQuotaExceededError:
+        raise HTTPException(status_code=429, detail="한도 초과로 조회 불가")
+
+    items: List[Dict[str, Any]] = []
 
     for flight_no in normalized_flights:
-        rows = await get_flight_data(
-            flight_no=flight_no,
-            start_date=start_date,
-            end_date=end_date,
-        )
-        all_rows.extend(rows)
+        row = latest_rows_by_flight.get(flight_no)
+        if row:
+            items.append(_build_item_from_row(flight_no, row))
 
-    updated_at = (datetime.utcnow() + timedelta(hours=9)).strftime("%Y-%m-%d %H:%M")
+    if limit > 0:
+        items = items[:limit]
 
     return {
         "success": True,
         "roomId": room_id,
-        "roomName": room_name or room_id,
-        "updatedAt": updated_at,
-        "refreshIntervalMinutes": refresh_interval_minutes,
-        "items": _build_widget_items(all_rows, limit=limit),
+        "roomName": roomName or room_id,
+        "updatedAt": datetime.utcnow().isoformat(),
+        "refreshIntervalMinutes": refreshIntervalMinutes,
+        "items": items,
     }

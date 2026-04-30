@@ -6,7 +6,9 @@ const BACKEND_URL =
   process.env.NEXT_PUBLIC_API_URL || "https://cargo-ops-backend.onrender.com";
 
 const STORAGE_KEY = "cargo_ops_monitor_rooms_v6";
-const REFRESH_INTERVAL_MINUTES = 10;
+
+const DEFAULT_REFRESH_MINUTES = 30;
+const FOCUS_REFRESH_MINUTES = 5;
 const COMPLETED_EXCLUDE_BUFFER_MINUTES = 10;
 
 type FlightRow = {
@@ -82,36 +84,25 @@ function normalizeFlightsInput(rawInput: string) {
     .map((value) => value.trim().toUpperCase())
     .filter(Boolean)
     .map((value) => {
-      if (/^\d{3,4}$/.test(value)) {
-        return `KJ${value}`;
-      }
+      if (/^\d{3,4}$/.test(value)) return `KJ${value}`;
       return value;
     });
 }
 
-function parseFlightTime(row: FlightRow): Date | null {
-  const raw =
-    row.formattedEstimatedTime ||
-    row.formattedScheduleTime ||
-    row.estimatedDateTime ||
-    row.scheduleDateTime;
+function parseDateTime(value?: string | null): Date | null {
+  if (!value || value === "-") return null;
 
-  if (!raw) return null;
+  const raw = value.trim().replace(/\./g, "-").replace(/\//g, "-").replace("T", " ");
 
-  const normalized = raw
-    .trim()
-    .replace(/\./g, "-")
-    .replace(/\//g, "-")
-    .replace("T", " ");
-
-  const direct = new Date(normalized);
+  const direct = new Date(raw);
   if (!Number.isNaN(direct.getTime())) return direct;
 
-  const compactMatch = normalized.match(
+  const fullMatch = raw.match(
     /^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/
   );
-  if (compactMatch) {
-    const [, y, m, d, hh, mm, ss] = compactMatch;
+
+  if (fullMatch) {
+    const [, y, m, d, hh, mm, ss] = fullMatch;
     return new Date(
       Number(y),
       Number(m) - 1,
@@ -122,7 +113,43 @@ function parseFlightTime(row: FlightRow): Date | null {
     );
   }
 
+  const monthDayMatch = raw.match(
+    /^(\d{2})-(\d{2})\s+(\d{2}):(\d{2})$/
+  );
+
+  if (monthDayMatch) {
+    const now = new Date();
+    const [, m, d, hh, mm] = monthDayMatch;
+    return new Date(
+      now.getFullYear(),
+      Number(m) - 1,
+      Number(d),
+      Number(hh),
+      Number(mm)
+    );
+  }
+
+  const digits = raw.replace(/\D/g, "");
+  if (digits.length === 12) {
+    return new Date(
+      Number(digits.slice(0, 4)),
+      Number(digits.slice(4, 6)) - 1,
+      Number(digits.slice(6, 8)),
+      Number(digits.slice(8, 10)),
+      Number(digits.slice(10, 12))
+    );
+  }
+
   return null;
+}
+
+function getFlightTimeFromRow(row: FlightRow): Date | null {
+  return (
+    parseDateTime(row.formattedEstimatedTime) ||
+    parseDateTime(row.estimatedDateTime) ||
+    parseDateTime(row.formattedScheduleTime) ||
+    parseDateTime(row.scheduleDateTime)
+  );
 }
 
 function getRemarkStatus(row: FlightRow): string {
@@ -147,6 +174,7 @@ function getComputedStatus(row: FlightRow) {
     ) {
       return "도착(지연)";
     }
+
     if (
       remarkStatus.includes("DEPAR") ||
       remarkStatus.includes("출발") ||
@@ -154,6 +182,7 @@ function getComputedStatus(row: FlightRow) {
     ) {
       return "출발(지연)";
     }
+
     return "지연";
   }
 
@@ -175,7 +204,7 @@ function getComputedStatus(row: FlightRow) {
     return "도착";
   }
 
-  const dt = parseFlightTime(row);
+  const dt = getFlightTimeFromRow(row);
   const now = new Date();
 
   if (dt && dt.getTime() <= now.getTime()) {
@@ -200,7 +229,7 @@ function getLatestRowsByFlight(rows: FlightRow[]) {
     const flight = row.flightId || row.flightNo || "";
     if (!flight) continue;
 
-    const dt = parseFlightTime(row);
+    const dt = getFlightTimeFromRow(row);
     const time = dt ? dt.getTime() : -1;
 
     const prev = map.get(flight);
@@ -222,9 +251,7 @@ function getCompletedFlightSetFromRows(rows: FlightRow[]) {
     const status = getComputedStatus(row);
     if (!isFinalCompletedStatus(status)) return;
     if (time < 0) return;
-    if (time <= now - bufferMs) {
-      completed.add(flight);
-    }
+    if (time <= now - bufferMs) completed.add(flight);
   });
 
   return completed;
@@ -255,42 +282,16 @@ function roomButtonStyle(active: boolean): CSSProperties {
 function formatMonthDayTime(value?: string | null) {
   if (!value) return "-";
 
-  const direct = new Date(value);
-  if (!Number.isNaN(direct.getTime())) {
+  const parsed = parseDateTime(value);
+
+  if (parsed) {
     return new Intl.DateTimeFormat("ko-KR", {
       month: "2-digit",
       day: "2-digit",
       hour: "2-digit",
       minute: "2-digit",
       hour12: false,
-    }).format(direct);
-  }
-
-  const normalized = value.replace("T", " ");
-  const match = normalized.match(
-    /^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/
-  );
-
-  if (match) {
-    const [, y, m, d, hh, mm, ss] = match;
-    const parsed = new Date(
-      Number(y),
-      Number(m) - 1,
-      Number(d),
-      Number(hh),
-      Number(mm),
-      Number(ss || "0")
-    );
-
-    if (!Number.isNaN(parsed.getTime())) {
-      return new Intl.DateTimeFormat("ko-KR", {
-        month: "2-digit",
-        day: "2-digit",
-        hour: "2-digit",
-        minute: "2-digit",
-        hour12: false,
-      }).format(parsed);
-    }
+    }).format(parsed);
   }
 
   return value;
@@ -305,8 +306,8 @@ function formatDisplayItemFromRow(flight: string, row: FlightRow): WidgetSummary
     displayTime:
       formatMonthDayTime(
         row.formattedEstimatedTime ||
-          row.formattedScheduleTime ||
           row.estimatedDateTime ||
+          row.formattedScheduleTime ||
           row.scheduleDateTime ||
           "-"
       ) || "-",
@@ -325,6 +326,46 @@ function formatFallbackDisplayItem(flight: string): WidgetSummaryItem {
   };
 }
 
+function getItemDirection(item: WidgetSummaryItem) {
+  const dep = (item.departureCode || "").toUpperCase();
+  const arr = (item.arrivalCode || "").toUpperCase();
+
+  if (dep === "ICN") return "departure";
+  if (arr === "ICN") return "arrival";
+  return "unknown";
+}
+
+function isItemInFocusWindow(item: WidgetSummaryItem) {
+  const dt = parseDateTime(item.displayTime);
+  if (!dt) return false;
+
+  const now = Date.now();
+  const t = dt.getTime();
+  const direction = getItemDirection(item);
+
+  if (direction === "departure") {
+    const start = t - 10 * 60 * 1000;
+    const end = t + 30 * 60 * 1000;
+    return now >= start && now <= end;
+  }
+
+  if (direction === "arrival") {
+    const start = t - 60 * 60 * 1000;
+    const end = t + 30 * 60 * 1000;
+    return now >= start && now <= end;
+  }
+
+  return false;
+}
+
+function getNextRefreshMinutes(activeItems: WidgetSummaryItem[]) {
+  if (activeItems.length === 0) return null;
+
+  const hasFocusItem = activeItems.some((item) => isItemInFocusWindow(item));
+
+  return hasFocusItem ? FOCUS_REFRESH_MINUTES : DEFAULT_REFRESH_MINUTES;
+}
+
 export default function FixedLitePage() {
   const [rooms, setRooms] = useState<MonitorRoom[]>([]);
   const [selectedRoomId, setSelectedRoomId] = useState("");
@@ -332,10 +373,12 @@ export default function FixedLitePage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [nextRefreshAt, setNextRefreshAt] = useState<Date | null>(null);
+  const [currentIntervalMinutes, setCurrentIntervalMinutes] = useState<number | null>(null);
   const [completedFlightsByRoom, setCompletedFlightsByRoom] = useState<Record<string, string[]>>({});
   const [lastKnownItemsByRoom, setLastKnownItemsByRoom] = useState<
     Record<string, WidgetSummaryItem[]>
   >({});
+
   const timerRef = useRef<number | null>(null);
 
   const fixedRooms = useMemo(() => rooms.filter((room) => room.fixed), [rooms]);
@@ -344,18 +387,6 @@ export default function FixedLitePage() {
     () => fixedRooms.find((room) => room.id === selectedRoomId) || null,
     [fixedRooms, selectedRoomId]
   );
-
-  const activeFlightsForSelectedRoom = useMemo(() => {
-    if (!selectedRoom) return [];
-
-    const requested = normalizeFlightsInput(selectedRoom.flightsInput);
-    const completedFromRows = getCompletedFlightSetFromRows(selectedRoom.rows);
-    const completedFromSummary = new Set(completedFlightsByRoom[selectedRoom.id] || []);
-
-    return requested.filter(
-      (flight) => !completedFromRows.has(flight) && !completedFromSummary.has(flight)
-    );
-  }, [selectedRoom, completedFlightsByRoom]);
 
   const displayItemsForSelectedRoom = useMemo(() => {
     if (!selectedRoom) return [];
@@ -371,17 +402,55 @@ export default function FixedLitePage() {
       if (known) return known;
 
       const latestRow = latestRowMap.get(flight)?.row;
-      if (latestRow) {
-        return formatDisplayItemFromRow(flight, latestRow);
-      }
+      if (latestRow) return formatDisplayItemFromRow(flight, latestRow);
 
       return formatFallbackDisplayItem(flight);
     });
   }, [selectedRoom, lastKnownItemsByRoom]);
 
+  const activeItemsForSelectedRoom = useMemo(() => {
+    if (!selectedRoom) return [];
+
+    const completedFromRows = getCompletedFlightSetFromRows(selectedRoom.rows);
+    const completedFromSummary = new Set(completedFlightsByRoom[selectedRoom.id] || []);
+
+    return displayItemsForSelectedRoom.filter((item) => {
+      if (completedFromRows.has(item.flight)) return false;
+      if (completedFromSummary.has(item.flight)) return false;
+      if (isFinalCompletedStatus(item.status)) return false;
+      return true;
+    });
+  }, [selectedRoom, displayItemsForSelectedRoom, completedFlightsByRoom]);
+
   const backToFlightsHref = selectedRoomId
     ? `/flights?roomId=${encodeURIComponent(selectedRoomId)}`
     : "/flights";
+
+  function clearTimer() {
+    if (timerRef.current) {
+      window.clearTimeout(timerRef.current);
+      timerRef.current = null;
+    }
+  }
+
+  function scheduleNext(room: MonitorRoom, activeItems: WidgetSummaryItem[]) {
+    clearTimer();
+
+    const nextMinutes = getNextRefreshMinutes(activeItems);
+
+    if (!nextMinutes) {
+      setCurrentIntervalMinutes(null);
+      setNextRefreshAt(null);
+      return;
+    }
+
+    setCurrentIntervalMinutes(nextMinutes);
+    setNextRefreshAt(new Date(Date.now() + nextMinutes * 60 * 1000));
+
+    timerRef.current = window.setTimeout(() => {
+      void fetchSummary(room);
+    }, nextMinutes * 60 * 1000);
+  }
 
   useEffect(() => {
     if (typeof window === "undefined") return;
@@ -410,50 +479,51 @@ export default function FixedLitePage() {
   }, []);
 
   useEffect(() => {
+    clearTimer();
+
     if (!selectedRoom) {
       setSummary(null);
       setNextRefreshAt(null);
+      setCurrentIntervalMinutes(null);
       return;
     }
 
     void fetchSummary(selectedRoom);
+
+    return () => clearTimer();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [selectedRoomId]);
 
-  useEffect(() => {
-    if (!selectedRoom) return;
-
-    if (timerRef.current) {
-      window.clearInterval(timerRef.current);
-      timerRef.current = null;
-    }
-
-    if (activeFlightsForSelectedRoom.length === 0) {
-      setNextRefreshAt(null);
-      return;
-    }
-
-    timerRef.current = window.setInterval(() => {
-      void fetchSummary(selectedRoom);
-    }, REFRESH_INTERVAL_MINUTES * 60 * 1000);
-
-    return () => {
-      if (timerRef.current) {
-        window.clearInterval(timerRef.current);
-        timerRef.current = null;
-      }
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [selectedRoomId, activeFlightsForSelectedRoom.join("|")]);
-
   async function fetchSummary(room: MonitorRoom) {
-    const requestedFlights = normalizeFlightsInput(room.flightsInput);
     const completedFromRows = getCompletedFlightSetFromRows(room.rows);
     const completedFromSummary = new Set(completedFlightsByRoom[room.id] || []);
 
-    const activeFlights = requestedFlights.filter(
-      (flight) => !completedFromRows.has(flight) && !completedFromSummary.has(flight)
-    );
+    const currentKnownItems = (() => {
+      const requested = normalizeFlightsInput(room.flightsInput);
+      const latestRowMap = getLatestRowsByFlight(room.rows);
+      const knownItemsMap = new Map(
+        (lastKnownItemsByRoom[room.id] || []).map((item) => [item.flight, item])
+      );
+
+      return requested.map((flight) => {
+        const known = knownItemsMap.get(flight);
+        if (known) return known;
+
+        const latestRow = latestRowMap.get(flight)?.row;
+        if (latestRow) return formatDisplayItemFromRow(flight, latestRow);
+
+        return formatFallbackDisplayItem(flight);
+      });
+    })();
+
+    const activeItems = currentKnownItems.filter((item) => {
+      if (completedFromRows.has(item.flight)) return false;
+      if (completedFromSummary.has(item.flight)) return false;
+      if (isFinalCompletedStatus(item.status)) return false;
+      return true;
+    });
+
+    const activeFlights = activeItems.map((item) => item.flight);
 
     if (activeFlights.length === 0) {
       setError("");
@@ -462,10 +532,10 @@ export default function FixedLitePage() {
         roomId: room.id,
         roomName: room.name,
         updatedAt: new Date().toISOString(),
-        refreshIntervalMinutes: REFRESH_INTERVAL_MINUTES,
+        refreshIntervalMinutes: 0,
         items: [],
       });
-      setNextRefreshAt(null);
+      scheduleNext(room, []);
       return;
     }
 
@@ -481,7 +551,7 @@ export default function FixedLitePage() {
       url.searchParams.set("start", room.startDateTime);
       url.searchParams.set("end", room.endDateTime);
       url.searchParams.set("roomName", room.name);
-      url.searchParams.set("refreshIntervalMinutes", String(REFRESH_INTERVAL_MINUTES));
+      url.searchParams.set("refreshIntervalMinutes", String(DEFAULT_REFRESH_MINUTES));
       url.searchParams.set("limit", String(activeFlights.length));
 
       const res = await fetch(url.toString(), {
@@ -497,6 +567,15 @@ export default function FixedLitePage() {
       if (!res.ok || json.success === false) {
         throw new Error(json.message || json.detail || "요약 조회에 실패했습니다.");
       }
+
+      const newlyCompleted = json.items
+        .filter((item) => isFinalCompletedStatus(item.status))
+        .map((item) => item.flight);
+
+      const nextCompletedSet = new Set<string>([
+        ...(completedFlightsByRoom[room.id] || []),
+        ...newlyCompleted,
+      ]);
 
       setLastKnownItemsByRoom((prev) => {
         const merged = new Map<string, WidgetSummaryItem>();
@@ -515,15 +594,6 @@ export default function FixedLitePage() {
         };
       });
 
-      const newlyCompleted = json.items
-        .filter((item) => isFinalCompletedStatus(item.status))
-        .map((item) => item.flight);
-
-      const nextCompletedSet = new Set<string>([
-        ...(completedFlightsByRoom[room.id] || []),
-        ...newlyCompleted,
-      ]);
-
       if (newlyCompleted.length > 0) {
         setCompletedFlightsByRoom((prev) => {
           const prevSet = new Set(prev[room.id] || []);
@@ -535,22 +605,29 @@ export default function FixedLitePage() {
         });
       }
 
-      const nextActiveFlights = requestedFlights.filter(
-        (flight) => !completedFromRows.has(flight) && !nextCompletedSet.has(flight)
-      );
+      const mergedItemsMap = new Map<string, WidgetSummaryItem>();
+
+      currentKnownItems.forEach((item) => {
+        mergedItemsMap.set(item.flight, item);
+      });
+
+      json.items.forEach((item) => {
+        mergedItemsMap.set(item.flight, item);
+      });
+
+      const nextActiveItems = Array.from(mergedItemsMap.values()).filter((item) => {
+        if (completedFromRows.has(item.flight)) return false;
+        if (nextCompletedSet.has(item.flight)) return false;
+        if (isFinalCompletedStatus(item.status)) return false;
+        return true;
+      });
 
       setSummary(json);
-      setNextRefreshAt(
-        nextActiveFlights.length > 0
-          ? new Date(Date.now() + REFRESH_INTERVAL_MINUTES * 60 * 1000)
-          : null
-      );
+      scheduleNext(room, nextActiveItems);
     } catch (e: any) {
       setError(e.message || "요약 조회에 실패했습니다.");
       setSummary(null);
-      setNextRefreshAt(
-        new Date(Date.now() + REFRESH_INTERVAL_MINUTES * 60 * 1000)
-      );
+      scheduleNext(room, activeItems);
     } finally {
       setLoading(false);
     }
@@ -608,9 +685,9 @@ export default function FixedLitePage() {
           </div>
 
           <div style={{ color: "#b8c7db", fontSize: 13, lineHeight: 1.5 }}>
-            조회된 전체 편명은 계속 표시합니다.
+            기본 30분 자동조회입니다.
             <br />
-            자동조회는 아직 출발/도착 완료되지 않은 편명만 대상으로 합니다.
+            출발 집중구간은 10분 전~30분 후, 도착 집중구간은 60분 전~30분 후이며 이때 5분 간격으로 조회합니다.
           </div>
         </section>
 
@@ -701,7 +778,11 @@ export default function FixedLitePage() {
                     표시 대상: {displayItemsForSelectedRoom.length}개
                   </div>
                   <div style={{ color: "#92a7c5", fontSize: 12, marginTop: 2 }}>
-                    자동조회 대상: {activeFlightsForSelectedRoom.length}개
+                    자동조회 대상: {activeItemsForSelectedRoom.length}개
+                  </div>
+                  <div style={{ color: "#92a7c5", fontSize: 12, marginTop: 2 }}>
+                    현재 자동조회 주기:{" "}
+                    {currentIntervalMinutes ? `${currentIntervalMinutes}분` : "-"}
                   </div>
                 </div>
 
@@ -735,7 +816,9 @@ export default function FixedLitePage() {
                 <div style={infoCardStyle}>
                   <div style={infoLabelStyle}>위젯 대체 갱신 시각</div>
                   <div style={infoValueStyle}>
-                    {summary?.updatedAt ? formatMonthDayTime(summary.updatedAt) : "-"}
+                    {summary?.updatedAt
+                      ? formatMonthDayTime(summary.updatedAt)
+                      : "-"}
                   </div>
                 </div>
 
@@ -743,17 +826,6 @@ export default function FixedLitePage() {
                   <div style={infoLabelStyle}>다음 자동 새로고침</div>
                   <div style={infoValueStyle}>{formatNextRefresh(nextRefreshAt)}</div>
                 </div>
-              </div>
-
-              <div
-                style={{
-                  color: "#92a7c5",
-                  fontSize: 12,
-                  marginTop: 12,
-                  lineHeight: 1.5,
-                }}
-              >
-                이 화면이 열려 있는 동안 {REFRESH_INTERVAL_MINUTES}분마다 자동 새로고침됩니다.
               </div>
             </section>
 
@@ -800,13 +872,14 @@ export default function FixedLitePage() {
 
               {displayItemsForSelectedRoom.map((item) => {
                 const completed = isFinalCompletedStatus(item.status);
+                const focused = !completed && isItemInFocusWindow(item);
 
                 return (
                   <div
                     key={`${item.flight}-${item.departureCode}-${item.arrivalCode}-${item.displayTime}-${item.gate}`}
                     style={{
                       background: "#091326",
-                      border: "1px solid #1f2c43",
+                      border: focused ? "1px solid #fbbf24" : "1px solid #1f2c43",
                       borderRadius: 14,
                       padding: 14,
                       marginBottom: 10,
@@ -841,6 +914,23 @@ export default function FixedLitePage() {
                           justifyContent: "flex-end",
                         }}
                       >
+                        {focused && (
+                          <span
+                            style={{
+                              color: "#fbbf24",
+                              background: "#fbbf2422",
+                              border: "1px solid #fbbf2455",
+                              borderRadius: 999,
+                              padding: "5px 10px",
+                              fontSize: 12,
+                              fontWeight: 800,
+                              whiteSpace: "nowrap",
+                            }}
+                          >
+                            집중조회
+                          </span>
+                        )}
+
                         {completed && (
                           <span
                             style={{

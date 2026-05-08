@@ -203,17 +203,6 @@ function getComputedStatus(row: FlightRow) {
     return "도착";
   }
 
-  const dt = getFlightTimeFromRow(row);
-  const now = new Date();
-
-  if (dt && dt.getTime() <= now.getTime()) {
-    const dep = (row.departureCode || "").toUpperCase();
-    const arr = (row.arrivalCode || "").toUpperCase();
-
-    if (dep === "ICN") return "출발";
-    if (arr === "ICN") return "도착";
-  }
-
   return "-";
 }
 
@@ -499,46 +488,11 @@ export default function FixedLitePage() {
   }, [selectedRoomId]);
 
   async function fetchSummary(room: MonitorRoom) {
-    const completedFromRows = getCompletedFlightSetFromRows(room.rows);
-    const completedFromSummary = new Set(completedFlightsByRoom[room.id] || []);
+    const requestedFlights = normalizeFlightsInput(room.flightsInput);
 
-    const currentKnownItems = (() => {
-      const requested = normalizeFlightsInput(room.flightsInput);
-      const latestRowMap = getLatestRowsByFlight(room.rows);
-      const knownItemsMap = new Map(
-        (lastKnownItemsByRoom[room.id] || []).map((item) => [item.flight, item])
-      );
-
-      return requested.map((flight) => {
-        const known = knownItemsMap.get(flight);
-        if (known) return known;
-
-        const latestRow = latestRowMap.get(flight)?.row;
-        if (latestRow) return formatDisplayItemFromRow(flight, latestRow);
-
-        return formatFallbackDisplayItem(flight);
-      });
-    })();
-
-    const activeItems = currentKnownItems.filter((item) => {
-      if (completedFromRows.has(item.flight)) return false;
-      if (completedFromSummary.has(item.flight)) return false;
-      if (isFinalCompletedStatus(item.status)) return false;
-      return true;
-    });
-
-    const activeFlights = activeItems.map((item) => item.flight);
-
-    if (activeFlights.length === 0) {
-      setError("");
-      setSummary({
-        success: true,
-        roomId: room.id,
-        roomName: room.name,
-        updatedAt: new Date().toISOString(),
-        refreshIntervalMinutes: 0,
-        items: [],
-      });
+    if (requestedFlights.length === 0) {
+      setError("조회할 편명이 없습니다.");
+      setSummary(null);
       scheduleNext(room, []);
       return;
     }
@@ -547,91 +501,88 @@ export default function FixedLitePage() {
     setError("");
 
     try {
-      const url = new URL(
-        `${BACKEND_URL}/widget/fixed/${encodeURIComponent(room.id)}`
-      );
-
-      url.searchParams.set("flights", activeFlights.join(","));
-      url.searchParams.set("start", room.startDateTime);
-      url.searchParams.set("end", room.endDateTime);
-      url.searchParams.set("roomName", room.name);
-      url.searchParams.set("refreshIntervalMinutes", String(DEFAULT_REFRESH_MINUTES));
-      url.searchParams.set("limit", String(activeFlights.length));
-
-      const res = await fetch(url.toString(), {
-        method: "GET",
+      const res = await fetch(`${BACKEND_URL}/flights/`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
         cache: "no-store",
+        body: JSON.stringify({
+          flights: requestedFlights,
+          start: room.startDateTime,
+          end: room.endDateTime,
+        }),
       });
 
-      const json = (await res.json()) as WidgetSummaryResponse & {
+      const json = (await res.json()) as {
+        success?: boolean;
+        data?: FlightRow[];
         message?: string;
         detail?: string;
+        refreshIntervalMinutes?: number;
       };
 
       if (!res.ok || json.success === false) {
-        throw new Error(json.message || json.detail || "요약 조회에 실패했습니다.");
+        throw new Error(json.message || json.detail || `요약 조회에 실패했습니다. (${res.status})`);
       }
 
-      const newlyCompleted = json.items
+      const nextRows = Array.isArray(json.data) ? json.data : [];
+      const latestRowMap = getLatestRowsByFlight(nextRows);
+      const nextItems = requestedFlights.map((flight) => {
+        const latestRow = latestRowMap.get(flight)?.row;
+        if (latestRow) return formatDisplayItemFromRow(flight, latestRow);
+        return formatFallbackDisplayItem(flight);
+      });
+
+      const fetchedAt = new Date().toLocaleString("ko-KR");
+      const updatedRoom: MonitorRoom = {
+        ...room,
+        rows: nextRows,
+        lastFetchedAt: fetchedAt,
+      };
+
+      setRooms((prevRooms) => {
+        const nextRooms = prevRooms.map((prevRoom) =>
+          prevRoom.id === updatedRoom.id ? updatedRoom : prevRoom
+        );
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(nextRooms));
+        return nextRooms;
+      });
+
+      setLastKnownItemsByRoom((prev) => ({
+        ...prev,
+        [room.id]: nextItems,
+      }));
+
+      const newlyCompleted = nextItems
         .filter((item) => isFinalCompletedStatus(item.status))
         .map((item) => item.flight);
 
-      const nextCompletedSet = new Set<string>([
-        ...(completedFlightsByRoom[room.id] || []),
-        ...newlyCompleted,
-      ]);
+      setCompletedFlightsByRoom((prev) => ({
+        ...prev,
+        [room.id]: newlyCompleted,
+      }));
 
-      setLastKnownItemsByRoom((prev) => {
-        const merged = new Map<string, WidgetSummaryItem>();
+      const nextSummary: WidgetSummaryResponse = {
+        success: true,
+        roomId: room.id,
+        roomName: room.name,
+        updatedAt: new Date().toISOString(),
+        refreshIntervalMinutes: json.refreshIntervalMinutes || DEFAULT_REFRESH_MINUTES,
+        items: nextItems,
+      };
 
-        (prev[room.id] || []).forEach((item) => {
-          merged.set(item.flight, item);
-        });
+      setSummary(nextSummary);
 
-        json.items.forEach((item) => {
-          merged.set(item.flight, item);
-        });
+      const nextActiveItems = nextItems.filter(
+        (item) => !isFinalCompletedStatus(item.status)
+      );
 
-        return {
-          ...prev,
-          [room.id]: Array.from(merged.values()),
-        };
-      });
-
-      if (newlyCompleted.length > 0) {
-        setCompletedFlightsByRoom((prev) => {
-          const prevSet = new Set(prev[room.id] || []);
-          newlyCompleted.forEach((flight) => prevSet.add(flight));
-          return {
-            ...prev,
-            [room.id]: Array.from(prevSet),
-          };
-        });
-      }
-
-      const mergedItemsMap = new Map<string, WidgetSummaryItem>();
-
-      currentKnownItems.forEach((item) => {
-        mergedItemsMap.set(item.flight, item);
-      });
-
-      json.items.forEach((item) => {
-        mergedItemsMap.set(item.flight, item);
-      });
-
-      const nextActiveItems = Array.from(mergedItemsMap.values()).filter((item) => {
-        if (completedFromRows.has(item.flight)) return false;
-        if (nextCompletedSet.has(item.flight)) return false;
-        if (isFinalCompletedStatus(item.status)) return false;
-        return true;
-      });
-
-      setSummary(json);
-      scheduleNext(room, nextActiveItems);
+      scheduleNext(updatedRoom, nextActiveItems);
     } catch (e: any) {
       setError(e.message || "요약 조회에 실패했습니다.");
       setSummary(null);
-      scheduleNext(room, activeItems);
+      scheduleNext(room, displayItemsForSelectedRoom);
     } finally {
       setLoading(false);
     }

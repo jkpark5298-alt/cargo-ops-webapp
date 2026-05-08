@@ -91,101 +91,55 @@ function saveRooms(rooms: MonitorRoom[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(rooms));
 }
 
-function parseFlightTime(row: FlightRow): Date | null {
-  const raw =
-    row.formattedEstimatedTime ||
-    row.formattedScheduleTime ||
-    row.estimatedDateTime ||
-    row.scheduleDateTime;
-
-  if (!raw) return null;
-
-  const normalized = raw
-    .trim()
-    .replace(/\./g, "-")
-    .replace(/\//g, "-")
-    .replace("T", " ");
-
-  const direct = new Date(normalized);
-  if (!Number.isNaN(direct.getTime())) return direct;
-
-  const compactMatch = normalized.match(
-    /^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/
-  );
-  if (compactMatch) {
-    const [, y, m, d, hh, mm, ss] = compactMatch;
-    return new Date(
-      Number(y),
-      Number(m) - 1,
-      Number(d),
-      Number(hh),
-      Number(mm),
-      Number(ss || "0")
-    );
-  }
-
-  return null;
+function getRemarkStatus(row: FlightRow): string {
+  return `${row.remark || ""} ${row.status || ""}`.trim().toUpperCase();
 }
 
-function getRemarkStatus(row: FlightRow): string {
-  return `${row.status || ""} ${row.remark || ""}`.trim().toUpperCase();
+function hasAnyKeyword(value: string, keywords: string[]) {
+  return keywords.some((keyword) => value.includes(keyword));
 }
 
 function getComputedStatus(row: FlightRow) {
   const remarkStatus = getRemarkStatus(row);
 
-  if (row.canceled || remarkStatus.includes("CANCEL")) return "결항";
-  if (row.gateChanged) return "게이트 변경";
+  const canceledKeywords = ["CANCEL", "CANCELLED", "CANCELED", "결항", "취소"];
+  const gateChangeKeywords = [
+    "GATE CHANGE",
+    "GATE CHANGED",
+    "GATE",
+    "게이트 변경",
+    "게이트변경",
+  ];
+  const delayKeywords = ["DELAY", "DELAYED", "지연"];
+  const arrivalKeywords = ["ARRIV", "ARRIVAL", "ARRIVED", "도착"];
+  const departureKeywords = ["DEPART", "DEPARTURE", "DEPARTED", "DEP", "출발"];
 
-  if (
-    remarkStatus.includes("DELAY") ||
-    remarkStatus.includes("지연") ||
-    row.delay
-  ) {
-    if (
-      remarkStatus.includes("ARRIV") ||
-      remarkStatus.includes("도착") ||
-      row.status === "도착"
-    ) {
+  if (row.canceled || hasAnyKeyword(remarkStatus, canceledKeywords)) {
+    return "결항";
+  }
+
+  if (row.gateChanged || hasAnyKeyword(remarkStatus, gateChangeKeywords)) {
+    return "게이트 변경";
+  }
+
+  if (row.delay || hasAnyKeyword(remarkStatus, delayKeywords)) {
+    if (hasAnyKeyword(remarkStatus, arrivalKeywords)) {
       return "도착(지연)";
     }
-    if (
-      remarkStatus.includes("DEPAR") ||
-      remarkStatus.includes("출발") ||
-      row.status === "출발"
-    ) {
+
+    if (hasAnyKeyword(remarkStatus, departureKeywords)) {
       return "출발(지연)";
     }
+
     return "지연";
   }
 
-  if (
-    row.status === "출발" ||
-    remarkStatus.includes("DEPART") ||
-    remarkStatus.includes("DEP") ||
-    remarkStatus.includes("출발")
-  ) {
+  if (hasAnyKeyword(remarkStatus, departureKeywords)) {
     return "출발";
   }
 
-  if (
-    row.status === "도착" ||
-    remarkStatus.includes("ARRIV") ||
-    remarkStatus.includes("ARR") ||
-    remarkStatus.includes("도착")
-  ) {
+  if (hasAnyKeyword(remarkStatus, arrivalKeywords)) {
     return "도착";
-  }
-
-  const dt = parseFlightTime(row);
-  const now = new Date();
-
-  if (dt && dt.getTime() <= now.getTime()) {
-    const dep = (row.departureCode || "").toUpperCase();
-    const arr = (row.arrivalCode || "").toUpperCase();
-
-    if (dep === "ICN") return "출발";
-    if (arr === "ICN") return "도착";
   }
 
   return "-";

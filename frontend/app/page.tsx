@@ -478,6 +478,33 @@ function getRouteDisplay(row?: FlightRow) {
   return `-→${arrival}`;
 }
 
+function getDirectionLabel(row?: FlightRow) {
+  if (!row) return "운항";
+  const remark = `${row.remark || ""} ${row.status || ""}`.toLowerCase();
+  const route = getRouteDisplay(row);
+
+  if (remark.includes("arrival") || remark.includes("도착") || route.endsWith("→ICN")) {
+    return "도착";
+  }
+
+  if (remark.includes("departure") || remark.includes("출발") || route.startsWith("ICN→")) {
+    return "출발";
+  }
+
+  return "운항";
+}
+
+function getFlightTimeDisplay(row?: FlightRow) {
+  if (!row) return "-";
+  return (
+    row.formattedEstimatedTime ||
+    row.estimatedDateTime ||
+    row.formattedScheduleTime ||
+    row.scheduleDateTime ||
+    "-"
+  );
+}
+
 
 function getFlightRouteItems(room: MonitorRoom | null) {
   if (!room) return [];
@@ -492,10 +519,20 @@ function getFlightRouteItems(room: MonitorRoom | null) {
       return {
         flight,
         route: getRouteDisplay(row) || "구간 확인 중",
+        direction: getDirectionLabel(row),
+        time: getFlightTimeDisplay(row),
         hasResult: true,
       };
     })
-    .filter((item): item is { flight: string; route: string; hasResult: boolean } => Boolean(item));
+    .filter(
+      (item): item is {
+        flight: string;
+        route: string;
+        direction: string;
+        time: string;
+        hasResult: boolean;
+      } => Boolean(item),
+    );
 
   const uniqueRowItems = rowItems.filter((item, index, array) => {
     const key = item.flight.replace(/\s+/g, "").toUpperCase();
@@ -513,9 +550,12 @@ function getFlightRouteItems(room: MonitorRoom | null) {
     .map((flight) => ({
       flight,
       route: "조회 결과 없음",
+      direction: "확인",
+      time: "-",
       hasResult: false,
     }));
 }
+
 
 function getRoomRowsCount(room: MonitorRoom | null) {
   if (!room) return 0;
@@ -1225,7 +1265,7 @@ export default function HomePage() {
 
       <section style={stackStyle}>
         <ActionCard
-          label="편명조회"
+          label="오늘 KJ 화물기 조회"
           title="오늘 KJ 화물기 조회"
           description="편명, 출발·도착, 변경시간, 게이트 정보를 확인합니다."
           buttonLabel="편명조회 열기"
@@ -1636,13 +1676,16 @@ function FlightRouteRows({ room }: { room: MonitorRoom | null }) {
 
   return (
     <div style={infoRowStyle}>
-      <div style={infoLabelStyle}>편명 / 구간</div>
+      <div style={infoLabelStyle}>편명 / 출도착</div>
       <div style={flightRouteListStyle}>
         {items.length > 0 ? (
           items.map((item) => (
             <div key={`${item.flight}-${item.route}`} style={flightRouteRowStyle}>
               <span style={flightRouteNoStyle}>{item.flight}</span>
               <span style={flightRouteValueStyle}>{item.route}</span>
+              <span style={flightRouteMetaStyle}>
+                {item.direction} · {item.time}
+              </span>
             </div>
           ))
         ) : (
@@ -1652,6 +1695,7 @@ function FlightRouteRows({ room }: { room: MonitorRoom | null }) {
     </div>
   );
 }
+
 
 function InfoRow({ label, value }: { label: string; value: string }) {
   return (
@@ -2008,8 +2052,8 @@ const flightRouteListStyle: CSSProperties = {
 
 const flightRouteRowStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "88px 1fr",
-  gap: 12,
+  gridTemplateColumns: "76px 1fr auto",
+  gap: 10,
   alignItems: "center",
   color: "#f8fafc",
   fontSize: 15,
@@ -2025,6 +2069,14 @@ const flightRouteNoStyle: CSSProperties = {
 const flightRouteValueStyle: CSSProperties = {
   color: "#dbeafe",
   wordBreak: "keep-all",
+};
+
+const flightRouteMetaStyle: CSSProperties = {
+  color: "#93c5fd",
+  fontSize: 12,
+  fontWeight: 850,
+  textAlign: "right",
+  whiteSpace: "nowrap",
 };
 
 const infoRowStyle: CSSProperties = {

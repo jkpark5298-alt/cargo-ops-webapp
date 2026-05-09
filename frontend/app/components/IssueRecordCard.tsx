@@ -3,22 +3,6 @@
 import type { CSSProperties, Dispatch, SetStateAction } from "react";
 import { ImageSlotCard, type ImageSlot, type ImageSlotKey, type SavedImage } from "./ImageSlotCard";
 
-type ImageSlotKey =
-  | "daily-schedule"
-  | "aircraft-check"
-  | "inspection-result"
-  | "issue";
-
-  title: string;
-  description: string;
-};
-
-  type: ImageSlotKey;
-  label: string;
-  savedAt: string;
-  dataUrl: string;
-};
-
 type IssueNotionRecord = {
   pageId: string;
   url?: string;

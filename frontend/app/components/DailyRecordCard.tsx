@@ -12,22 +12,6 @@ import { ImageSlotCard, type ImageSlot, type ImageSlotKey, type SavedImage } fro
 
 type DailyStatus = "normal" | "issue";
 
-type ImageSlotKey =
-  | "daily-schedule"
-  | "aircraft-check"
-  | "inspection-result"
-  | "issue";
-
-  title: string;
-  description: string;
-};
-
-  type: ImageSlotKey;
-  label: string;
-  savedAt: string;
-  dataUrl: string;
-};
-
 type DailyNotionRecord = {
   pageId: string;
   url?: string;

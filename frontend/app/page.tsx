@@ -662,6 +662,29 @@ export default function HomePage() {
     }
   };
 
+  const handleResetLocalDraft = () => {
+    const confirmed = window.confirm(
+      "앱 안에 임시 저장된 사진, 메모, Notion 저장 상태를 초기화할까요? Notion DB 기록은 삭제되지 않습니다.",
+    );
+
+    if (!confirmed) return;
+
+    setImages([]);
+    setNote("");
+    setIssueFlight("");
+    setIssueRoute("");
+    setIssueHlnbr("");
+    setIssueText("");
+    setDailyStatus("normal");
+    setDailyNotionRecord(null);
+
+    saveImages([]);
+    saveNote("");
+    clearDailyNotionRecord();
+
+    setNotice("앱 임시 저장 내용을 초기화했습니다. Notion DB 기록은 삭제되지 않았습니다.");
+  };
+
   const openDailyNotionPage = () => {
     if (!dailyNotionRecord?.url) {
       setNotice("열 수 있는 Notion 링크가 없습니다.");
@@ -918,6 +941,9 @@ export default function HomePage() {
                 <button onClick={openDailyNotionPage} style={darkButtonStyle}>
                   Notion에서 보기
                 </button>
+                <button onClick={handleResetLocalDraft} style={resetButtonStyle}>
+                  앱 임시 저장 초기화
+                </button>
               </div>
             </div>
           ) : (
@@ -927,6 +953,9 @@ export default function HomePage() {
               </button>
               <button onClick={handleSaveDailyToNotion} style={darkButtonStyle}>
                 Notion 일일 기록 저장
+              </button>
+              <button onClick={handleResetLocalDraft} style={resetButtonStyle}>
+                앱 임시 저장 초기화
               </button>
             </div>
           )}
@@ -1697,6 +1726,18 @@ const notionSavedTextStyle: CSSProperties = {
   fontSize: 13,
   fontWeight: 900,
   marginBottom: 10,
+};
+
+const resetButtonStyle: CSSProperties = {
+  width: "100%",
+  padding: "13px 14px",
+  borderRadius: 14,
+  border: "1px solid #475569",
+  background: "#1e293b",
+  color: "#e2e8f0",
+  fontSize: 15,
+  fontWeight: 900,
+  cursor: "pointer",
 };
 
 const dangerButtonStyle: CSSProperties = {

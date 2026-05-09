@@ -9,6 +9,9 @@ node_modules/
 .next/
 dist/
 
+# Vercel
+.vercel/
+
 # OS
 .DS_Store
 Thumbs.db

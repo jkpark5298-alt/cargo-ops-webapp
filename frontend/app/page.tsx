@@ -13,6 +13,7 @@ import { FlightAlertHistoryCard } from "./components/FlightAlertHistoryCard";
 import { WeatherCard } from "./components/WeatherCard";
 import { ScheduleSummaryCard } from "./components/ScheduleSummaryCard";
 import { DailyRecordCard } from "./components/DailyRecordCard";
+import { IssueRecordCard } from "./components/IssueRecordCard";
 import {
   buildFlightAlertSnapshot,
   clearFlightAlertHistory,
@@ -1055,123 +1056,34 @@ export default function HomePage() {
         />
 
         {dailyStatus === "issue" && (
-          <section style={{ ...cardStyle, borderColor: "#f9731666" }}>
-            <div style={cardLabelStyle}>특이사항 기록</div>
-            <h2 style={cardTitleStyle}>문제 발생 대비 증빙 기록</h2>
-            <p style={cardDescriptionStyle}>
-              특이사항 발생 시 날짜, 시간, 편명, 구간, HL NBR, 날씨, 작성자, 이미지와 메모를 함께 저장합니다.
-            </p>
-
-            <ImageSlotCard
-              slot={ISSUE_IMAGE_SLOT}
-              image={getImageBySlot(images, ISSUE_IMAGE_SLOT.key)}
-              onCamera={() => openCamera(ISSUE_IMAGE_SLOT.key)}
-              onLibrary={() => openPhotoLibrary(ISSUE_IMAGE_SLOT.key)}
-              onView={openLatestImage}
-              onDelete={() => handleDeleteImageSlot(ISSUE_IMAGE_SLOT.key)}
-            />
-
-            <div style={formGridStyle}>
-              <div style={fieldBlockStyle}>
-                <label style={fieldLabelStyle}>날짜</label>
-                <input value={todayText} readOnly style={inputStyle} />
-              </div>
-
-              <div style={fieldBlockStyle}>
-                <label style={fieldLabelStyle}>시간</label>
-                <input value={getCurrentTimeText()} readOnly style={inputStyle} />
-              </div>
-
-              <div style={fieldBlockStyle}>
-                <label style={fieldLabelStyle}>편명</label>
-                <input
-                  value={issueFlight}
-                  onChange={(event) => setIssueFlight(event.target.value.toUpperCase())}
-                  placeholder="예: KJ919"
-                  style={inputStyle}
-                />
-              </div>
-
-              <div style={fieldBlockStyle}>
-                <label style={fieldLabelStyle}>구간</label>
-                <input
-                  value={issueRoute}
-                  onChange={(event) => setIssueRoute(event.target.value.toUpperCase())}
-                  placeholder="편명 입력 시 자동 표시"
-                  style={inputStyle}
-                />
-              </div>
-
-              <div style={fieldBlockStyle}>
-                <label style={fieldLabelStyle}>HL NBR</label>
-                <input
-                  value={issueHlnbr}
-                  onChange={(event) => setIssueHlnbr(event.target.value.toUpperCase())}
-                  placeholder="예: HL8000"
-                  style={inputStyle}
-                />
-              </div>
-
-              <div style={fieldBlockStyle}>
-                <label style={fieldLabelStyle}>작성자</label>
-                <input
-                  value={author}
-                  onChange={(event) => setAuthor(event.target.value)}
-                  placeholder="작성자"
-                  style={inputStyle}
-                />
-              </div>
-            </div>
-
-            <div style={fieldBlockStyle}>
-              <label style={fieldLabelStyle}>날씨</label>
-              <input value={getWeatherSummary(weather)} readOnly style={inputStyle} />
-            </div>
-
-            <textarea
-              value={issueText}
-              onChange={(event) => setIssueText(event.target.value)}
-              placeholder="특이사항을 입력하세요. 예: 게이트 변경, 지연, 점검 결과 이상 등"
-              style={noteStyle}
-            />
-
-            {issueNotionRecord ? (
-              <div style={notionIssueSavedBoxStyle}>
-                <div style={notionIssueSavedTextStyle}>
-                  Notion 특이사항 저장 완료 · {issueNotionRecord.savedAt}
-                </div>
-                <div style={buttonStackStyle}>
-                  <button onClick={handleUpdateIssueToNotion} style={orangeButtonStyle}>
-                    Notion 특이사항 수정
-                  </button>
-                  <button onClick={handleDeleteIssueFromNotion} style={dangerButtonStyle}>
-                    Notion 특이사항 삭제
-                  </button>
-                  <button onClick={openIssueNotionPage} style={darkButtonStyle}>
-                    Notion에서 보기
-                  </button>
-                  <button onClick={() => openNotionDatabase("issue")} style={darkButtonStyle}>
-                    Notion 특이사항 DB 열기
-                  </button>
-                  <button onClick={handleResetLocalDraft} style={resetButtonStyle}>
-                    앱 화면만 초기화
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <div style={buttonStackStyle}>
-                <button onClick={handleSaveIssueToNotion} style={orangeButtonStyle}>
-                  Notion 특이사항 저장
-                </button>
-                <button onClick={() => openNotionDatabase("issue")} style={darkButtonStyle}>
-                  Notion 특이사항 DB 열기
-                </button>
-                <button onClick={handleResetLocalDraft} style={resetButtonStyle}>
-                  앱 화면만 초기화
-                </button>
-              </div>
-            )}
-          </section>
+          <IssueRecordCard
+            issueImageSlot={ISSUE_IMAGE_SLOT}
+            issueImage={getImageBySlot(images, ISSUE_IMAGE_SLOT.key)}
+            openCamera={() => openCamera(ISSUE_IMAGE_SLOT.key)}
+            openPhotoLibrary={() => openPhotoLibrary(ISSUE_IMAGE_SLOT.key)}
+            openLatestImage={openLatestImage}
+            handleDeleteImageSlot={() => handleDeleteImageSlot(ISSUE_IMAGE_SLOT.key)}
+            todayText={todayText}
+            currentTimeText={getCurrentTimeText()}
+            issueFlight={issueFlight}
+            setIssueFlight={setIssueFlight}
+            issueRoute={issueRoute}
+            setIssueRoute={setIssueRoute}
+            issueHlnbr={issueHlnbr}
+            setIssueHlnbr={setIssueHlnbr}
+            author={author}
+            setAuthor={setAuthor}
+            weatherSummary={getWeatherSummary(weather)}
+            issueText={issueText}
+            setIssueText={setIssueText}
+            issueNotionRecord={issueNotionRecord}
+            handleSaveIssueToNotion={handleSaveIssueToNotion}
+            handleUpdateIssueToNotion={handleUpdateIssueToNotion}
+            handleDeleteIssueFromNotion={handleDeleteIssueFromNotion}
+            openIssueNotionPage={openIssueNotionPage}
+            openNotionDatabase={openNotionDatabase}
+            handleResetLocalDraft={handleResetLocalDraft}
+          />
         )}
 
         {notice && <div style={noticeStyle}>{notice}</div>}

@@ -12,6 +12,7 @@ import { FlightAlertCard } from "./components/FlightAlertCard";
 import { FlightAlertHistoryCard } from "./components/FlightAlertHistoryCard";
 import { WeatherCard } from "./components/WeatherCard";
 import { ScheduleSummaryCard } from "./components/ScheduleSummaryCard";
+import { DailyRecordCard } from "./components/DailyRecordCard";
 import {
   buildFlightAlertSnapshot,
   clearFlightAlertHistory,
@@ -1026,115 +1027,32 @@ export default function HomePage() {
           onOpenScheduleFlight={openScheduleFlight}
         />
 
-        <section style={cardStyle}>
-          <div style={cardLabelStyle}>일일 업무 기록</div>
-          <h2 style={cardTitleStyle}>사진 중심 업무 내용 정리</h2>
-          <p style={cardDescriptionStyle}>
-            항목별로 이미지를 먼저 선택해 저장합니다. 잘못 올린 사진은 보기, 변경, 삭제할 수 있습니다.
-          </p>
-
-          <div style={statusToggleStyle}>
-            <button
-              onClick={() => setDailyStatus("normal")}
-              style={dailyStatus === "normal" ? statusActiveButtonStyle : statusButtonStyle}
-            >
-              이상 없음
-            </button>
-            <button
-              onClick={() => setDailyStatus("issue")}
-              style={dailyStatus === "issue" ? statusIssueButtonStyle : statusButtonStyle}
-            >
-              특이사항 있음
-            </button>
-          </div>
-
-          <div style={imageSlotListStyle}>
-            {IMAGE_SLOTS.map((slot) => (
-              <ImageSlotCard
-                key={slot.key}
-                slot={slot}
-                image={getImageBySlot(images, slot.key)}
-                onCamera={() => openCamera(slot.key)}
-                onLibrary={() => openPhotoLibrary(slot.key)}
-                onView={openLatestImage}
-                onDelete={() => handleDeleteImageSlot(slot.key)}
-              />
-            ))}
-          </div>
-
-          <input
-            ref={cameraInputRef}
-            type="file"
-            accept="image/*"
-            capture="environment"
-            onChange={(event) => handleImageSelected(event, "카메라 촬영")}
-            style={{ display: "none" }}
-          />
-          <input
-            ref={libraryInputRef}
-            type="file"
-            accept="image/*"
-            onChange={(event) => handleImageSelected(event, "사진첩 선택")}
-            style={{ display: "none" }}
-          />
-
-          <div style={fieldBlockStyle}>
-            <label style={fieldLabelStyle}>작성자</label>
-            <input
-              value={author}
-              onChange={(event) => setAuthor(event.target.value)}
-              placeholder="작성자"
-              style={inputStyle}
-            />
-          </div>
-
-          <textarea
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-            placeholder="주요 사항을 입력하세요. 예: 점검 대상 결과 이상 없음."
-            style={noteStyle}
-          />
-
-          {dailyNotionRecord ? (
-            <div style={notionSavedBoxStyle}>
-              <div style={notionSavedTextStyle}>
-                Notion 저장 완료 · {dailyNotionRecord.savedAt}
-              </div>
-              <div style={buttonStackStyle}>
-                <button onClick={handleUpdateDailyToNotion} style={greenButtonStyle}>
-                  Notion 일일 기록 수정
-                </button>
-                <button onClick={handleDeleteDailyFromNotion} style={dangerButtonStyle}>
-                  Notion 일일 기록 삭제
-                </button>
-                <button onClick={openDailyNotionPage} style={darkButtonStyle}>
-                  Notion에서 보기
-                </button>
-                <button onClick={() => openNotionDatabase("daily")} style={darkButtonStyle}>
-                  Notion 일일 업무 DB 열기
-                </button>
-                <button onClick={handleResetLocalDraft} style={resetButtonStyle}>
-                  앱 화면만 초기화
-                </button>
-              </div>
-            </div>
-          ) : (
-            <div style={buttonStackStyle}>
-              <button onClick={handleSaveDailyDraft} style={greenButtonStyle}>
-                일일 업무 임시 저장
-              </button>
-              <button onClick={handleSaveDailyToNotion} style={darkButtonStyle}>
-                Notion 일일 기록 저장
-              </button>
-              <button onClick={() => openNotionDatabase("daily")} style={darkButtonStyle}>
-                Notion 일일 업무 DB 열기
-              </button>
-              <button onClick={handleResetLocalDraft} style={resetButtonStyle}>
-                앱 화면만 초기화
-              </button>
-            </div>
-          )}
-        </section>
+        <DailyRecordCard
+          dailyStatus={dailyStatus}
+          setDailyStatus={setDailyStatus}
+          images={images}
+          imageSlots={IMAGE_SLOTS}
+          getImageBySlot={getImageBySlot}
+          openCamera={openCamera}
+          openPhotoLibrary={openPhotoLibrary}
+          openLatestImage={openLatestImage}
+          handleDeleteImageSlot={handleDeleteImageSlot}
+          cameraInputRef={cameraInputRef}
+          libraryInputRef={libraryInputRef}
+          handleImageSelected={handleImageSelected}
+          author={author}
+          setAuthor={setAuthor}
+          note={note}
+          setNote={setNote}
+          dailyNotionRecord={dailyNotionRecord}
+          handleSaveDailyDraft={handleSaveDailyDraft}
+          handleSaveDailyToNotion={handleSaveDailyToNotion}
+          handleUpdateDailyToNotion={handleUpdateDailyToNotion}
+          handleDeleteDailyFromNotion={handleDeleteDailyFromNotion}
+          openDailyNotionPage={openDailyNotionPage}
+          openNotionDatabase={openNotionDatabase}
+          handleResetLocalDraft={handleResetLocalDraft}
+        />
 
         {dailyStatus === "issue" && (
           <section style={{ ...cardStyle, borderColor: "#f9731666" }}>

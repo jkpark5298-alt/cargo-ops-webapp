@@ -187,7 +187,7 @@ function getFlightAlertRows(room: MonitorRoom | null): FlightAlertSnapshotRow[] 
 }
 
 function getFlightNo(row: FlightRow) {
-  return row.flightNo || row.flightId || row.airlineFlightId || row.fltNo || "";
+  return row.flightNo || row.flightId || "";
 }
 
 function getRouteDisplay(row?: FlightRow) {

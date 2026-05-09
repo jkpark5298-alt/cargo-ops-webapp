@@ -199,6 +199,33 @@ function getRouteDisplay(row?: FlightRow) {
   return `-→${arrival}`;
 }
 
+
+function getFlightRouteItems(room: MonitorRoom | null) {
+  if (!room) return [];
+
+  const inputFlights = room.flightsInput
+    .split(",")
+    .map((flight) => flight.trim())
+    .filter(Boolean);
+
+  const rows = Array.isArray(room.rows) ? room.rows : [];
+  const rowFlights = rows.map((row) => getFlightNo(row)).filter(Boolean);
+  const uniqueFlights = Array.from(new Set(inputFlights.length > 0 ? inputFlights : rowFlights));
+
+  return uniqueFlights.map((flight) => {
+    const matchedRow = rows.find((row) => {
+      const rowFlight = getFlightNo(row).replace(/\s+/g, "").toUpperCase();
+      const targetFlight = flight.replace(/\s+/g, "").toUpperCase();
+      return rowFlight === targetFlight || rowFlight.includes(targetFlight);
+    });
+
+    return {
+      flight,
+      route: getRouteDisplay(matchedRow) || "구간 확인 중",
+    };
+  });
+}
+
 function getRoomRowsCount(room: MonitorRoom | null) {
   if (!room) return 0;
   return Array.isArray(room.rows) ? room.rows.length : 0;
@@ -401,7 +428,7 @@ export default function HomePage() {
             {latestRoom?.name || "저장된 스케줄 없음"}
           </h2>
           <div style={infoListStyle}>
-            <InfoRow label="편명 / 구간" value={getFlightSummary(latestRoom)} />
+            <FlightRouteRows room={latestRoom} />
             <InfoRow
               label="조회범위"
               value={
@@ -579,6 +606,28 @@ function ActionCard({
         {buttonLabel}
       </button>
     </section>
+  );
+}
+
+function FlightRouteRows({ room }: { room: MonitorRoom | null }) {
+  const items = getFlightRouteItems(room);
+
+  return (
+    <div style={infoRowStyle}>
+      <div style={infoLabelStyle}>편명 / 구간</div>
+      <div style={flightRouteListStyle}>
+        {items.length > 0 ? (
+          items.map((item) => (
+            <div key={`${item.flight}-${item.route}`} style={flightRouteRowStyle}>
+              <span style={flightRouteNoStyle}>{item.flight}</span>
+              <span style={flightRouteValueStyle}>{item.route}</span>
+            </div>
+          ))
+        ) : (
+          <div style={infoValueStyle}>저장된 Schedule Flight가 없습니다.</div>
+        )}
+      </div>
+    </div>
   );
 }
 
@@ -846,6 +895,34 @@ const infoListStyle: CSSProperties = {
   gap: 10,
   marginTop: 14,
 };
+const flightRouteListStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 8,
+  flex: 1,
+};
+
+const flightRouteRowStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "88px 1fr",
+  gap: 12,
+  alignItems: "center",
+  color: "#f8fafc",
+  fontSize: 15,
+  fontWeight: 900,
+  lineHeight: 1.35,
+};
+
+const flightRouteNoStyle: CSSProperties = {
+  letterSpacing: 0.5,
+  whiteSpace: "nowrap",
+};
+
+const flightRouteValueStyle: CSSProperties = {
+  color: "#dbeafe",
+  wordBreak: "keep-all",
+};
+
 const infoRowStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "86px 1fr",

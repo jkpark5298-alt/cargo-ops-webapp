@@ -4,6 +4,7 @@ import type {
   ChangeEvent,
   CSSProperties,
   Dispatch,
+  Ref,
   RefObject,
   SetStateAction,
 } from "react";
@@ -123,7 +124,7 @@ export function DailyRecordCard({
       </div>
 
       <input
-        ref={cameraInputRef}
+        ref={cameraInputRef as Ref<HTMLInputElement>}
         type="file"
         accept="image/*"
         capture="environment"
@@ -131,7 +132,7 @@ export function DailyRecordCard({
         style={{ display: "none" }}
       />
       <input
-        ref={libraryInputRef}
+        ref={libraryInputRef as Ref<HTMLInputElement>}
         type="file"
         accept="image/*"
         onChange={(event) => handleImageSelected(event, "사진첩 선택")}

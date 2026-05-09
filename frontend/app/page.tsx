@@ -556,6 +556,50 @@ export default function HomePage() {
     setNotice(`${image.label}를 삭제했습니다.`);
   };
 
+  const openLatestImage = (image: SavedImage) => {
+    const imageWindow = window.open("", "_blank", "noopener,noreferrer");
+
+    if (!imageWindow) {
+      setNotice("이미지를 새 창으로 열 수 없습니다. 팝업 차단을 확인하세요.");
+      return;
+    }
+
+    imageWindow.document.write(`
+      <!doctype html>
+      <html lang="ko">
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>${image.label}</title>
+          <style>
+            body {
+              margin: 0;
+              background: #020617;
+              color: #e5edf7;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+              display: flex;
+              min-height: 100vh;
+              align-items: center;
+              justify-content: center;
+              padding: 16px;
+              box-sizing: border-box;
+            }
+            img {
+              max-width: 100%;
+              max-height: 92vh;
+              border-radius: 14px;
+              object-fit: contain;
+            }
+          </style>
+        </head>
+        <body>
+          <img src="${image.dataUrl}" alt="${image.label}" />
+        </body>
+      </html>
+    `);
+    imageWindow.document.close();
+  };
+
   const handleSaveNoteLocal = () => {
     saveNote(note);
     setNotice(

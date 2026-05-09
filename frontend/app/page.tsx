@@ -8,14 +8,25 @@ import {
   type CSSProperties,
 } from "react";
 import { useRouter } from "next/navigation";
+import { FlightAlertCard } from "./components/FlightAlertCard";
+import { FlightAlertHistoryCard } from "./components/FlightAlertHistoryCard";
+import {
+  buildFlightAlertSnapshot,
+  clearFlightAlertHistory,
+  createFlightAlertItems,
+  loadFlightAlertHistory,
+  loadFlightAlertSnapshot,
+  saveFlightAlertHistory,
+  saveFlightAlertSnapshot,
+  type FlightAlertHistoryItem,
+  type FlightAlertSnapshot,
+} from "./lib/flight-alerts";
 
 const STORAGE_KEY = "cargo_ops_monitor_rooms_v6";
 const IMAGE_STORAGE_KEY = "cargo_ops_home_images_v1";
 const NOTE_STORAGE_KEY = "cargo_ops_home_note_v1";
 const DAILY_NOTION_RECORD_KEY = "cargo_ops_daily_notion_record_v1";
 const ISSUE_NOTION_RECORD_KEY = "cargo_ops_issue_notion_record_v1";
-const FLIGHT_ALERT_SNAPSHOT_KEY = "cargo_ops_flight_alert_snapshot_v1";
-const FLIGHT_ALERT_HISTORY_KEY = "cargo_ops_flight_alert_history_v1";
 
 type DailyNotionRecord = {
   pageId: string;
@@ -109,7 +120,7 @@ const DEFAULT_WEATHER: WeatherInfo = {
   message: "실시간 날씨 정보를 불러오면 자동으로 갱신됩니다.",
 };
 
-type FlightRow = {
+export type FlightRow = {
   flightId?: string;
   flightNo?: string;
   departureCode?: string;
@@ -124,7 +135,7 @@ type FlightRow = {
   status?: string;
 };
 
-type MonitorRoom = {
+export type MonitorRoom = {
   id: string;
   name: string;
   flightsInput: string;
@@ -135,34 +146,9 @@ type MonitorRoom = {
   rows: FlightRow[];
 };
 
-type FlightAlertSnapshotRow = {
-  flight: string;
-  route: string;
-  scheduleTime: string;
-  estimatedTime: string;
-  gate: string;
-  terminal: string;
-  remark: string;
-  status: string;
-};
 
-type FlightAlertSnapshot = {
-  roomId: string;
-  roomName: string;
-  savedAt: string;
-  rows: FlightAlertSnapshotRow[];
-};
 
-type FlightAlertItem = {
-  key: string;
-  title: string;
-  description: string;
-};
 
-type FlightAlertHistoryItem = FlightAlertItem & {
-  checkedAt: string;
-  roomName: string;
-};
 
 type SavedImage = {
   id: string;
@@ -273,166 +259,6 @@ function saveIssueNotionRecord(record: IssueNotionRecord) {
 function clearIssueNotionRecord() {
   if (typeof window === "undefined") return;
   localStorage.removeItem(ISSUE_NOTION_RECORD_KEY);
-}
-
-function loadFlightAlertSnapshot(): FlightAlertSnapshot | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem(FLIGHT_ALERT_SNAPSHOT_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return parsed?.roomId && Array.isArray(parsed?.rows) ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function saveFlightAlertSnapshot(snapshot: FlightAlertSnapshot) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(FLIGHT_ALERT_SNAPSHOT_KEY, JSON.stringify(snapshot));
-}
-
-function loadFlightAlertHistory(): FlightAlertHistoryItem[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(FLIGHT_ALERT_HISTORY_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveFlightAlertHistory(items: FlightAlertHistoryItem[]) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(FLIGHT_ALERT_HISTORY_KEY, JSON.stringify(items.slice(0, 20)));
-}
-
-function clearFlightAlertHistory() {
-  if (typeof window === "undefined") return;
-  localStorage.removeItem(FLIGHT_ALERT_HISTORY_KEY);
-}
-
-function normalizeFlightKey(flight: string) {
-  return flight.replace(/\s+/g, "").toUpperCase();
-}
-
-function getRowScheduleTime(row: FlightRow) {
-  return row.formattedEstimatedTime || row.estimatedDateTime || row.formattedScheduleTime || row.scheduleDateTime || "";
-}
-
-function getRowBaseScheduleTime(row: FlightRow) {
-  return row.formattedScheduleTime || row.scheduleDateTime || "";
-}
-
-function getFlightAlertRows(room: MonitorRoom | null): FlightAlertSnapshotRow[] {
-  if (!room || !Array.isArray(room.rows)) return [];
-
-  const rows = room.rows
-    .map((row) => {
-      const flight = getFlightNo(row).trim();
-      if (!flight) return null;
-
-      return {
-        flight,
-        route: getRouteDisplay(row) || "구간 확인 중",
-        scheduleTime: getRowBaseScheduleTime(row),
-        estimatedTime: getRowScheduleTime(row),
-        gate: row.gatenumber || "",
-        terminal: row.terminalid || "",
-        remark: row.remark || "",
-        status: row.status || "",
-      };
-    })
-    .filter((row): row is FlightAlertSnapshotRow => Boolean(row));
-
-  return rows.filter((row, index, array) => {
-    const key = normalizeFlightKey(row.flight);
-    return array.findIndex((candidate) => normalizeFlightKey(candidate.flight) === key) === index;
-  });
-}
-
-function buildFlightAlertSnapshot(room: MonitorRoom | null): FlightAlertSnapshot | null {
-  if (!room) return null;
-
-  return {
-    roomId: room.id,
-    roomName: room.name,
-    savedAt: getCurrentTimeLabel(),
-    rows: getFlightAlertRows(room),
-  };
-}
-
-function createFlightAlertItems(
-  room: MonitorRoom | null,
-  snapshot: FlightAlertSnapshot | null,
-): FlightAlertItem[] {
-  if (!room || !snapshot) return [];
-
-  const currentRows = getFlightAlertRows(room);
-  const previousRows = snapshot.rows || [];
-  const currentMap = new Map(currentRows.map((row) => [normalizeFlightKey(row.flight), row]));
-  const previousMap = new Map(previousRows.map((row) => [normalizeFlightKey(row.flight), row]));
-  const alerts: FlightAlertItem[] = [];
-
-  currentRows.forEach((current) => {
-    const key = normalizeFlightKey(current.flight);
-    const previous = previousMap.get(key);
-
-    if (!previous) {
-      alerts.push({
-        key: `new-${key}`,
-        title: `${current.flight} ${current.route}`,
-        description: "새로 조회된 편명입니다. 운항 정보를 확인하세요.",
-      });
-      return;
-    }
-
-    const changes: string[] = [];
-
-    if (previous.route !== current.route) {
-      changes.push(`구간 ${previous.route || "-"} → ${current.route || "-"}`);
-    }
-
-    if (previous.estimatedTime !== current.estimatedTime) {
-      changes.push(`시간 ${previous.estimatedTime || "-"} → ${current.estimatedTime || "-"}`);
-    }
-
-    if (previous.gate !== current.gate) {
-      changes.push(`게이트 ${previous.gate || "-"} → ${current.gate || "-"}`);
-    }
-
-    if (previous.terminal !== current.terminal) {
-      changes.push(`터미널 ${previous.terminal || "-"} → ${current.terminal || "-"}`);
-    }
-
-    if (previous.remark !== current.remark) {
-      changes.push(`상태 ${previous.remark || previous.status || "-"} → ${current.remark || current.status || "-"}`);
-    }
-
-    if (changes.length > 0) {
-      alerts.push({
-        key: `changed-${key}`,
-        title: `${current.flight} ${current.route}`,
-        description: changes.slice(0, 2).join(" · "),
-      });
-    }
-  });
-
-  previousRows.forEach((previous) => {
-    const key = normalizeFlightKey(previous.flight);
-
-    if (!currentMap.has(key)) {
-      alerts.push({
-        key: `missing-${key}`,
-        title: `${previous.flight} ${previous.route}`,
-        description: "이전 기준에 있던 편명이 현재 조회 결과에서 보이지 않습니다.",
-      });
-    }
-  });
-
-  return alerts.slice(0, 6);
 }
 
 function formatDateForTitle(date: Date) {
@@ -1282,74 +1108,18 @@ export default function HomePage() {
           </div>
         </section>
 
-        <section style={flightAlertCardStyle}>
-          <div style={flightAlertTopStyle}>
-            <div>
-              <div style={cardLabelStyle}>출도착 알림</div>
-              <h2 style={flightAlertTitleStyle}>확인 필요 {flightAlertCount}건</h2>
-            </div>
-            <div style={flightAlertBadgeStyle}>변경 감지</div>
-          </div>
+        <FlightAlertCard
+          alertCount={flightAlertCount}
+          alertItems={flightAlertItems}
+          checkedAt={alertCheckedAt}
+          snapshotName={flightAlertSnapshot?.roomName || null}
+          onSaveCurrent={handleCheckFlightAlerts}
+        />
 
-          <div style={flightAlertSummaryStyle}>
-            {flightAlertCount > 0 ? "변경 확인 필요" : flightAlertSnapshot ? "최근 변경 없음" : "먼저 현재 결과를 기준으로 저장하세요"}
-          </div>
-          <div style={flightAlertMetaStyle}>
-            마지막 확인: {alertCheckedAt || "-"} · 기준 결과: {flightAlertSnapshot?.roomName || "아직 저장 안 됨"}
-          </div>
-
-          {flightAlertCount > 0 && (
-            <div style={flightAlertListStyle}>
-              {flightAlertItems.map((item) => (
-                <div key={item.key} style={flightAlertItemStyle}>
-                  <div style={flightAlertItemTitleStyle}>{item.title}</div>
-                  <div style={flightAlertItemDescStyle}>{item.description}</div>
-                </div>
-              ))}
-            </div>
-          )}
-
-          <div style={flightAlertGuideStyle}>
-            확인 후 버튼을 누르면 현재 조회 결과가 새 기준으로 저장됩니다.
-          </div>
-
-          <button onClick={handleCheckFlightAlerts} style={secondaryButtonStyle}>
-            현재 결과를 기준으로 저장
-          </button>
-        </section>
-
-        <section style={flightAlertHistoryCardStyle}>
-          <div style={flightAlertTopStyle}>
-            <div>
-              <div style={cardLabelStyle}>출도착 알림 이력</div>
-              <h2 style={flightAlertTitleStyle}>최근 변경 {flightAlertHistory.length}건</h2>
-            </div>
-            <div style={flightAlertBadgeStyle}>앱 저장</div>
-          </div>
-
-          {flightAlertHistory.length > 0 ? (
-            <div style={flightAlertListStyle}>
-              {flightAlertHistory.slice(0, 5).map((item, index) => (
-                <div key={`${item.key}-${item.checkedAt}-${index}`} style={flightAlertHistoryItemStyle}>
-                  <div style={flightAlertItemTitleStyle}>{item.title}</div>
-                  <div style={flightAlertItemDescStyle}>{item.description}</div>
-                  <div style={flightAlertHistoryMetaStyle}>
-                    확인 {item.checkedAt} · {item.roomName}
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div style={flightAlertMetaStyle}>아직 저장된 알림 이력이 없습니다.</div>
-          )}
-
-          {flightAlertHistory.length > 0 && (
-            <button onClick={handleClearFlightAlertHistory} style={resetButtonStyle}>
-              알림 이력 초기화
-            </button>
-          )}
-        </section>
-      </section>
+        <FlightAlertHistoryCard
+          historyItems={flightAlertHistory}
+          onClear={handleClearFlightAlertHistory}
+        />
 
       <section style={stackStyle}>
         <ActionCard
@@ -1974,111 +1744,6 @@ const stackStyle: CSSProperties = {
   flexDirection: "column",
   gap: 14,
 };
-const flightAlertCardStyle: CSSProperties = {
-  background: "linear-gradient(145deg, #0f172a, #111827)",
-  border: "1px solid #334155",
-  borderRadius: 22,
-  padding: 18,
-  boxShadow: "0 18px 45px rgba(0,0,0,0.26)",
-};
-
-const flightAlertTopStyle: CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 12,
-  alignItems: "flex-start",
-  marginBottom: 12,
-};
-
-const flightAlertTitleStyle: CSSProperties = {
-  margin: "4px 0 0",
-  color: "#f8fafc",
-  fontSize: 22,
-  lineHeight: 1.15,
-  fontWeight: 950,
-};
-
-const flightAlertBadgeStyle: CSSProperties = {
-  padding: "7px 10px",
-  borderRadius: 999,
-  background: "#1d4ed8",
-  color: "#dbeafe",
-  fontSize: 12,
-  fontWeight: 900,
-  whiteSpace: "nowrap",
-};
-
-const flightAlertSummaryStyle: CSSProperties = {
-  color: "#bbf7d0",
-  fontSize: 16,
-  fontWeight: 950,
-  marginBottom: 6,
-};
-
-const flightAlertMetaStyle: CSSProperties = {
-  color: "#94a3b8",
-  fontSize: 13,
-  lineHeight: 1.5,
-  marginBottom: 14,
-};
-
-const flightAlertGuideStyle: CSSProperties = {
-  color: "#94a3b8",
-  fontSize: 12,
-  lineHeight: 1.45,
-  marginBottom: 12,
-};
-
-const flightAlertHistoryCardStyle: CSSProperties = {
-  background: "linear-gradient(145deg, #0b1120, #111827)",
-  border: "1px solid #1e3a8a",
-  borderRadius: 22,
-  padding: 18,
-  boxShadow: "0 18px 45px rgba(0,0,0,0.22)",
-};
-
-const flightAlertHistoryItemStyle: CSSProperties = {
-  border: "1px solid rgba(59, 130, 246, 0.22)",
-  background: "rgba(30, 64, 175, 0.16)",
-  borderRadius: 14,
-  padding: "10px 12px",
-};
-
-const flightAlertHistoryMetaStyle: CSSProperties = {
-  color: "#93c5fd",
-  fontSize: 11,
-  lineHeight: 1.4,
-  marginTop: 6,
-  fontWeight: 800,
-};
-
-const flightAlertListStyle: CSSProperties = {
-  display: "grid",
-  gap: 8,
-  marginBottom: 14,
-};
-
-const flightAlertItemStyle: CSSProperties = {
-  border: "1px solid rgba(251, 191, 36, 0.26)",
-  background: "rgba(120, 53, 15, 0.22)",
-  borderRadius: 14,
-  padding: "10px 12px",
-};
-
-const flightAlertItemTitleStyle: CSSProperties = {
-  color: "#fef3c7",
-  fontSize: 14,
-  fontWeight: 950,
-  marginBottom: 4,
-};
-
-const flightAlertItemDescStyle: CSSProperties = {
-  color: "#fde68a",
-  fontSize: 12,
-  lineHeight: 1.45,
-  fontWeight: 750,
-};
-
 const cardStyle: CSSProperties = {
   width: "100%",
   boxSizing: "border-box",

@@ -233,16 +233,39 @@ export default function HomePage() {
         <div style={eyebrowStyle}>CARGO OPS</div>
         <h1 style={titleStyle}>KJ 화물기 출도착 모니터링</h1>
         <div style={datePillStyle}>{todayText}</div>
-        <section style={weatherInlineStyle}>
-          <div>
-            <div style={weatherLabelStyle}>인천공항 날씨</div>
-            <div style={weatherValueStyle}>
-              실시간 날씨 · 미세먼지 연동 예정
+        <section style={weatherCardStyle}>
+          <div style={weatherTopRowStyle}>
+            <div>
+              <div style={weatherLabelStyle}>인천공항 날씨</div>
+              <div style={weatherLocationStyle}>인천국제공항 기준</div>
+            </div>
+            <button onClick={openNaverWeather} style={weatherButtonStyle}>
+              네이버
+            </button>
+          </div>
+
+          <div style={weatherMainRowStyle}>
+            <div style={weatherTempStyle}>19.6°</div>
+            <div style={weatherConditionBoxStyle}>
+              <div style={weatherIconStyle}>☀️</div>
+              <div style={weatherConditionStyle}>맑음</div>
             </div>
           </div>
-          <button onClick={openNaverWeather} style={weatherButtonStyle}>
-            확인
-          </button>
+
+          <div style={weatherMetaStyle}>
+            체감 18.0° · 습도 32% · 풍속 3.3m/s
+          </div>
+
+          <div style={weatherGridStyle}>
+            <WeatherMetric label="미세먼지" value="좋음" tone="good" />
+            <WeatherMetric label="초미세먼지" value="좋음" tone="good" />
+            <WeatherMetric label="자외선" value="보통" tone="normal" />
+            <WeatherMetric label="일몰" value="19:30" tone="time" />
+          </div>
+
+          <div style={weatherNoteStyle}>
+            현재는 화면 예시입니다. 다음 단계에서 실시간 날씨·미세먼지 자동 표시를 연결합니다.
+          </div>
         </section>
       </section>
 
@@ -371,6 +394,28 @@ export default function HomePage() {
   );
 }
 
+function WeatherMetric({
+  label,
+  value,
+  tone,
+}: {
+  label: string;
+  value: string;
+  tone: "good" | "normal" | "time";
+}) {
+  const valueColor =
+    tone === "good" ? "#22c55e" : tone === "normal" ? "#facc15" : "#dbeafe";
+
+  return (
+    <div style={weatherMetricStyle}>
+      <span style={weatherMetricLabelStyle}>{label}</span>
+      <strong style={{ ...weatherMetricValueStyle, color: valueColor }}>
+        {value}
+      </strong>
+    </div>
+  );
+}
+
 function ActionCard({
   label,
   title,
@@ -453,40 +498,113 @@ const datePillStyle: CSSProperties = {
   fontSize: 15,
   fontWeight: 800,
 };
-const weatherInlineStyle: CSSProperties = {
+const weatherCardStyle: CSSProperties = {
+  marginTop: 16,
+  padding: 18,
+  borderRadius: 26,
+  background:
+    "linear-gradient(160deg, rgba(31, 41, 55, 0.94), rgba(15, 23, 42, 0.94))",
+  border: "1px solid rgba(148, 163, 184, 0.24)",
+  boxShadow: "0 18px 42px rgba(0, 0, 0, 0.28)",
+};
+const weatherTopRowStyle: CSSProperties = {
+  display: "flex",
+  alignItems: "flex-start",
+  justifyContent: "space-between",
+  gap: 12,
+};
+const weatherLabelStyle: CSSProperties = {
+  color: "#e5edf7",
+  fontSize: 17,
+  fontWeight: 950,
+  letterSpacing: "-0.02em",
+};
+const weatherLocationStyle: CSSProperties = {
+  marginTop: 4,
+  color: "#94a3b8",
+  fontSize: 12,
+  fontWeight: 750,
+};
+const weatherButtonStyle: CSSProperties = {
+  minWidth: 70,
+  minHeight: 38,
+  border: "1px solid rgba(191, 219, 254, 0.28)",
+  borderRadius: 999,
+  background: "rgba(15, 118, 110, 0.92)",
+  color: "white",
+  fontSize: 13,
+  fontWeight: 950,
+  cursor: "pointer",
+};
+const weatherMainRowStyle: CSSProperties = {
   display: "flex",
   alignItems: "center",
   justifyContent: "space-between",
-  gap: 12,
+  gap: 16,
   marginTop: 16,
-  padding: "13px 14px",
-  borderRadius: 18,
-  background: "rgba(8, 20, 39, 0.78)",
-  border: "1px solid rgba(147, 197, 253, 0.22)",
 };
-const weatherLabelStyle: CSSProperties = {
-  color: "#93c5fd",
-  fontSize: 13,
-  fontWeight: 900,
-  marginBottom: 4,
-};
-const weatherValueStyle: CSSProperties = {
+const weatherTempStyle: CSSProperties = {
+  fontSize: 58,
+  lineHeight: 1,
+  letterSpacing: "-0.08em",
+  fontWeight: 950,
   color: "#f8fafc",
-  fontSize: 15,
-  fontWeight: 850,
-  lineHeight: 1.35,
+};
+const weatherConditionBoxStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  alignItems: "center",
+  justifyContent: "center",
+  minWidth: 82,
+};
+const weatherIconStyle: CSSProperties = {
+  fontSize: 34,
+  lineHeight: 1,
+  marginBottom: 6,
+};
+const weatherConditionStyle: CSSProperties = {
+  color: "#f8fafc",
+  fontSize: 16,
+  fontWeight: 900,
+};
+const weatherMetaStyle: CSSProperties = {
+  marginTop: 12,
+  color: "#cbd5e1",
+  fontSize: 14,
+  fontWeight: 750,
+  lineHeight: 1.45,
   wordBreak: "keep-all",
 };
-const weatherButtonStyle: CSSProperties = {
-  minWidth: 68,
-  minHeight: 40,
-  border: "none",
-  borderRadius: 14,
-  background: "#0f766e",
-  color: "white",
-  fontSize: 14,
-  fontWeight: 900,
-  cursor: "pointer",
+const weatherGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 10,
+  marginTop: 16,
+};
+const weatherMetricStyle: CSSProperties = {
+  padding: "12px 12px",
+  borderRadius: 18,
+  background: "rgba(2, 8, 23, 0.42)",
+  border: "1px solid rgba(148, 163, 184, 0.16)",
+};
+const weatherMetricLabelStyle: CSSProperties = {
+  display: "block",
+  color: "#94a3b8",
+  fontSize: 12,
+  fontWeight: 850,
+  marginBottom: 5,
+};
+const weatherMetricValueStyle: CSSProperties = {
+  display: "block",
+  fontSize: 17,
+  fontWeight: 950,
+};
+const weatherNoteStyle: CSSProperties = {
+  marginTop: 12,
+  color: "#94a3b8",
+  fontSize: 12,
+  lineHeight: 1.5,
+  wordBreak: "keep-all",
 };
 const descriptionStyle: CSSProperties = {
   margin: "18px 0 0",

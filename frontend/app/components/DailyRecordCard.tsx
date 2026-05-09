@@ -51,7 +51,7 @@ type DailyRecordCardProps = {
   libraryInputRef: RefObject<HTMLInputElement | null>;
   handleImageSelected: (
     event: ChangeEvent<HTMLInputElement>,
-    sourceLabel: string,
+    sourceLabel: "카메라 촬영" | "사진첩 선택",
   ) => void;
   author: string;
   setAuthor: Dispatch<SetStateAction<string>>;

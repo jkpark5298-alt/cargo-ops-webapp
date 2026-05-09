@@ -408,6 +408,14 @@ function getWeatherSummary(weather: WeatherInfo) {
   return `${weather.condition || "-"} ${weather.temperature || "-"}℃ / 습도 ${weather.humidity || "-"}% / 미세먼지 ${weather.pm10Grade || "-"}`;
 }
 
+
+function getCurrentTimeLabel() {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mm = String(now.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
 export default function HomePage() {
   const router = useRouter();
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
@@ -419,6 +427,7 @@ export default function HomePage() {
   const [notice, setNotice] = useState("");
   const [weather, setWeather] = useState<WeatherInfo>(DEFAULT_WEATHER);
   const [weatherLoading, setWeatherLoading] = useState(false);
+  const [alertCheckedAt, setAlertCheckedAt] = useState("");
   const [dailyStatus, setDailyStatus] = useState<"normal" | "issue">("normal");
   const [author, setAuthor] = useState("jkpark");
   const [issueFlight, setIssueFlight] = useState("");
@@ -438,6 +447,7 @@ export default function HomePage() {
     setNote(loadNote());
     setDailyNotionRecord(loadDailyNotionRecord());
     setIssueNotionRecord(loadIssueNotionRecord());
+    setAlertCheckedAt(getCurrentTimeLabel());
     void fetchWeather();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -454,6 +464,11 @@ export default function HomePage() {
       setIssueHlnbr(hlnbr);
     }
   }, [issueFlight, latestRoom]);
+
+  const handleCheckFlightAlerts = () => {
+    setAlertCheckedAt(getCurrentTimeLabel());
+    setNotice("출도착 알림을 확인했습니다. 다음 단계에서 Schedule Flight 변경 감지를 연결합니다.");
+  };
 
   const openFlights = () => router.push("/flights");
 
@@ -985,6 +1000,25 @@ export default function HomePage() {
             날씨 기준 {weather.baseTime || "-"}
             {weather.source === "fallback" ? ` · ${weather.message || "예시값 표시 중"}` : " · 실시간 자동 표시"}
           </div>
+        </section>
+
+        <section style={flightAlertCardStyle}>
+          <div style={flightAlertTopStyle}>
+            <div>
+              <div style={cardLabelStyle}>출도착 알림</div>
+              <h2 style={flightAlertTitleStyle}>확인 필요 0건</h2>
+            </div>
+            <div style={flightAlertBadgeStyle}>1단계</div>
+          </div>
+
+          <div style={flightAlertSummaryStyle}>최근 변경 없음</div>
+          <div style={flightAlertMetaStyle}>
+            마지막 확인: {alertCheckedAt || "-"} · 앱 안 알림 카드 준비 단계
+          </div>
+
+          <button onClick={handleCheckFlightAlerts} style={secondaryButtonStyle}>
+            알림 확인
+          </button>
         </section>
       </section>
 
@@ -1610,6 +1644,54 @@ const stackStyle: CSSProperties = {
   flexDirection: "column",
   gap: 14,
 };
+const flightAlertCardStyle: CSSProperties = {
+  background: "linear-gradient(145deg, #0f172a, #111827)",
+  border: "1px solid #334155",
+  borderRadius: 22,
+  padding: 18,
+  boxShadow: "0 18px 45px rgba(0,0,0,0.26)",
+};
+
+const flightAlertTopStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  alignItems: "flex-start",
+  marginBottom: 12,
+};
+
+const flightAlertTitleStyle: CSSProperties = {
+  margin: "4px 0 0",
+  color: "#f8fafc",
+  fontSize: 22,
+  lineHeight: 1.15,
+  fontWeight: 950,
+};
+
+const flightAlertBadgeStyle: CSSProperties = {
+  padding: "7px 10px",
+  borderRadius: 999,
+  background: "#1d4ed8",
+  color: "#dbeafe",
+  fontSize: 12,
+  fontWeight: 900,
+  whiteSpace: "nowrap",
+};
+
+const flightAlertSummaryStyle: CSSProperties = {
+  color: "#bbf7d0",
+  fontSize: 16,
+  fontWeight: 950,
+  marginBottom: 6,
+};
+
+const flightAlertMetaStyle: CSSProperties = {
+  color: "#94a3b8",
+  fontSize: 13,
+  lineHeight: 1.5,
+  marginBottom: 14,
+};
+
 const cardStyle: CSSProperties = {
   width: "100%",
   boxSizing: "border-box",

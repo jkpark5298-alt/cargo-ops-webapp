@@ -12,8 +12,6 @@ import { FlightAlertCard } from "./components/FlightAlertCard";
 import { FlightAlertHistoryCard } from "./components/FlightAlertHistoryCard";
 import { WeatherCard } from "./components/WeatherCard";
 import { ScheduleSummaryCard } from "./components/ScheduleSummaryCard";
-import { DailyRecordCard } from "./components/DailyRecordCard";
-import { IssueRecordCard } from "./components/IssueRecordCard";
 import {
   buildFlightAlertSnapshot,
   clearFlightAlertHistory,
@@ -335,85 +333,6 @@ function getRouteDisplay(row?: FlightRow) {
   if (departure) return `${departure}→-`;
   return `-→${arrival}`;
 }
-
-function getDirectionLabel(row?: FlightRow) {
-  if (!row) return "운항";
-  const remark = `${row.remark || ""} ${row.status || ""}`.toLowerCase();
-  const route = getRouteDisplay(row);
-
-  if (remark.includes("arrival") || remark.includes("도착") || route.endsWith("→ICN")) {
-    return "도착";
-  }
-
-  if (remark.includes("departure") || remark.includes("출발") || route.startsWith("ICN→")) {
-    return "출발";
-  }
-
-  return "운항";
-}
-
-function getFlightTimeDisplay(row?: FlightRow) {
-  if (!row) return "-";
-  return (
-    row.formattedEstimatedTime ||
-    row.estimatedDateTime ||
-    row.formattedScheduleTime ||
-    row.scheduleDateTime ||
-    "-"
-  );
-}
-
-
-function getFlightRouteItems(room: MonitorRoom | null) {
-  if (!room) return [];
-
-  const rows = Array.isArray(room.rows) ? room.rows : [];
-
-  const rowItems = rows
-    .map((row) => {
-      const flight = getFlightNo(row);
-      if (!flight) return null;
-
-      return {
-        flight,
-        route: getRouteDisplay(row) || "구간 확인 중",
-        direction: getDirectionLabel(row),
-        time: getFlightTimeDisplay(row),
-        hasResult: true,
-      };
-    })
-    .filter(
-      (item): item is {
-        flight: string;
-        route: string;
-        direction: string;
-        time: string;
-        hasResult: boolean;
-      } => Boolean(item),
-    );
-
-  const uniqueRowItems = rowItems.filter((item, index, array) => {
-    const key = item.flight.replace(/\s+/g, "").toUpperCase();
-    return array.findIndex((candidate) => candidate.flight.replace(/\s+/g, "").toUpperCase() === key) === index;
-  });
-
-  if (uniqueRowItems.length > 0) {
-    return uniqueRowItems;
-  }
-
-  return room.flightsInput
-    .split(",")
-    .map((flight) => flight.trim())
-    .filter(Boolean)
-    .map((flight) => ({
-      flight,
-      route: "조회 결과 없음",
-      direction: "확인",
-      time: "-",
-      hasResult: false,
-    }));
-}
-
 
 function getRoomRowsCount(room: MonitorRoom | null) {
   if (!room) return 0;
@@ -1107,62 +1026,234 @@ export default function HomePage() {
           onOpenScheduleFlight={openScheduleFlight}
         />
 
-        <DailyRecordCard
-          dailyStatus={dailyStatus}
-          setDailyStatus={setDailyStatus}
-          images={images}
-          imageSlots={IMAGE_SLOTS}
-          getImageBySlot={getImageBySlot}
-          openCamera={openCamera}
-          openPhotoLibrary={openPhotoLibrary}
-          openLatestImage={openLatestImage}
-          handleDeleteImageSlot={handleDeleteImageSlot}
-          cameraInputRef={cameraInputRef}
-          libraryInputRef={libraryInputRef}
-          handleImageSelected={handleImageSelected}
-          author={author}
-          setAuthor={setAuthor}
-          note={note}
-          setNote={setNote}
-          dailyNotionRecord={dailyNotionRecord}
-          handleSaveDailyDraft={handleSaveDailyDraft}
-          handleSaveDailyToNotion={handleSaveDailyToNotion}
-          handleUpdateDailyToNotion={handleUpdateDailyToNotion}
-          handleDeleteDailyFromNotion={handleDeleteDailyFromNotion}
-          openDailyNotionPage={openDailyNotionPage}
-          openNotionDatabase={openNotionDatabase}
-          handleResetLocalDraft={handleResetLocalDraft}
-        />
+        <section style={cardStyle}>
+          <div style={cardLabelStyle}>일일 업무 기록</div>
+          <h2 style={cardTitleStyle}>사진 중심 업무 내용 정리</h2>
+          <p style={cardDescriptionStyle}>
+            항목별로 이미지를 먼저 선택해 저장합니다. 잘못 올린 사진은 보기, 변경, 삭제할 수 있습니다.
+          </p>
+
+          <div style={statusToggleStyle}>
+            <button
+              onClick={() => setDailyStatus("normal")}
+              style={dailyStatus === "normal" ? statusActiveButtonStyle : statusButtonStyle}
+            >
+              이상 없음
+            </button>
+            <button
+              onClick={() => setDailyStatus("issue")}
+              style={dailyStatus === "issue" ? statusIssueButtonStyle : statusButtonStyle}
+            >
+              특이사항 있음
+            </button>
+          </div>
+
+          <div style={imageSlotListStyle}>
+            {IMAGE_SLOTS.map((slot) => (
+              <ImageSlotCard
+                key={slot.key}
+                slot={slot}
+                image={getImageBySlot(images, slot.key)}
+                onCamera={() => openCamera(slot.key)}
+                onLibrary={() => openPhotoLibrary(slot.key)}
+                onView={openLatestImage}
+                onDelete={() => handleDeleteImageSlot(slot.key)}
+              />
+            ))}
+          </div>
+
+          <input
+            ref={cameraInputRef}
+            type="file"
+            accept="image/*"
+            capture="environment"
+            onChange={(event) => handleImageSelected(event, "카메라 촬영")}
+            style={{ display: "none" }}
+          />
+          <input
+            ref={libraryInputRef}
+            type="file"
+            accept="image/*"
+            onChange={(event) => handleImageSelected(event, "사진첩 선택")}
+            style={{ display: "none" }}
+          />
+
+          <div style={fieldBlockStyle}>
+            <label style={fieldLabelStyle}>작성자</label>
+            <input
+              value={author}
+              onChange={(event) => setAuthor(event.target.value)}
+              placeholder="작성자"
+              style={inputStyle}
+            />
+          </div>
+
+          <textarea
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="주요 사항을 입력하세요. 예: 점검 대상 결과 이상 없음."
+            style={noteStyle}
+          />
+
+          {dailyNotionRecord ? (
+            <div style={notionSavedBoxStyle}>
+              <div style={notionSavedTextStyle}>
+                Notion 저장 완료 · {dailyNotionRecord.savedAt}
+              </div>
+              <div style={buttonStackStyle}>
+                <button onClick={handleUpdateDailyToNotion} style={greenButtonStyle}>
+                  Notion 일일 기록 수정
+                </button>
+                <button onClick={handleDeleteDailyFromNotion} style={dangerButtonStyle}>
+                  Notion 일일 기록 삭제
+                </button>
+                <button onClick={openDailyNotionPage} style={darkButtonStyle}>
+                  Notion에서 보기
+                </button>
+                <button onClick={() => openNotionDatabase("daily")} style={darkButtonStyle}>
+                  Notion 일일 업무 DB 열기
+                </button>
+                <button onClick={handleResetLocalDraft} style={resetButtonStyle}>
+                  앱 화면만 초기화
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={buttonStackStyle}>
+              <button onClick={handleSaveDailyDraft} style={greenButtonStyle}>
+                일일 업무 임시 저장
+              </button>
+              <button onClick={handleSaveDailyToNotion} style={darkButtonStyle}>
+                Notion 일일 기록 저장
+              </button>
+              <button onClick={() => openNotionDatabase("daily")} style={darkButtonStyle}>
+                Notion 일일 업무 DB 열기
+              </button>
+              <button onClick={handleResetLocalDraft} style={resetButtonStyle}>
+                앱 화면만 초기화
+              </button>
+            </div>
+          )}
+        </section>
 
         {dailyStatus === "issue" && (
-          <IssueRecordCard
-            issueImageSlot={ISSUE_IMAGE_SLOT}
-            issueImage={getImageBySlot(images, ISSUE_IMAGE_SLOT.key)}
-            openCamera={() => openCamera(ISSUE_IMAGE_SLOT.key)}
-            openPhotoLibrary={() => openPhotoLibrary(ISSUE_IMAGE_SLOT.key)}
-            openLatestImage={openLatestImage}
-            handleDeleteImageSlot={() => handleDeleteImageSlot(ISSUE_IMAGE_SLOT.key)}
-            todayText={todayText}
-            currentTimeText={getCurrentTimeText()}
-            issueFlight={issueFlight}
-            setIssueFlight={setIssueFlight}
-            issueRoute={issueRoute}
-            setIssueRoute={setIssueRoute}
-            issueHlnbr={issueHlnbr}
-            setIssueHlnbr={setIssueHlnbr}
-            author={author}
-            setAuthor={setAuthor}
-            weatherSummary={getWeatherSummary(weather)}
-            issueText={issueText}
-            setIssueText={setIssueText}
-            issueNotionRecord={issueNotionRecord}
-            handleSaveIssueToNotion={handleSaveIssueToNotion}
-            handleUpdateIssueToNotion={handleUpdateIssueToNotion}
-            handleDeleteIssueFromNotion={handleDeleteIssueFromNotion}
-            openIssueNotionPage={openIssueNotionPage}
-            openNotionDatabase={openNotionDatabase}
-            handleResetLocalDraft={handleResetLocalDraft}
-          />
+          <section style={{ ...cardStyle, borderColor: "#f9731666" }}>
+            <div style={cardLabelStyle}>특이사항 기록</div>
+            <h2 style={cardTitleStyle}>문제 발생 대비 증빙 기록</h2>
+            <p style={cardDescriptionStyle}>
+              특이사항 발생 시 날짜, 시간, 편명, 구간, HL NBR, 날씨, 작성자, 이미지와 메모를 함께 저장합니다.
+            </p>
+
+            <ImageSlotCard
+              slot={ISSUE_IMAGE_SLOT}
+              image={getImageBySlot(images, ISSUE_IMAGE_SLOT.key)}
+              onCamera={() => openCamera(ISSUE_IMAGE_SLOT.key)}
+              onLibrary={() => openPhotoLibrary(ISSUE_IMAGE_SLOT.key)}
+              onView={openLatestImage}
+              onDelete={() => handleDeleteImageSlot(ISSUE_IMAGE_SLOT.key)}
+            />
+
+            <div style={formGridStyle}>
+              <div style={fieldBlockStyle}>
+                <label style={fieldLabelStyle}>날짜</label>
+                <input value={todayText} readOnly style={inputStyle} />
+              </div>
+
+              <div style={fieldBlockStyle}>
+                <label style={fieldLabelStyle}>시간</label>
+                <input value={getCurrentTimeText()} readOnly style={inputStyle} />
+              </div>
+
+              <div style={fieldBlockStyle}>
+                <label style={fieldLabelStyle}>편명</label>
+                <input
+                  value={issueFlight}
+                  onChange={(event) => setIssueFlight(event.target.value.toUpperCase())}
+                  placeholder="예: KJ919"
+                  style={inputStyle}
+                />
+              </div>
+
+              <div style={fieldBlockStyle}>
+                <label style={fieldLabelStyle}>구간</label>
+                <input
+                  value={issueRoute}
+                  onChange={(event) => setIssueRoute(event.target.value.toUpperCase())}
+                  placeholder="편명 입력 시 자동 표시"
+                  style={inputStyle}
+                />
+              </div>
+
+              <div style={fieldBlockStyle}>
+                <label style={fieldLabelStyle}>HL NBR</label>
+                <input
+                  value={issueHlnbr}
+                  onChange={(event) => setIssueHlnbr(event.target.value.toUpperCase())}
+                  placeholder="예: HL8000"
+                  style={inputStyle}
+                />
+              </div>
+
+              <div style={fieldBlockStyle}>
+                <label style={fieldLabelStyle}>작성자</label>
+                <input
+                  value={author}
+                  onChange={(event) => setAuthor(event.target.value)}
+                  placeholder="작성자"
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            <div style={fieldBlockStyle}>
+              <label style={fieldLabelStyle}>날씨</label>
+              <input value={getWeatherSummary(weather)} readOnly style={inputStyle} />
+            </div>
+
+            <textarea
+              value={issueText}
+              onChange={(event) => setIssueText(event.target.value)}
+              placeholder="특이사항을 입력하세요. 예: 게이트 변경, 지연, 점검 결과 이상 등"
+              style={noteStyle}
+            />
+
+            {issueNotionRecord ? (
+              <div style={notionIssueSavedBoxStyle}>
+                <div style={notionIssueSavedTextStyle}>
+                  Notion 특이사항 저장 완료 · {issueNotionRecord.savedAt}
+                </div>
+                <div style={buttonStackStyle}>
+                  <button onClick={handleUpdateIssueToNotion} style={orangeButtonStyle}>
+                    Notion 특이사항 수정
+                  </button>
+                  <button onClick={handleDeleteIssueFromNotion} style={dangerButtonStyle}>
+                    Notion 특이사항 삭제
+                  </button>
+                  <button onClick={openIssueNotionPage} style={darkButtonStyle}>
+                    Notion에서 보기
+                  </button>
+                  <button onClick={() => openNotionDatabase("issue")} style={darkButtonStyle}>
+                    Notion 특이사항 DB 열기
+                  </button>
+                  <button onClick={handleResetLocalDraft} style={resetButtonStyle}>
+                    앱 화면만 초기화
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={buttonStackStyle}>
+                <button onClick={handleSaveIssueToNotion} style={orangeButtonStyle}>
+                  Notion 특이사항 저장
+                </button>
+                <button onClick={() => openNotionDatabase("issue")} style={darkButtonStyle}>
+                  Notion 특이사항 DB 열기
+                </button>
+                <button onClick={handleResetLocalDraft} style={resetButtonStyle}>
+                  앱 화면만 초기화
+                </button>
+              </div>
+            )}
+          </section>
         )}
 
         {notice && <div style={noticeStyle}>{notice}</div>}
@@ -1184,34 +1275,6 @@ function getUvTone(value?: string): "good" | "normal" | "bad" | "time" {
   if (value.includes("낮") || value.includes("좋음")) return "good";
   if (value.includes("높") || value.includes("위험")) return "bad";
   return "normal";
-}
-
-function WeatherMetric({
-  label,
-  value,
-  tone,
-}: {
-  label: string;
-  value: string;
-  tone: "good" | "normal" | "bad" | "time";
-}) {
-  const valueColor =
-    tone === "good"
-      ? "#22c55e"
-      : tone === "bad"
-        ? "#ef4444"
-        : tone === "normal"
-          ? "#facc15"
-          : "#dbeafe";
-
-  return (
-    <div style={weatherMetricStyle}>
-      <span style={weatherMetricLabelStyle}>{label}</span>
-      <strong style={{ ...weatherMetricValueStyle, color: valueColor }}>
-        {value}
-      </strong>
-    </div>
-  );
 }
 
 function ActionCard({
@@ -1304,38 +1367,6 @@ function ImageSlotCard({
   );
 }
 
-function FlightRouteRows({ room }: { room: MonitorRoom | null }) {
-  const items = getFlightRouteItems(room);
-
-  return (
-    <div style={flightRouteOnlyBlockStyle}>
-      {items.length > 0 ? (
-        items.map((item) => (
-          <div key={`${item.flight}-${item.route}`} style={flightRouteRowStyle}>
-            <span style={flightRouteNoStyle}>{item.flight}</span>
-            <span style={flightRouteValueStyle}>{item.route}</span>
-            <span style={flightRouteMetaStyle}>
-              {item.direction} · {item.time}
-            </span>
-          </div>
-        ))
-      ) : (
-        <div style={infoValueStyle}>저장된 Schedule Flight가 없습니다.</div>
-      )}
-    </div>
-  );
-}
-
-
-function InfoRow({ label, value }: { label: string; value: string }) {
-  return (
-    <div style={infoRowStyle}>
-      <span style={infoLabelStyle}>{label}</span>
-      <span style={infoValueStyle}>{value}</span>
-    </div>
-  );
-}
-
 const pageStyle: CSSProperties = {
   minHeight: "100vh",
   background:
@@ -1378,131 +1409,6 @@ const datePillStyle: CSSProperties = {
   color: "#dbeafe",
   fontSize: 15,
   fontWeight: 800,
-};
-const weatherCardStyle: CSSProperties = {
-  marginTop: 16,
-  padding: 18,
-  borderRadius: 26,
-  background:
-    "linear-gradient(160deg, rgba(31, 41, 55, 0.94), rgba(15, 23, 42, 0.94))",
-  border: "1px solid rgba(148, 163, 184, 0.24)",
-  boxShadow: "0 18px 42px rgba(0, 0, 0, 0.28)",
-};
-const weatherTopRowStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "flex-start",
-  justifyContent: "space-between",
-  gap: 12,
-};
-const weatherLabelStyle: CSSProperties = {
-  color: "#e5edf7",
-  fontSize: 17,
-  fontWeight: 950,
-  letterSpacing: "-0.02em",
-};
-const weatherLocationStyle: CSSProperties = {
-  marginTop: 4,
-  color: "#94a3b8",
-  fontSize: 12,
-  fontWeight: 750,
-};
-const weatherButtonStyle: CSSProperties = {
-  minWidth: 70,
-  minHeight: 38,
-  border: "1px solid rgba(191, 219, 254, 0.28)",
-  borderRadius: 999,
-  background: "rgba(15, 118, 110, 0.92)",
-  color: "white",
-  fontSize: 13,
-  fontWeight: 950,
-  cursor: "pointer",
-};
-const weatherButtonGroupStyle: CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 8,
-  alignItems: "flex-end",
-};
-const weatherSubButtonStyle: CSSProperties = {
-  minWidth: 70,
-  minHeight: 34,
-  border: "1px solid rgba(148, 163, 184, 0.22)",
-  borderRadius: 999,
-  background: "rgba(15, 23, 42, 0.74)",
-  color: "#dbeafe",
-  fontSize: 12,
-  fontWeight: 900,
-  cursor: "pointer",
-};
-const weatherMainRowStyle: CSSProperties = {
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "space-between",
-  gap: 16,
-  marginTop: 16,
-};
-const weatherTempStyle: CSSProperties = {
-  fontSize: 58,
-  lineHeight: 1,
-  letterSpacing: "-0.08em",
-  fontWeight: 950,
-  color: "#f8fafc",
-};
-const weatherConditionBoxStyle: CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  alignItems: "center",
-  justifyContent: "center",
-  minWidth: 82,
-};
-const weatherIconStyle: CSSProperties = {
-  fontSize: 34,
-  lineHeight: 1,
-  marginBottom: 6,
-};
-const weatherConditionStyle: CSSProperties = {
-  color: "#f8fafc",
-  fontSize: 16,
-  fontWeight: 900,
-};
-const weatherMetaStyle: CSSProperties = {
-  marginTop: 12,
-  color: "#cbd5e1",
-  fontSize: 14,
-  fontWeight: 750,
-  lineHeight: 1.45,
-  wordBreak: "keep-all",
-};
-const weatherGridStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "1fr 1fr",
-  gap: 10,
-  marginTop: 16,
-};
-const weatherMetricStyle: CSSProperties = {
-  padding: "12px 12px",
-  borderRadius: 18,
-  background: "rgba(2, 8, 23, 0.42)",
-  border: "1px solid rgba(148, 163, 184, 0.16)",
-};
-const weatherMetricLabelStyle: CSSProperties = {
-  display: "block",
-  color: "#94a3b8",
-  fontSize: 12,
-  fontWeight: 850,
-  marginBottom: 5,
-};
-const weatherMetricValueStyle: CSSProperties = {
-  display: "block",
-  fontSize: 17,
-  fontWeight: 950,
-};
-const weatherNoteStyle: CSSProperties = {
-  marginTop: 12,
-  color: "#94a3b8",
-  fontSize: 12,
-  lineHeight: 1.5,
-  wordBreak: "keep-all",
 };
 const descriptionStyle: CSSProperties = {
   margin: "18px 0 0",
@@ -1591,49 +1497,6 @@ const infoListStyle: CSSProperties = {
   gap: 10,
   marginTop: 14,
 };
-const flightRouteListStyle: CSSProperties = {
-  display: "flex",
-  flexDirection: "column",
-  gap: 8,
-  flex: 1,
-};
-
-const flightRouteOnlyBlockStyle: CSSProperties = {
-  display: "grid",
-  gap: 8,
-  padding: "10px 0",
-  borderBottom: "1px solid rgba(148, 163, 184, 0.14)",
-};
-
-const flightRouteRowStyle: CSSProperties = {
-  display: "grid",
-  gridTemplateColumns: "76px 1fr auto",
-  gap: 10,
-  alignItems: "center",
-  color: "#f8fafc",
-  fontSize: 15,
-  fontWeight: 900,
-  lineHeight: 1.35,
-};
-
-const flightRouteNoStyle: CSSProperties = {
-  letterSpacing: 0.5,
-  whiteSpace: "nowrap",
-};
-
-const flightRouteValueStyle: CSSProperties = {
-  color: "#dbeafe",
-  wordBreak: "keep-all",
-};
-
-const flightRouteMetaStyle: CSSProperties = {
-  color: "#93c5fd",
-  fontSize: 12,
-  fontWeight: 850,
-  textAlign: "right",
-  whiteSpace: "nowrap",
-};
-
 const infoRowStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "86px 1fr",

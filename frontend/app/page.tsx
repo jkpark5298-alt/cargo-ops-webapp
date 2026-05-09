@@ -356,7 +356,7 @@ function createFlightAlertItems(
       alerts.push({
         key: `new-${key}`,
         title: `${current.flight} ${current.route}`,
-        description: "신규 편명 확인 필요",
+        description: "새로 조회된 편명입니다. 운항 정보를 확인하세요.",
       });
       return;
     }
@@ -399,7 +399,7 @@ function createFlightAlertItems(
       alerts.push({
         key: `missing-${key}`,
         title: `${previous.flight} ${previous.route}`,
-        description: "이전 조회에 있던 편명이 현재 결과에서 보이지 않습니다.",
+        description: "이전 기준에 있던 편명이 현재 조회 결과에서 보이지 않습니다.",
       });
     }
   });
@@ -651,7 +651,7 @@ export default function HomePage() {
     setFlightAlertSnapshot(snapshot);
     saveFlightAlertSnapshot(snapshot);
     setAlertCheckedAt(snapshot.savedAt);
-    setNotice("현재 Schedule Flight 결과를 알림 기준으로 저장했습니다.");
+    setNotice("현재 Schedule Flight 결과를 변경 감지 기준으로 저장했습니다.");
   };
 
   const openFlights = () => router.push("/flights");
@@ -1192,14 +1192,14 @@ export default function HomePage() {
               <div style={cardLabelStyle}>출도착 알림</div>
               <h2 style={flightAlertTitleStyle}>확인 필요 {flightAlertCount}건</h2>
             </div>
-            <div style={flightAlertBadgeStyle}>2단계</div>
+            <div style={flightAlertBadgeStyle}>변경 감지</div>
           </div>
 
           <div style={flightAlertSummaryStyle}>
-            {flightAlertCount > 0 ? "변경 확인 필요" : flightAlertSnapshot ? "최근 변경 없음" : "알림 기준 저장 필요"}
+            {flightAlertCount > 0 ? "변경 확인 필요" : flightAlertSnapshot ? "최근 변경 없음" : "먼저 현재 결과를 기준으로 저장하세요"}
           </div>
           <div style={flightAlertMetaStyle}>
-            마지막 확인: {alertCheckedAt || "-"} · 기준 결과: {flightAlertSnapshot?.roomName || "없음"}
+            마지막 확인: {alertCheckedAt || "-"} · 기준 결과: {flightAlertSnapshot?.roomName || "아직 저장 안 됨"}
           </div>
 
           {flightAlertCount > 0 && (
@@ -1213,8 +1213,12 @@ export default function HomePage() {
             </div>
           )}
 
+          <div style={flightAlertGuideStyle}>
+            확인 후 버튼을 누르면 현재 조회 결과가 새 기준으로 저장됩니다.
+          </div>
+
           <button onClick={handleCheckFlightAlerts} style={secondaryButtonStyle}>
-            알림 기준 저장 / 확인 완료
+            현재 결과를 기준으로 저장
           </button>
         </section>
       </section>
@@ -1887,6 +1891,13 @@ const flightAlertMetaStyle: CSSProperties = {
   fontSize: 13,
   lineHeight: 1.5,
   marginBottom: 14,
+};
+
+const flightAlertGuideStyle: CSSProperties = {
+  color: "#94a3b8",
+  fontSize: 12,
+  lineHeight: 1.45,
+  marginBottom: 12,
 };
 
 const flightAlertListStyle: CSSProperties = {

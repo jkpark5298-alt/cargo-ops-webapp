@@ -312,10 +312,10 @@ export default function HomePage() {
             </div>
             <div style={weatherButtonGroupStyle}>
               <button onClick={fetchWeather} style={weatherButtonStyle}>
-                {weatherLoading ? "조회 중" : "새로고침"}
+                {weatherLoading ? "조회 중" : "날씨 새로고침"}
               </button>
               <button onClick={openNaverWeather} style={weatherSubButtonStyle}>
-                네이버
+                네이버 날씨
               </button>
             </div>
           </div>
@@ -340,7 +340,7 @@ export default function HomePage() {
           </div>
 
           <div style={weatherNoteStyle}>
-            기준 {weather.baseTime || "-"}
+            날씨 기준 {weather.baseTime || "-"}
             {weather.source === "fallback" ? ` · ${weather.message || "예시값 표시 중"}` : " · 실시간 자동 표시"}
           </div>
         </section>

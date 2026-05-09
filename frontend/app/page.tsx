@@ -492,10 +492,16 @@ function WeatherMetric({
 }: {
   label: string;
   value: string;
-  tone: "good" | "normal" | "time";
+  tone: "good" | "normal" | "bad" | "time";
 }) {
   const valueColor =
-    tone === "good" ? "#22c55e" : tone === "normal" ? "#facc15" : "#dbeafe";
+    tone === "good"
+      ? "#22c55e"
+      : tone === "bad"
+        ? "#ef4444"
+        : tone === "normal"
+          ? "#facc15"
+          : "#dbeafe";
 
   return (
     <div style={weatherMetricStyle}>

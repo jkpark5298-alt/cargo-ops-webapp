@@ -216,6 +216,67 @@ async def create_daily_record(payload: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+async def update_daily_record(page_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    images = payload.get("images") or []
+    if not isinstance(images, list):
+        images = []
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        image_properties = await _upload_files_for_properties(client, images)
+
+        properties: dict[str, Any] = {
+            "제목": _title(payload.get("title")),
+            "날짜": _date(payload.get("date")),
+            "작성자": _text_property(payload.get("author")),
+            "상태": _select(payload.get("status") or "이상 없음"),
+            "주요 사항": _text_property(payload.get("memo")),
+            **image_properties,
+        }
+
+        response = await client.patch(
+            f"{NOTION_API_BASE}/pages/{page_id}",
+            headers=_headers(),
+            json={"properties": properties},
+        )
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Notion daily record update failed: {response.text}",
+        )
+
+    result = response.json()
+    return {
+        "success": True,
+        "message": "Daily record updated in Notion",
+        "pageId": result.get("id"),
+        "url": result.get("url"),
+    }
+
+
+async def delete_daily_record(page_id: str) -> dict[str, Any]:
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.patch(
+            f"{NOTION_API_BASE}/pages/{page_id}",
+            headers=_headers(),
+            json={"archived": True},
+        )
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Notion daily record delete failed: {response.text}",
+        )
+
+    result = response.json()
+    return {
+        "success": True,
+        "message": "Daily record deleted from Notion",
+        "pageId": result.get("id"),
+        "archived": result.get("archived", True),
+    }
+
+
 async def create_issue_record(payload: dict[str, Any]) -> dict[str, Any]:
     image = payload.get("image")
     images = [image] if isinstance(image, dict) else []

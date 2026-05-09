@@ -12,6 +12,13 @@ import { useRouter } from "next/navigation";
 const STORAGE_KEY = "cargo_ops_monitor_rooms_v6";
 const IMAGE_STORAGE_KEY = "cargo_ops_home_images_v1";
 const NOTE_STORAGE_KEY = "cargo_ops_home_note_v1";
+const DAILY_NOTION_RECORD_KEY = "cargo_ops_daily_notion_record_v1";
+
+type DailyNotionRecord = {
+  pageId: string;
+  url?: string;
+  savedAt: string;
+};
 
 type ImageSlotKey =
   | "daily-schedule"
@@ -188,6 +195,28 @@ function loadNote() {
 function saveNote(note: string) {
   if (typeof window === "undefined") return;
   localStorage.setItem(NOTE_STORAGE_KEY, note);
+}
+
+function loadDailyNotionRecord(): DailyNotionRecord | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(DAILY_NOTION_RECORD_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.pageId ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveDailyNotionRecord(record: DailyNotionRecord) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(DAILY_NOTION_RECORD_KEY, JSON.stringify(record));
+}
+
+function clearDailyNotionRecord() {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(DAILY_NOTION_RECORD_KEY);
 }
 
 function formatDateForTitle(date: Date) {
@@ -371,6 +400,8 @@ export default function HomePage() {
   const [issueRoute, setIssueRoute] = useState("");
   const [issueHlnbr, setIssueHlnbr] = useState("");
   const [issueText, setIssueText] = useState("");
+  const [dailyNotionRecord, setDailyNotionRecord] =
+    useState<DailyNotionRecord | null>(null);
   const todayText = useMemo(() => formatDateForTitle(new Date()), []);
   const latestRoom = useMemo(() => getLatestScheduleRoom(rooms), [rooms]);
 
@@ -378,6 +409,7 @@ export default function HomePage() {
     setRooms(loadRooms());
     setImages(loadImages());
     setNote(loadNote());
+    setDailyNotionRecord(loadDailyNotionRecord());
     void fetchWeather();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -511,32 +543,36 @@ export default function HomePage() {
     );
   };
 
+  const buildDailyPayload = () => {
+    const dailyImages = IMAGE_SLOTS.map((slot) => {
+      const image = getImageBySlot(images, slot.key);
+      if (!image) return null;
+
+      return {
+        slotKey: slot.key,
+        propertyName: IMAGE_SLOT_PROPERTY_NAME[slot.key],
+        label: image.label,
+        savedAt: image.savedAt,
+        dataUrl: image.dataUrl,
+      };
+    }).filter(Boolean);
+
+    return {
+      title: `${todayText} KJ 일일 업무`,
+      date: new Date().toISOString(),
+      author,
+      status: dailyStatus === "normal" ? "이상 없음" : "특이사항 있음",
+      memo: note,
+      images: dailyImages,
+    };
+  };
+
   const handleSaveDailyToNotion = async () => {
     try {
-      const dailyImages = IMAGE_SLOTS.map((slot) => {
-        const image = getImageBySlot(images, slot.key);
-        if (!image) return null;
-
-        return {
-          slotKey: slot.key,
-          propertyName: IMAGE_SLOT_PROPERTY_NAME[slot.key],
-          label: image.label,
-          savedAt: image.savedAt,
-          dataUrl: image.dataUrl,
-        };
-      }).filter(Boolean);
-
       const response = await fetch(`${BACKEND_URL}/notion/daily-records`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: `${todayText} KJ 일일 업무`,
-          date: new Date().toISOString(),
-          author,
-          status: dailyStatus === "normal" ? "이상 없음" : "특이사항 있음",
-          memo: note,
-          images: dailyImages,
-        }),
+        body: JSON.stringify(buildDailyPayload()),
       });
 
       const result = await response.json();
@@ -545,10 +581,94 @@ export default function HomePage() {
         throw new Error(result?.detail || result?.message || "Notion 저장 실패");
       }
 
+      const record = {
+        pageId: result.pageId,
+        url: result.url,
+        savedAt: new Date().toLocaleString("ko-KR"),
+      };
+
+      setDailyNotionRecord(record);
+      saveDailyNotionRecord(record);
       setNotice("Notion에 일일 업무 기록을 저장했습니다.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Notion 저장 중 오류가 발생했습니다.");
     }
+  };
+
+  const handleUpdateDailyToNotion = async () => {
+    if (!dailyNotionRecord?.pageId) {
+      setNotice("수정할 Notion 일일 기록이 없습니다. 먼저 저장하세요.");
+      return;
+    }
+
+    try {
+      const response = await fetch(
+        `${BACKEND_URL}/notion/daily-records/${encodeURIComponent(dailyNotionRecord.pageId)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(buildDailyPayload()),
+        },
+      );
+
+      const result = await response.json();
+
+      if (!response.ok || result?.success === false) {
+        throw new Error(result?.detail || result?.message || "Notion 수정 실패");
+      }
+
+      const nextRecord = {
+        ...dailyNotionRecord,
+        url: result.url || dailyNotionRecord.url,
+        savedAt: new Date().toLocaleString("ko-KR"),
+      };
+
+      setDailyNotionRecord(nextRecord);
+      saveDailyNotionRecord(nextRecord);
+      setNotice("Notion 일일 업무 기록을 수정했습니다.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Notion 수정 중 오류가 발생했습니다.");
+    }
+  };
+
+  const handleDeleteDailyFromNotion = async () => {
+    if (!dailyNotionRecord?.pageId) {
+      setNotice("삭제할 Notion 일일 기록이 없습니다.");
+      return;
+    }
+
+    const confirmed = window.confirm("Notion 일일 업무 기록을 삭제할까요?");
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch(
+        `${BACKEND_URL}/notion/daily-records/${encodeURIComponent(dailyNotionRecord.pageId)}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      const result = await response.json();
+
+      if (!response.ok || result?.success === false) {
+        throw new Error(result?.detail || result?.message || "Notion 삭제 실패");
+      }
+
+      clearDailyNotionRecord();
+      setDailyNotionRecord(null);
+      setNotice("Notion 일일 업무 기록을 삭제했습니다.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Notion 삭제 중 오류가 발생했습니다.");
+    }
+  };
+
+  const openDailyNotionPage = () => {
+    if (!dailyNotionRecord?.url) {
+      setNotice("열 수 있는 Notion 링크가 없습니다.");
+      return;
+    }
+
+    window.open(dailyNotionRecord.url, "_blank", "noopener,noreferrer");
   };
 
   const handleSaveIssueToNotion = async () => {
@@ -783,14 +903,33 @@ export default function HomePage() {
             style={noteStyle}
           />
 
-          <div style={buttonStackStyle}>
-            <button onClick={handleSaveDailyDraft} style={greenButtonStyle}>
-              일일 업무 임시 저장
-            </button>
-            <button onClick={handleSaveDailyToNotion} style={darkButtonStyle}>
-              Notion 일일 기록 저장
-            </button>
-          </div>
+          {dailyNotionRecord ? (
+            <div style={notionSavedBoxStyle}>
+              <div style={notionSavedTextStyle}>
+                Notion 저장 완료 · {dailyNotionRecord.savedAt}
+              </div>
+              <div style={buttonStackStyle}>
+                <button onClick={handleUpdateDailyToNotion} style={greenButtonStyle}>
+                  Notion 일일 기록 수정
+                </button>
+                <button onClick={handleDeleteDailyFromNotion} style={dangerButtonStyle}>
+                  Notion 일일 기록 삭제
+                </button>
+                <button onClick={openDailyNotionPage} style={darkButtonStyle}>
+                  Notion에서 보기
+                </button>
+              </div>
+            </div>
+          ) : (
+            <div style={buttonStackStyle}>
+              <button onClick={handleSaveDailyDraft} style={greenButtonStyle}>
+                일일 업무 임시 저장
+              </button>
+              <button onClick={handleSaveDailyToNotion} style={darkButtonStyle}>
+                Notion 일일 기록 저장
+              </button>
+            </div>
+          )}
         </section>
 
         {dailyStatus === "issue" && (
@@ -1539,6 +1678,33 @@ const orangeButtonStyle: CSSProperties = {
   borderRadius: 14,
   border: "none",
   background: "#f97316",
+  color: "white",
+  fontSize: 15,
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const notionSavedBoxStyle: CSSProperties = {
+  marginTop: 14,
+  border: "1px solid #14532d",
+  background: "#052e16",
+  borderRadius: 16,
+  padding: 12,
+};
+
+const notionSavedTextStyle: CSSProperties = {
+  color: "#bbf7d0",
+  fontSize: 13,
+  fontWeight: 900,
+  marginBottom: 10,
+};
+
+const dangerButtonStyle: CSSProperties = {
+  width: "100%",
+  padding: "13px 14px",
+  borderRadius: 14,
+  border: "none",
+  background: "#dc2626",
   color: "white",
   fontSize: 15,
   fontWeight: 900,

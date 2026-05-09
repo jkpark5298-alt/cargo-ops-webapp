@@ -32,6 +32,19 @@ def _issue_database_id() -> str:
     return database_id
 
 
+def _notion_database_url(database_id: str) -> str:
+    compact_id = database_id.replace("-", "").strip()
+    return f"https://www.notion.so/{compact_id}"
+
+
+def get_notion_links() -> dict[str, Any]:
+    return {
+        "success": True,
+        "dailyDbUrl": _notion_database_url(_daily_database_id()),
+        "issueDbUrl": _notion_database_url(_issue_database_id()),
+    }
+
+
 def _headers() -> dict[str, str]:
     return {
         "Authorization": f"Bearer {_notion_token()}",

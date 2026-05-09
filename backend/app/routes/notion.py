@@ -2,9 +2,14 @@ from typing import Any
 
 from fastapi import APIRouter
 
-from app.services.notion import create_daily_record, create_issue_record, delete_daily_record, delete_issue_record, update_daily_record, update_issue_record
+from app.services.notion import get_notion_links, create_daily_record, create_issue_record, delete_daily_record, delete_issue_record, update_daily_record, update_issue_record
 
 router = APIRouter()
+
+
+@router.get("/links")
+async def read_notion_links():
+    return get_notion_links()
 
 
 @router.post("/daily-records")

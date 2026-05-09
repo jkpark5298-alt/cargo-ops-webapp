@@ -736,7 +736,7 @@ export default function HomePage() {
 
   const handleResetLocalDraft = () => {
     const confirmed = window.confirm(
-      "앱 안에 임시 저장된 사진, 메모, Notion 저장 상태를 초기화할까요? Notion DB 기록은 삭제되지 않습니다.",
+      "앱 화면에 남아 있는 사진, 메모, Notion 저장 연결 상태를 초기화합니다.\n\nNotion DB에 이미 저장된 기록은 삭제되지 않습니다.\n초기화 후에는 이 화면에서 해당 Notion 기록을 수정/삭제할 수 없습니다.\n\n계속할까요?",
     );
 
     if (!confirmed) return;
@@ -756,7 +756,7 @@ export default function HomePage() {
     clearDailyNotionRecord();
     clearIssueNotionRecord();
 
-    setNotice("앱 임시 저장 내용을 초기화했습니다. Notion DB 기록은 삭제되지 않았습니다.");
+    setNotice("앱 화면만 초기화했습니다. Notion DB 기록은 삭제되지 않았습니다.");
   };
 
   const openDailyNotionPage = () => {
@@ -914,6 +914,30 @@ export default function HomePage() {
     }
 
     window.open(issueNotionRecord.url, "_blank", "noopener,noreferrer");
+  };
+
+  const openNotionDatabase = async (target: "daily" | "issue") => {
+    try {
+      const response = await fetch(`${BACKEND_URL}/notion/links`, {
+        cache: "no-store",
+      });
+      const result = await response.json();
+
+      if (!response.ok || result?.success === false) {
+        throw new Error(result?.detail || result?.message || "Notion DB 링크를 불러오지 못했습니다.");
+      }
+
+      const url = target === "daily" ? result.dailyDbUrl : result.issueDbUrl;
+
+      if (!url) {
+        setNotice("열 수 있는 Notion DB 링크가 없습니다.");
+        return;
+      }
+
+      window.open(url, "_blank", "noopener,noreferrer");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Notion DB 링크를 여는 중 오류가 발생했습니다.");
+    }
   };
 
   return (
@@ -1087,8 +1111,11 @@ export default function HomePage() {
                 <button onClick={openDailyNotionPage} style={darkButtonStyle}>
                   Notion에서 보기
                 </button>
+                <button onClick={() => openNotionDatabase("daily")} style={darkButtonStyle}>
+                  Notion 일일 업무 DB 열기
+                </button>
                 <button onClick={handleResetLocalDraft} style={resetButtonStyle}>
-                  앱 임시 저장 초기화
+                  앱 화면만 초기화
                 </button>
               </div>
             </div>
@@ -1100,8 +1127,11 @@ export default function HomePage() {
               <button onClick={handleSaveDailyToNotion} style={darkButtonStyle}>
                 Notion 일일 기록 저장
               </button>
+              <button onClick={() => openNotionDatabase("daily")} style={darkButtonStyle}>
+                Notion 일일 업무 DB 열기
+              </button>
               <button onClick={handleResetLocalDraft} style={resetButtonStyle}>
-                앱 임시 저장 초기화
+                앱 화면만 초기화
               </button>
             </div>
           )}
@@ -1203,8 +1233,11 @@ export default function HomePage() {
                   <button onClick={openIssueNotionPage} style={darkButtonStyle}>
                     Notion에서 보기
                   </button>
+                  <button onClick={() => openNotionDatabase("issue")} style={darkButtonStyle}>
+                    Notion 특이사항 DB 열기
+                  </button>
                   <button onClick={handleResetLocalDraft} style={resetButtonStyle}>
-                    앱 임시 저장 초기화
+                    앱 화면만 초기화
                   </button>
                 </div>
               </div>
@@ -1213,8 +1246,11 @@ export default function HomePage() {
                 <button onClick={handleSaveIssueToNotion} style={orangeButtonStyle}>
                   Notion 특이사항 저장
                 </button>
+                <button onClick={() => openNotionDatabase("issue")} style={darkButtonStyle}>
+                  Notion 특이사항 DB 열기
+                </button>
                 <button onClick={handleResetLocalDraft} style={resetButtonStyle}>
-                  앱 임시 저장 초기화
+                  앱 화면만 초기화
                 </button>
               </div>
             )}

@@ -12,6 +12,44 @@ import { useRouter } from "next/navigation";
 const STORAGE_KEY = "cargo_ops_monitor_rooms_v6";
 const IMAGE_STORAGE_KEY = "cargo_ops_home_images_v1";
 const NOTE_STORAGE_KEY = "cargo_ops_home_note_v1";
+const BACKEND_URL =
+  process.env.NEXT_PUBLIC_API_URL || "https://cargo-ops-backend.onrender.com";
+
+type WeatherInfo = {
+  success?: boolean;
+  location?: string;
+  temperature?: string;
+  condition?: string;
+  feelsLike?: string;
+  humidity?: string;
+  windSpeed?: string;
+  pm10Grade?: string;
+  pm25Grade?: string;
+  uvGrade?: string;
+  sunset?: string;
+  baseTime?: string;
+  icon?: string;
+  source?: string;
+  message?: string;
+};
+
+const DEFAULT_WEATHER: WeatherInfo = {
+  success: false,
+  location: "인천국제공항",
+  temperature: "19.6",
+  condition: "맑음",
+  feelsLike: "18.0",
+  humidity: "32",
+  windSpeed: "3.3",
+  pm10Grade: "좋음",
+  pm25Grade: "좋음",
+  uvGrade: "보통",
+  sunset: "19:30",
+  baseTime: "14:00",
+  icon: "☀️",
+  source: "fallback",
+  message: "실시간 날씨 정보를 불러오면 자동으로 갱신됩니다.",
+};
 
 type FlightRow = {
   flightId?: string;
@@ -135,6 +173,8 @@ export default function HomePage() {
   const [images, setImages] = useState<SavedImage[]>([]);
   const [note, setNote] = useState("");
   const [notice, setNotice] = useState("");
+  const [weather, setWeather] = useState<WeatherInfo>(DEFAULT_WEATHER);
+  const [weatherLoading, setWeatherLoading] = useState(false);
   const todayText = useMemo(() => formatDateForTitle(new Date()), []);
   const latestRoom = useMemo(() => getLatestScheduleRoom(rooms), [rooms]);
 
@@ -142,6 +182,8 @@ export default function HomePage() {
     setRooms(loadRooms());
     setImages(loadImages());
     setNote(loadNote());
+    void fetchWeather();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   const openFlights = () => router.push("/flights");
@@ -153,6 +195,35 @@ export default function HomePage() {
     }
     router.push("/flights");
   };
+
+  async function fetchWeather() {
+    setWeatherLoading(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/weather/current`, {
+        cache: "no-store",
+      });
+      const json = await res.json();
+
+      if (!res.ok) {
+        throw new Error(json?.message || json?.detail || `날씨 조회 오류 (${res.status})`);
+      }
+
+      setWeather({
+        ...DEFAULT_WEATHER,
+        ...json,
+        success: json?.success !== false,
+      });
+    } catch (error) {
+      setWeather({
+        ...DEFAULT_WEATHER,
+        success: false,
+        source: "fallback",
+        message: "날씨 API 연결 전이거나 응답이 지연되어 예시값을 표시합니다.",
+      });
+    } finally {
+      setWeatherLoading(false);
+    }
+  }
 
   const openNaverWeather = () => {
     window.open(
@@ -237,34 +308,40 @@ export default function HomePage() {
           <div style={weatherTopRowStyle}>
             <div>
               <div style={weatherLabelStyle}>인천공항 날씨</div>
-              <div style={weatherLocationStyle}>인천국제공항 기준</div>
+              <div style={weatherLocationStyle}>{weather.location || "인천국제공항"} 기준</div>
             </div>
-            <button onClick={openNaverWeather} style={weatherButtonStyle}>
-              네이버
-            </button>
+            <div style={weatherButtonGroupStyle}>
+              <button onClick={fetchWeather} style={weatherButtonStyle}>
+                {weatherLoading ? "조회 중" : "새로고침"}
+              </button>
+              <button onClick={openNaverWeather} style={weatherSubButtonStyle}>
+                네이버
+              </button>
+            </div>
           </div>
 
           <div style={weatherMainRowStyle}>
-            <div style={weatherTempStyle}>19.6°</div>
+            <div style={weatherTempStyle}>{weather.temperature || "-"}°</div>
             <div style={weatherConditionBoxStyle}>
-              <div style={weatherIconStyle}>☀️</div>
-              <div style={weatherConditionStyle}>맑음</div>
+              <div style={weatherIconStyle}>{weather.icon || "☀️"}</div>
+              <div style={weatherConditionStyle}>{weather.condition || "-"}</div>
             </div>
           </div>
 
           <div style={weatherMetaStyle}>
-            체감 18.0° · 습도 32% · 풍속 3.3m/s
+            체감 {weather.feelsLike || "-"}° · 습도 {weather.humidity || "-"}% · 풍속 {weather.windSpeed || "-"}m/s
           </div>
 
           <div style={weatherGridStyle}>
-            <WeatherMetric label="미세먼지" value="좋음" tone="good" />
-            <WeatherMetric label="초미세먼지" value="좋음" tone="good" />
-            <WeatherMetric label="자외선" value="보통" tone="normal" />
-            <WeatherMetric label="일몰" value="19:30" tone="time" />
+            <WeatherMetric label="미세먼지" value={weather.pm10Grade || "-"} tone={getAirTone(weather.pm10Grade)} />
+            <WeatherMetric label="초미세먼지" value={weather.pm25Grade || "-"} tone={getAirTone(weather.pm25Grade)} />
+            <WeatherMetric label="자외선" value={weather.uvGrade || "-"} tone={getUvTone(weather.uvGrade)} />
+            <WeatherMetric label="일몰" value={weather.sunset || "-"} tone="time" />
           </div>
 
           <div style={weatherNoteStyle}>
-            현재는 화면 예시입니다. 다음 단계에서 실시간 날씨·미세먼지 자동 표시를 연결합니다.
+            기준 {weather.baseTime || "-"}
+            {weather.source === "fallback" ? ` · ${weather.message || "예시값 표시 중"}` : " · 실시간 자동 표시"}
           </div>
         </section>
       </section>
@@ -392,6 +469,20 @@ export default function HomePage() {
       <footer style={footerStyle}>by jkpark</footer>
     </main>
   );
+}
+
+function getAirTone(value?: string): "good" | "normal" | "bad" | "time" {
+  if (!value) return "normal";
+  if (value.includes("좋음")) return "good";
+  if (value.includes("나쁨") || value.includes("매우")) return "bad";
+  return "normal";
+}
+
+function getUvTone(value?: string): "good" | "normal" | "bad" | "time" {
+  if (!value) return "normal";
+  if (value.includes("낮") || value.includes("좋음")) return "good";
+  if (value.includes("높") || value.includes("위험")) return "bad";
+  return "normal";
 }
 
 function WeatherMetric({
@@ -534,6 +625,23 @@ const weatherButtonStyle: CSSProperties = {
   color: "white",
   fontSize: 13,
   fontWeight: 950,
+  cursor: "pointer",
+};
+const weatherButtonGroupStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 8,
+  alignItems: "flex-end",
+};
+const weatherSubButtonStyle: CSSProperties = {
+  minWidth: 70,
+  minHeight: 34,
+  border: "1px solid rgba(148, 163, 184, 0.22)",
+  borderRadius: 999,
+  background: "rgba(15, 23, 42, 0.74)",
+  color: "#dbeafe",
+  fontSize: 12,
+  fontWeight: 900,
   cursor: "pointer",
 };
 const weatherMainRowStyle: CSSProperties = {

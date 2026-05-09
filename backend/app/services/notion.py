@@ -320,3 +320,69 @@ async def create_issue_record(payload: dict[str, Any]) -> dict[str, Any]:
         "pageId": result.get("id"),
         "url": result.get("url"),
     }
+
+
+
+async def update_issue_record(page_id: str, payload: dict[str, Any]) -> dict[str, Any]:
+    image = payload.get("image")
+    images = [image] if isinstance(image, dict) else []
+
+    async with httpx.AsyncClient(timeout=60) as client:
+        image_properties = await _upload_files_for_properties(client, images)
+
+        properties: dict[str, Any] = {
+            "제목": _title(payload.get("title")),
+            "날짜": _date(payload.get("date")),
+            "시간": _text_property(payload.get("time")),
+            "편명": _text_property(payload.get("flight")),
+            "구간": _text_property(payload.get("route")),
+            "HL NBR": _text_property(payload.get("hlnbr")),
+            "특이사항": _text_property(payload.get("issue")),
+            "날씨": _text_property(payload.get("weather")),
+            "작성자": _text_property(payload.get("author")),
+            "상태": _select(payload.get("status") or "확인 중"),
+            **image_properties,
+        }
+
+        response = await client.patch(
+            f"{NOTION_API_BASE}/pages/{page_id}",
+            headers=_headers(),
+            json={"properties": properties},
+        )
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Notion issue record update failed: {response.text}",
+        )
+
+    result = response.json()
+    return {
+        "success": True,
+        "message": "Issue record updated in Notion",
+        "pageId": result.get("id"),
+        "url": result.get("url"),
+    }
+
+
+async def delete_issue_record(page_id: str) -> dict[str, Any]:
+    async with httpx.AsyncClient(timeout=30) as client:
+        response = await client.patch(
+            f"{NOTION_API_BASE}/pages/{page_id}",
+            headers=_headers(),
+            json={"in_trash": True},
+        )
+
+    if response.status_code >= 400:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Notion issue record delete failed: {response.text}",
+        )
+
+    result = response.json()
+    return {
+        "success": True,
+        "message": "Issue record deleted from Notion",
+        "pageId": result.get("id"),
+        "in_trash": result.get("in_trash", True),
+    }

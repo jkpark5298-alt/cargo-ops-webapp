@@ -13,12 +13,15 @@ const STORAGE_KEY = "cargo_ops_monitor_rooms_v6";
 const IMAGE_STORAGE_KEY = "cargo_ops_home_images_v1";
 const NOTE_STORAGE_KEY = "cargo_ops_home_note_v1";
 const DAILY_NOTION_RECORD_KEY = "cargo_ops_daily_notion_record_v1";
+const ISSUE_NOTION_RECORD_KEY = "cargo_ops_issue_notion_record_v1";
 
 type DailyNotionRecord = {
   pageId: string;
   url?: string;
   savedAt: string;
 };
+
+type IssueNotionRecord = DailyNotionRecord;
 
 type ImageSlotKey =
   | "daily-schedule"
@@ -219,6 +222,28 @@ function clearDailyNotionRecord() {
   localStorage.removeItem(DAILY_NOTION_RECORD_KEY);
 }
 
+function loadIssueNotionRecord(): IssueNotionRecord | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = localStorage.getItem(ISSUE_NOTION_RECORD_KEY);
+    if (!raw) return null;
+    const parsed = JSON.parse(raw);
+    return parsed?.pageId ? parsed : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveIssueNotionRecord(record: IssueNotionRecord) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(ISSUE_NOTION_RECORD_KEY, JSON.stringify(record));
+}
+
+function clearIssueNotionRecord() {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(ISSUE_NOTION_RECORD_KEY);
+}
+
 function formatDateForTitle(date: Date) {
   const yyyy = date.getFullYear();
   const mm = String(date.getMonth() + 1).padStart(2, "0");
@@ -402,6 +427,8 @@ export default function HomePage() {
   const [issueText, setIssueText] = useState("");
   const [dailyNotionRecord, setDailyNotionRecord] =
     useState<DailyNotionRecord | null>(null);
+  const [issueNotionRecord, setIssueNotionRecord] =
+    useState<IssueNotionRecord | null>(null);
   const todayText = useMemo(() => formatDateForTitle(new Date()), []);
   const latestRoom = useMemo(() => getLatestScheduleRoom(rooms), [rooms]);
 
@@ -410,6 +437,7 @@ export default function HomePage() {
     setImages(loadImages());
     setNote(loadNote());
     setDailyNotionRecord(loadDailyNotionRecord());
+    setIssueNotionRecord(loadIssueNotionRecord());
     void fetchWeather();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -677,10 +705,12 @@ export default function HomePage() {
     setIssueText("");
     setDailyStatus("normal");
     setDailyNotionRecord(null);
+    setIssueNotionRecord(null);
 
     saveImages([]);
     saveNote("");
     clearDailyNotionRecord();
+    clearIssueNotionRecord();
 
     setNotice("앱 임시 저장 내용을 초기화했습니다. Notion DB 기록은 삭제되지 않았습니다.");
   };
@@ -694,44 +724,54 @@ export default function HomePage() {
     window.open(dailyNotionRecord.url, "_blank", "noopener,noreferrer");
   };
 
-  const handleSaveIssueToNotion = async () => {
+  const buildIssuePayload = () => {
+    const issueImage = getImageBySlot(images, ISSUE_IMAGE_SLOT.key);
+
+    return {
+      title: `${issueFlight.trim().toUpperCase()} ${issueRoute || ""} 특이사항`,
+      date: new Date().toISOString(),
+      time: getCurrentTimeText(),
+      flight: issueFlight.trim().toUpperCase(),
+      route: issueRoute,
+      hlnbr: issueHlnbr,
+      issue: issueText,
+      weather: getWeatherSummary(weather),
+      author,
+      status: "확인 중",
+      image: issueImage
+        ? {
+            slotKey: ISSUE_IMAGE_SLOT.key,
+            propertyName: IMAGE_SLOT_PROPERTY_NAME[ISSUE_IMAGE_SLOT.key],
+            label: issueImage.label,
+            savedAt: issueImage.savedAt,
+            dataUrl: issueImage.dataUrl,
+          }
+        : null,
+    };
+  };
+
+  const validateIssueForm = () => {
     if (!issueFlight.trim()) {
       setNotice("특이사항 기록을 위해 편명을 입력하세요.");
-      return;
+      return false;
     }
 
     if (!issueText.trim()) {
       setNotice("특이사항 내용을 입력하세요.");
-      return;
+      return false;
     }
 
-    try {
-      const issueImage = getImageBySlot(images, ISSUE_IMAGE_SLOT.key);
+    return true;
+  };
 
+  const handleSaveIssueToNotion = async () => {
+    if (!validateIssueForm()) return;
+
+    try {
       const response = await fetch(`${BACKEND_URL}/notion/issue-records`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          title: `${issueFlight.trim().toUpperCase()} ${issueRoute || ""} 특이사항`,
-          date: new Date().toISOString(),
-          time: getCurrentTimeText(),
-          flight: issueFlight.trim().toUpperCase(),
-          route: issueRoute,
-          hlnbr: issueHlnbr,
-          issue: issueText,
-          weather: getWeatherSummary(weather),
-          author,
-          status: "확인 중",
-          image: issueImage
-            ? {
-                slotKey: ISSUE_IMAGE_SLOT.key,
-                propertyName: IMAGE_SLOT_PROPERTY_NAME[ISSUE_IMAGE_SLOT.key],
-                label: issueImage.label,
-                savedAt: issueImage.savedAt,
-                dataUrl: issueImage.dataUrl,
-              }
-            : null,
-        }),
+        body: JSON.stringify(buildIssuePayload()),
       });
 
       const result = await response.json();
@@ -740,34 +780,96 @@ export default function HomePage() {
         throw new Error(result?.detail || result?.message || "Notion 저장 실패");
       }
 
+      const record = {
+        pageId: result.pageId,
+        url: result.url,
+        savedAt: new Date().toLocaleString("ko-KR"),
+      };
+
+      setIssueNotionRecord(record);
+      saveIssueNotionRecord(record);
       setNotice("Notion에 특이사항 기록을 저장했습니다.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Notion 저장 중 오류가 발생했습니다.");
     }
   };
 
-  const openLatestImage = (image: SavedImage) => {
-    const win = window.open();
-    if (!win) return;
-    win.document.write(`
-      <html>
-        <head>
-          <title>${image.label}</title>
-          <meta name="viewport" content="width=device-width, initial-scale=1" />
-          <style>
-            body { margin: 0; background: #020817; color: white; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; }
-            header { padding: 16px; font-weight: 800; }
-            img { width: 100%; height: auto; display: block; }
-            p { color: #cbd5e1; padding: 0 16px 18px; line-height: 1.5; }
-          </style>
-        </head>
-        <body>
-          <header>${image.label}</header>
-          <img src="${image.dataUrl}" />
-          <p>아이폰에서 공유 버튼을 눌러 사진앱에 저장할 수 있습니다.</p>
-        </body>
-      </html>
-    `);
+  const handleUpdateIssueToNotion = async () => {
+    if (!issueNotionRecord?.pageId) {
+      setNotice("수정할 Notion 특이사항 기록이 없습니다. 먼저 저장하세요.");
+      return;
+    }
+
+    if (!validateIssueForm()) return;
+
+    try {
+      const response = await fetch(
+        `${BACKEND_URL}/notion/issue-records/${encodeURIComponent(issueNotionRecord.pageId)}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(buildIssuePayload()),
+        },
+      );
+
+      const result = await response.json();
+
+      if (!response.ok || result?.success === false) {
+        throw new Error(result?.detail || result?.message || "Notion 수정 실패");
+      }
+
+      const nextRecord = {
+        ...issueNotionRecord,
+        url: result.url || issueNotionRecord.url,
+        savedAt: new Date().toLocaleString("ko-KR"),
+      };
+
+      setIssueNotionRecord(nextRecord);
+      saveIssueNotionRecord(nextRecord);
+      setNotice("Notion 특이사항 기록을 수정했습니다.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Notion 수정 중 오류가 발생했습니다.");
+    }
+  };
+
+  const handleDeleteIssueFromNotion = async () => {
+    if (!issueNotionRecord?.pageId) {
+      setNotice("삭제할 Notion 특이사항 기록이 없습니다.");
+      return;
+    }
+
+    const confirmed = window.confirm("Notion 특이사항 기록을 삭제할까요?");
+    if (!confirmed) return;
+
+    try {
+      const response = await fetch(
+        `${BACKEND_URL}/notion/issue-records/${encodeURIComponent(issueNotionRecord.pageId)}`,
+        {
+          method: "DELETE",
+        },
+      );
+
+      const result = await response.json();
+
+      if (!response.ok || result?.success === false) {
+        throw new Error(result?.detail || result?.message || "Notion 삭제 실패");
+      }
+
+      clearIssueNotionRecord();
+      setIssueNotionRecord(null);
+      setNotice("Notion 특이사항 기록을 삭제했습니다.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Notion 삭제 중 오류가 발생했습니다.");
+    }
+  };
+
+  const openIssueNotionPage = () => {
+    if (!issueNotionRecord?.url) {
+      setNotice("열 수 있는 Notion 특이사항 링크가 없습니다.");
+      return;
+    }
+
+    window.open(issueNotionRecord.url, "_blank", "noopener,noreferrer");
   };
 
   return (
@@ -1042,11 +1144,36 @@ export default function HomePage() {
               style={noteStyle}
             />
 
-            <div style={buttonStackStyle}>
-              <button onClick={handleSaveIssueToNotion} style={orangeButtonStyle}>
-                Notion 특이사항 저장
-              </button>
-            </div>
+            {issueNotionRecord ? (
+              <div style={notionIssueSavedBoxStyle}>
+                <div style={notionIssueSavedTextStyle}>
+                  Notion 특이사항 저장 완료 · {issueNotionRecord.savedAt}
+                </div>
+                <div style={buttonStackStyle}>
+                  <button onClick={handleUpdateIssueToNotion} style={orangeButtonStyle}>
+                    Notion 특이사항 수정
+                  </button>
+                  <button onClick={handleDeleteIssueFromNotion} style={dangerButtonStyle}>
+                    Notion 특이사항 삭제
+                  </button>
+                  <button onClick={openIssueNotionPage} style={darkButtonStyle}>
+                    Notion에서 보기
+                  </button>
+                  <button onClick={handleResetLocalDraft} style={resetButtonStyle}>
+                    앱 임시 저장 초기화
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div style={buttonStackStyle}>
+                <button onClick={handleSaveIssueToNotion} style={orangeButtonStyle}>
+                  Notion 특이사항 저장
+                </button>
+                <button onClick={handleResetLocalDraft} style={resetButtonStyle}>
+                  앱 임시 저장 초기화
+                </button>
+              </div>
+            )}
           </section>
         )}
 
@@ -1738,6 +1865,21 @@ const resetButtonStyle: CSSProperties = {
   fontSize: 15,
   fontWeight: 900,
   cursor: "pointer",
+};
+
+const notionIssueSavedBoxStyle: CSSProperties = {
+  marginTop: 14,
+  border: "1px solid #9a3412",
+  background: "#431407",
+  borderRadius: 16,
+  padding: 12,
+};
+
+const notionIssueSavedTextStyle: CSSProperties = {
+  color: "#fed7aa",
+  fontSize: 13,
+  fontWeight: 900,
+  marginBottom: 10,
 };
 
 const dangerButtonStyle: CSSProperties = {

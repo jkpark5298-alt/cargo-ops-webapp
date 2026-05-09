@@ -12,6 +12,45 @@ import { useRouter } from "next/navigation";
 const STORAGE_KEY = "cargo_ops_monitor_rooms_v6";
 const IMAGE_STORAGE_KEY = "cargo_ops_home_images_v1";
 const NOTE_STORAGE_KEY = "cargo_ops_home_note_v1";
+
+type ImageSlotKey =
+  | "daily-schedule"
+  | "aircraft-check"
+  | "inspection-result"
+  | "issue";
+
+const IMAGE_SLOTS: Array<{
+  key: ImageSlotKey;
+  title: string;
+  description: string;
+}> = [
+  {
+    key: "daily-schedule",
+    title: "1. 업무일정 이미지",
+    description: "당일 업무일정, Cargo Plan, 작업 순서 이미지를 저장합니다.",
+  },
+  {
+    key: "aircraft-check",
+    title: "2. 화물기 CHECK 사항 이미지",
+    description: "화물기 CHECK 대상과 확인 사항 이미지를 저장합니다.",
+  },
+  {
+    key: "inspection-result",
+    title: "3. 점검 대상 결과 이미지",
+    description: "점검 대상 결과, 확인 완료 화면, 결과 이미지를 저장합니다.",
+  },
+];
+
+const ISSUE_IMAGE_SLOT: {
+  key: ImageSlotKey;
+  title: string;
+  description: string;
+} = {
+  key: "issue",
+  title: "4. 특이사항 이미지",
+  description: "특이사항 발생 시 증빙용 현장 이미지 또는 캡처를 저장합니다.",
+};
+
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_API_URL || "https://cargo-ops-backend.onrender.com";
 
@@ -79,7 +118,7 @@ type MonitorRoom = {
 
 type SavedImage = {
   id: string;
-  type: string;
+  type: ImageSlotKey;
   label: string;
   savedAt: string;
   dataUrl: string;
@@ -112,6 +151,22 @@ function loadImages(): SavedImage[] {
 function saveImages(images: SavedImage[]) {
   if (typeof window === "undefined") return;
   localStorage.setItem(IMAGE_STORAGE_KEY, JSON.stringify(images.slice(0, 6)));
+}
+
+function getImageBySlot(images: SavedImage[], slotKey: ImageSlotKey) {
+  return images.find((image) => image.type === slotKey) || null;
+}
+
+function upsertImageBySlot(
+  images: SavedImage[],
+  nextImage: SavedImage,
+): SavedImage[] {
+  const filtered = images.filter((image) => image.type !== nextImage.type);
+  return [nextImage, ...filtered].slice(0, 8);
+}
+
+function removeImageBySlot(images: SavedImage[], slotKey: ImageSlotKey) {
+  return images.filter((image) => image.type !== slotKey);
 }
 
 function loadNote() {
@@ -296,6 +351,7 @@ export default function HomePage() {
   const router = useRouter();
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const libraryInputRef = useRef<HTMLInputElement | null>(null);
+  const pendingImageSlotRef = useRef<ImageSlotKey>("daily-schedule");
   const [rooms, setRooms] = useState<MonitorRoom[]>([]);
   const [images, setImages] = useState<SavedImage[]>([]);
   const [note, setNote] = useState("");
@@ -303,7 +359,6 @@ export default function HomePage() {
   const [weather, setWeather] = useState<WeatherInfo>(DEFAULT_WEATHER);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [dailyStatus, setDailyStatus] = useState<"normal" | "issue">("normal");
-  const [imageCategory, setImageCategory] = useState("업무일정 이미지");
   const [author, setAuthor] = useState("jkpark");
   const [issueFlight, setIssueFlight] = useState("");
   const [issueRoute, setIssueRoute] = useState("");
@@ -380,11 +435,13 @@ export default function HomePage() {
     );
   };
 
-  const openCamera = () => {
+  const openCamera = (slotKey: ImageSlotKey) => {
+    pendingImageSlotRef.current = slotKey;
     cameraInputRef.current?.click();
   };
 
-  const openPhotoLibrary = () => {
+  const openPhotoLibrary = (slotKey: ImageSlotKey) => {
+    pendingImageSlotRef.current = slotKey;
     libraryInputRef.current?.click();
   };
 
@@ -400,18 +457,36 @@ export default function HomePage() {
       const dataUrl = String(reader.result || "");
       if (!dataUrl) return;
       const savedAt = new Date().toLocaleString("ko-KR");
-      const label = `${imageCategory} · ${sourceLabel}`;
-      const nextImages: SavedImage[] = [
-        { id: `${Date.now()}`, type: imageCategory, label, savedAt, dataUrl },
-        ...images,
-      ].slice(0, 6);
+      const slotKey = pendingImageSlotRef.current;
+      const slotInfo =
+        [...IMAGE_SLOTS, ISSUE_IMAGE_SLOT].find((slot) => slot.key === slotKey) ||
+        IMAGE_SLOTS[0];
+      const label = `${slotInfo.title} · ${sourceLabel}`;
+      const nextImages = upsertImageBySlot(images, {
+        id: `${Date.now()}`,
+        type: slotKey,
+        label,
+        savedAt,
+        dataUrl,
+      });
       setImages(nextImages);
       saveImages(nextImages);
-      setNotice(
-        `${label}를 임시 저장했습니다. 아이폰 사진앱 저장은 이미지를 열어 공유/저장을 선택하세요.`,
-      );
+      setNotice(`${slotInfo.title}를 임시 저장했습니다.`);
     };
     reader.readAsDataURL(file);
+  };
+
+  const handleDeleteImageSlot = (slotKey: ImageSlotKey) => {
+    const image = getImageBySlot(images, slotKey);
+    if (!image) return;
+
+    const confirmed = window.confirm("이 이미지를 삭제할까요?");
+    if (!confirmed) return;
+
+    const nextImages = removeImageBySlot(images, slotKey);
+    setImages(nextImages);
+    saveImages(nextImages);
+    setNotice(`${image.label}를 삭제했습니다.`);
   };
 
   const handleSaveNoteLocal = () => {
@@ -562,7 +637,7 @@ export default function HomePage() {
           <div style={cardLabelStyle}>일일 업무 기록</div>
           <h2 style={cardTitleStyle}>사진 중심 업무 내용 정리</h2>
           <p style={cardDescriptionStyle}>
-            매일 발생하는 업무일정, 화물기 CHECK, 점검 대상 결과 이미지를 날짜 기준으로 정리합니다.
+            항목별로 이미지를 먼저 선택해 저장합니다. 잘못 올린 사진은 보기, 변경, 삭제할 수 있습니다.
           </p>
 
           <div style={statusToggleStyle}>
@@ -580,27 +655,18 @@ export default function HomePage() {
             </button>
           </div>
 
-          <div style={fieldBlockStyle}>
-            <label style={fieldLabelStyle}>이미지 구분</label>
-            <select
-              value={imageCategory}
-              onChange={(event) => setImageCategory(event.target.value)}
-              style={selectStyle}
-            >
-              <option value="업무일정 이미지">1. 업무일정 이미지</option>
-              <option value="화물기 CHECK 이미지">2. 화물기 CHECK 사항 이미지</option>
-              <option value="점검 대상 결과 이미지">3. 점검 대상 결과 이미지</option>
-              <option value="특이사항 이미지">4. 특이사항 이미지</option>
-            </select>
-          </div>
-
-          <div style={buttonStackStyle}>
-            <button onClick={openCamera} style={grayButtonStyle}>
-              사진 촬영
-            </button>
-            <button onClick={openPhotoLibrary} style={darkButtonStyle}>
-              사진첩에서 가져오기
-            </button>
+          <div style={imageSlotListStyle}>
+            {IMAGE_SLOTS.map((slot) => (
+              <ImageSlotCard
+                key={slot.key}
+                slot={slot}
+                image={getImageBySlot(images, slot.key)}
+                onCamera={() => openCamera(slot.key)}
+                onLibrary={() => openPhotoLibrary(slot.key)}
+                onView={openLatestImage}
+                onDelete={() => handleDeleteImageSlot(slot.key)}
+              />
+            ))}
           </div>
 
           <input
@@ -634,28 +700,6 @@ export default function HomePage() {
               Notion 일일 기록 저장 준비
             </button>
           </div>
-
-          {images.length > 0 && (
-            <div style={imageListStyle}>
-              {images.slice(0, 4).map((image) => (
-                <button
-                  key={image.id}
-                  onClick={() => openLatestImage(image)}
-                  style={imagePreviewButtonStyle}
-                >
-                  <img
-                    src={image.dataUrl}
-                    alt={image.label}
-                    style={imagePreviewStyle}
-                  />
-                  <span style={imageTextStyle}>
-                    {image.label}
-                    <small style={imageDateStyle}>{image.savedAt}</small>
-                  </span>
-                </button>
-              ))}
-            </div>
-          )}
         </section>
 
         {dailyStatus === "issue" && (
@@ -665,6 +709,15 @@ export default function HomePage() {
             <p style={cardDescriptionStyle}>
               특이사항 발생 시 날짜, 시간, 편명, 구간, HL NBR, 날씨, 작성자, 이미지와 메모를 함께 저장합니다.
             </p>
+
+            <ImageSlotCard
+              slot={ISSUE_IMAGE_SLOT}
+              image={getImageBySlot(images, ISSUE_IMAGE_SLOT.key)}
+              onCamera={() => openCamera(ISSUE_IMAGE_SLOT.key)}
+              onLibrary={() => openPhotoLibrary(ISSUE_IMAGE_SLOT.key)}
+              onView={openLatestImage}
+              onDelete={() => handleDeleteImageSlot(ISSUE_IMAGE_SLOT.key)}
+            />
 
             <div style={formGridStyle}>
               <div style={fieldBlockStyle}>
@@ -814,6 +867,66 @@ function ActionCard({
         {buttonLabel}
       </button>
     </section>
+  );
+}
+
+function ImageSlotCard({
+  slot,
+  image,
+  onCamera,
+  onLibrary,
+  onView,
+  onDelete,
+}: {
+  slot: { key: ImageSlotKey; title: string; description: string };
+  image: SavedImage | null;
+  onCamera: () => void;
+  onLibrary: () => void;
+  onView: (image: SavedImage) => void;
+  onDelete: () => void;
+}) {
+  return (
+    <div style={imageSlotCardStyle}>
+      <div>
+        <div style={imageSlotTitleStyle}>{slot.title}</div>
+        <div style={imageSlotDescStyle}>{slot.description}</div>
+      </div>
+
+      {image ? (
+        <div style={imageSlotSavedStyle}>
+          <button onClick={() => onView(image)} style={imagePreviewButtonStyle}>
+            <img src={image.dataUrl} alt={image.label} style={imagePreviewStyle} />
+            <span style={imageTextStyle}>
+              저장됨
+              <small style={imageDateStyle}>{image.savedAt}</small>
+            </span>
+          </button>
+          <div style={imageSlotActionRowStyle}>
+            <button onClick={() => onView(image)} style={miniButtonStyle}>
+              보기
+            </button>
+            <button onClick={onCamera} style={miniButtonStyle}>
+              촬영 변경
+            </button>
+            <button onClick={onLibrary} style={miniButtonStyle}>
+              사진첩 변경
+            </button>
+            <button onClick={onDelete} style={miniDangerButtonStyle}>
+              삭제
+            </button>
+          </div>
+        </div>
+      ) : (
+        <div style={imageSlotActionRowStyle}>
+          <button onClick={onCamera} style={grayButtonStyle}>
+            사진 촬영
+          </button>
+          <button onClick={onLibrary} style={darkButtonStyle}>
+            사진첩에서 가져오기
+          </button>
+        </div>
+      )}
+    </div>
   );
 }
 
@@ -1203,6 +1316,64 @@ const noteStyle: CSSProperties = {
   lineHeight: 1.5,
   resize: "vertical",
 };
+const imageSlotListStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 14,
+  marginTop: 14,
+};
+
+const imageSlotCardStyle: CSSProperties = {
+  border: "1px solid #26374f",
+  borderRadius: 18,
+  background: "#071426",
+  padding: 14,
+};
+
+const imageSlotTitleStyle: CSSProperties = {
+  color: "#f8fafc",
+  fontSize: 16,
+  fontWeight: 950,
+  marginBottom: 4,
+};
+
+const imageSlotDescStyle: CSSProperties = {
+  color: "#94a3b8",
+  fontSize: 13,
+  lineHeight: 1.45,
+  marginBottom: 12,
+};
+
+const imageSlotSavedStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 10,
+};
+
+const imageSlotActionRowStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 8,
+};
+
+const miniButtonStyle: CSSProperties = {
+  padding: "10px 8px",
+  borderRadius: 12,
+  border: "1px solid #334155",
+  background: "#0f172a",
+  color: "#e5edf7",
+  fontSize: 12,
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const miniDangerButtonStyle: CSSProperties = {
+  ...miniButtonStyle,
+  background: "#450a0a",
+  border: "1px solid #991b1b",
+  color: "#fecaca",
+};
+
 const statusToggleStyle: CSSProperties = {
   display: "grid",
   gridTemplateColumns: "1fr 1fr",

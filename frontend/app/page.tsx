@@ -1675,23 +1675,20 @@ function FlightRouteRows({ room }: { room: MonitorRoom | null }) {
   const items = getFlightRouteItems(room);
 
   return (
-    <div style={infoRowStyle}>
-      <div style={infoLabelStyle}>편명 / 출도착</div>
-      <div style={flightRouteListStyle}>
-        {items.length > 0 ? (
-          items.map((item) => (
-            <div key={`${item.flight}-${item.route}`} style={flightRouteRowStyle}>
-              <span style={flightRouteNoStyle}>{item.flight}</span>
-              <span style={flightRouteValueStyle}>{item.route}</span>
-              <span style={flightRouteMetaStyle}>
-                {item.direction} · {item.time}
-              </span>
-            </div>
-          ))
-        ) : (
-          <div style={infoValueStyle}>저장된 Schedule Flight가 없습니다.</div>
-        )}
-      </div>
+    <div style={flightRouteOnlyBlockStyle}>
+      {items.length > 0 ? (
+        items.map((item) => (
+          <div key={`${item.flight}-${item.route}`} style={flightRouteRowStyle}>
+            <span style={flightRouteNoStyle}>{item.flight}</span>
+            <span style={flightRouteValueStyle}>{item.route}</span>
+            <span style={flightRouteMetaStyle}>
+              {item.direction} · {item.time}
+            </span>
+          </div>
+        ))
+      ) : (
+        <div style={infoValueStyle}>저장된 Schedule Flight가 없습니다.</div>
+      )}
     </div>
   );
 }
@@ -2048,6 +2045,13 @@ const flightRouteListStyle: CSSProperties = {
   flexDirection: "column",
   gap: 8,
   flex: 1,
+};
+
+const flightRouteOnlyBlockStyle: CSSProperties = {
+  display: "grid",
+  gap: 8,
+  padding: "10px 0",
+  borderBottom: "1px solid rgba(148, 163, 184, 0.14)",
 };
 
 const flightRouteRowStyle: CSSProperties = {

@@ -51,6 +51,13 @@ const ISSUE_IMAGE_SLOT: {
   description: "특이사항 발생 시 증빙용 현장 이미지 또는 캡처를 저장합니다.",
 };
 
+const IMAGE_SLOT_PROPERTY_NAME: Record<ImageSlotKey, string> = {
+  "daily-schedule": "업무일정 이미지",
+  "aircraft-check": "화물기 CHECK 이미지",
+  "inspection-result": "점검 대상 결과 이미지",
+  issue: "이미지",
+};
+
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_API_URL || "https://cargo-ops-backend.onrender.com";
 
@@ -504,11 +511,47 @@ export default function HomePage() {
     );
   };
 
-  const handlePrepareNotionDaily = () => {
-    setNotice("Notion 일일 업무 기록 저장은 다음 단계에서 백엔드 API로 연결합니다.");
+  const handleSaveDailyToNotion = async () => {
+    try {
+      const dailyImages = IMAGE_SLOTS.map((slot) => {
+        const image = getImageBySlot(images, slot.key);
+        if (!image) return null;
+
+        return {
+          slotKey: slot.key,
+          propertyName: IMAGE_SLOT_PROPERTY_NAME[slot.key],
+          label: image.label,
+          savedAt: image.savedAt,
+          dataUrl: image.dataUrl,
+        };
+      }).filter(Boolean);
+
+      const response = await fetch(`${BACKEND_URL}/notion/daily-records`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `${todayText} KJ 일일 업무`,
+          date: new Date().toISOString(),
+          author,
+          status: dailyStatus === "normal" ? "이상 없음" : "특이사항 있음",
+          memo: note,
+          images: dailyImages,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || result?.success === false) {
+        throw new Error(result?.detail || result?.message || "Notion 저장 실패");
+      }
+
+      setNotice("Notion에 일일 업무 기록을 저장했습니다.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Notion 저장 중 오류가 발생했습니다.");
+    }
   };
 
-  const handlePrepareIssueNotion = () => {
+  const handleSaveIssueToNotion = async () => {
     if (!issueFlight.trim()) {
       setNotice("특이사항 기록을 위해 편명을 입력하세요.");
       return;
@@ -519,7 +562,45 @@ export default function HomePage() {
       return;
     }
 
-    setNotice("Notion 특이사항 저장은 다음 단계에서 백엔드 API로 연결합니다.");
+    try {
+      const issueImage = getImageBySlot(images, ISSUE_IMAGE_SLOT.key);
+
+      const response = await fetch(`${BACKEND_URL}/notion/issue-records`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `${issueFlight.trim().toUpperCase()} ${issueRoute || ""} 특이사항`,
+          date: new Date().toISOString(),
+          time: getCurrentTimeText(),
+          flight: issueFlight.trim().toUpperCase(),
+          route: issueRoute,
+          hlnbr: issueHlnbr,
+          issue: issueText,
+          weather: getWeatherSummary(weather),
+          author,
+          status: "확인 중",
+          image: issueImage
+            ? {
+                slotKey: ISSUE_IMAGE_SLOT.key,
+                propertyName: IMAGE_SLOT_PROPERTY_NAME[ISSUE_IMAGE_SLOT.key],
+                label: issueImage.label,
+                savedAt: issueImage.savedAt,
+                dataUrl: issueImage.dataUrl,
+              }
+            : null,
+        }),
+      });
+
+      const result = await response.json();
+
+      if (!response.ok || result?.success === false) {
+        throw new Error(result?.detail || result?.message || "Notion 저장 실패");
+      }
+
+      setNotice("Notion에 특이사항 기록을 저장했습니다.");
+    } catch (error) {
+      setNotice(error instanceof Error ? error.message : "Notion 저장 중 오류가 발생했습니다.");
+    }
   };
 
   const openLatestImage = (image: SavedImage) => {
@@ -685,6 +766,16 @@ export default function HomePage() {
             style={{ display: "none" }}
           />
 
+          <div style={fieldBlockStyle}>
+            <label style={fieldLabelStyle}>작성자</label>
+            <input
+              value={author}
+              onChange={(event) => setAuthor(event.target.value)}
+              placeholder="작성자"
+              style={inputStyle}
+            />
+          </div>
+
           <textarea
             value={note}
             onChange={(event) => setNote(event.target.value)}
@@ -696,8 +787,8 @@ export default function HomePage() {
             <button onClick={handleSaveDailyDraft} style={greenButtonStyle}>
               일일 업무 임시 저장
             </button>
-            <button onClick={handlePrepareNotionDaily} style={darkButtonStyle}>
-              Notion 일일 기록 저장 준비
+            <button onClick={handleSaveDailyToNotion} style={darkButtonStyle}>
+              Notion 일일 기록 저장
             </button>
           </div>
         </section>
@@ -784,8 +875,8 @@ export default function HomePage() {
             />
 
             <div style={buttonStackStyle}>
-              <button onClick={handlePrepareIssueNotion} style={orangeButtonStyle}>
-                Notion 특이사항 저장 준비
+              <button onClick={handleSaveIssueToNotion} style={orangeButtonStyle}>
+                Notion 특이사항 저장
               </button>
             </div>
           </section>

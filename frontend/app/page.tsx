@@ -41,7 +41,7 @@ type MonitorRoom = {
 
 type SavedImage = {
   id: string;
-  type: "key-info" | "cargo-plan" | "schedule-flight";
+  type: string;
   label: string;
   savedAt: string;
   dataUrl: string;

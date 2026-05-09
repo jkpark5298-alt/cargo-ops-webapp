@@ -11,14 +11,21 @@ import type {
 
 type DailyStatus = "normal" | "issue";
 
+type ImageSlotKey =
+  | "daily-schedule"
+  | "aircraft-check"
+  | "inspection-result"
+  | "issue";
+
 type ImageSlot = {
-  key: string;
+  key: ImageSlotKey;
   title: string;
   description: string;
 };
 
 type SavedImage = {
-  slotKey: string;
+  id: string;
+  type: ImageSlotKey;
   label: string;
   savedAt: string;
   dataUrl: string;
@@ -35,11 +42,11 @@ type DailyRecordCardProps = {
   setDailyStatus: Dispatch<SetStateAction<DailyStatus>>;
   images: SavedImage[];
   imageSlots: ImageSlot[];
-  getImageBySlot: (images: SavedImage[], slotKey: string) => SavedImage | null;
-  openCamera: (slotKey: string) => void;
-  openPhotoLibrary: (slotKey: string) => void;
+  getImageBySlot: (images: SavedImage[], slotKey: ImageSlotKey) => SavedImage | null;
+  openCamera: (slotKey: ImageSlotKey) => void;
+  openPhotoLibrary: (slotKey: ImageSlotKey) => void;
   openLatestImage: (image: SavedImage) => void;
-  handleDeleteImageSlot: (slotKey: string) => void;
+  handleDeleteImageSlot: (slotKey: ImageSlotKey) => void;
   cameraInputRef: RefObject<HTMLInputElement | null>;
   libraryInputRef: RefObject<HTMLInputElement | null>;
   handleImageSelected: (

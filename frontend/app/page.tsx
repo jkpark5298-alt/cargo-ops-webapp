@@ -1120,6 +1120,7 @@ export default function HomePage() {
           historyItems={flightAlertHistory}
           onClear={handleClearFlightAlertHistory}
         />
+      </section>
 
       <section style={stackStyle}>
         <ActionCard

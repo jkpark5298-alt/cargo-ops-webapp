@@ -203,27 +203,39 @@ function getRouteDisplay(row?: FlightRow) {
 function getFlightRouteItems(room: MonitorRoom | null) {
   if (!room) return [];
 
-  const inputFlights = room.flightsInput
+  const rows = Array.isArray(room.rows) ? room.rows : [];
+
+  const rowItems = rows
+    .map((row) => {
+      const flight = getFlightNo(row);
+      if (!flight) return null;
+
+      return {
+        flight,
+        route: getRouteDisplay(row) || "구간 확인 중",
+        hasResult: true,
+      };
+    })
+    .filter((item): item is { flight: string; route: string; hasResult: boolean } => Boolean(item));
+
+  const uniqueRowItems = rowItems.filter((item, index, array) => {
+    const key = item.flight.replace(/\s+/g, "").toUpperCase();
+    return array.findIndex((candidate) => candidate.flight.replace(/\s+/g, "").toUpperCase() === key) === index;
+  });
+
+  if (uniqueRowItems.length > 0) {
+    return uniqueRowItems;
+  }
+
+  return room.flightsInput
     .split(",")
     .map((flight) => flight.trim())
-    .filter(Boolean);
-
-  const rows = Array.isArray(room.rows) ? room.rows : [];
-  const rowFlights = rows.map((row) => getFlightNo(row)).filter(Boolean);
-  const uniqueFlights = Array.from(new Set(inputFlights.length > 0 ? inputFlights : rowFlights));
-
-  return uniqueFlights.map((flight) => {
-    const matchedRow = rows.find((row) => {
-      const rowFlight = getFlightNo(row).replace(/\s+/g, "").toUpperCase();
-      const targetFlight = flight.replace(/\s+/g, "").toUpperCase();
-      return rowFlight === targetFlight || rowFlight.includes(targetFlight);
-    });
-
-    return {
+    .filter(Boolean)
+    .map((flight) => ({
       flight,
-      route: getRouteDisplay(matchedRow) || "구간 확인 중",
-    };
-  });
+      route: "조회 결과 없음",
+      hasResult: false,
+    }));
 }
 
 function getRoomRowsCount(room: MonitorRoom | null) {

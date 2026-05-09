@@ -243,6 +243,55 @@ function getRoomRowsCount(room: MonitorRoom | null) {
   return Array.isArray(room.rows) ? room.rows.length : 0;
 }
 
+
+function getRouteByFlight(room: MonitorRoom | null, flightInput: string) {
+  if (!room || !flightInput.trim()) return "";
+
+  const targetFlight = flightInput.replace(/\s+/g, "").toUpperCase();
+  const matchedRow = room.rows?.find((row) => {
+    const rowFlight = getFlightNo(row).replace(/\s+/g, "").toUpperCase();
+    return rowFlight === targetFlight || rowFlight.includes(targetFlight);
+  });
+
+  return getRouteDisplay(matchedRow);
+}
+
+function getHlnbrByFlight(room: MonitorRoom | null, flightInput: string) {
+  if (!room || !flightInput.trim()) return "";
+
+  const targetFlight = flightInput.replace(/\s+/g, "").toUpperCase();
+  const matchedRow = room.rows?.find((row) => {
+    const rowFlight = getFlightNo(row).replace(/\s+/g, "").toUpperCase();
+    return rowFlight === targetFlight || rowFlight.includes(targetFlight);
+  });
+
+  const rowWithMaybeHlnbr = matchedRow as FlightRow & {
+    fid?: string;
+    aircraftRegNo?: string;
+    registrationNo?: string;
+    hlnbr?: string;
+  };
+
+  return (
+    rowWithMaybeHlnbr?.fid ||
+    rowWithMaybeHlnbr?.aircraftRegNo ||
+    rowWithMaybeHlnbr?.registrationNo ||
+    rowWithMaybeHlnbr?.hlnbr ||
+    ""
+  );
+}
+
+function getCurrentTimeText() {
+  const now = new Date();
+  const hh = String(now.getHours()).padStart(2, "0");
+  const mm = String(now.getMinutes()).padStart(2, "0");
+  return `${hh}:${mm}`;
+}
+
+function getWeatherSummary(weather: WeatherInfo) {
+  return `${weather.condition || "-"} ${weather.temperature || "-"}℃ / 습도 ${weather.humidity || "-"}% / 미세먼지 ${weather.pm10Grade || "-"}`;
+}
+
 export default function HomePage() {
   const router = useRouter();
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
@@ -253,6 +302,13 @@ export default function HomePage() {
   const [notice, setNotice] = useState("");
   const [weather, setWeather] = useState<WeatherInfo>(DEFAULT_WEATHER);
   const [weatherLoading, setWeatherLoading] = useState(false);
+  const [dailyStatus, setDailyStatus] = useState<"normal" | "issue">("normal");
+  const [imageCategory, setImageCategory] = useState("업무일정 이미지");
+  const [author, setAuthor] = useState("jkpark");
+  const [issueFlight, setIssueFlight] = useState("");
+  const [issueRoute, setIssueRoute] = useState("");
+  const [issueHlnbr, setIssueHlnbr] = useState("");
+  const [issueText, setIssueText] = useState("");
   const todayText = useMemo(() => formatDateForTitle(new Date()), []);
   const latestRoom = useMemo(() => getLatestScheduleRoom(rooms), [rooms]);
 
@@ -263,6 +319,19 @@ export default function HomePage() {
     void fetchWeather();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  useEffect(() => {
+    const route = getRouteByFlight(latestRoom, issueFlight);
+    const hlnbr = getHlnbrByFlight(latestRoom, issueFlight);
+
+    if (route) {
+      setIssueRoute(route);
+    }
+
+    if (hlnbr) {
+      setIssueHlnbr(hlnbr);
+    }
+  }, [issueFlight, latestRoom]);
 
   const openFlights = () => router.push("/flights");
 
@@ -331,9 +400,9 @@ export default function HomePage() {
       const dataUrl = String(reader.result || "");
       if (!dataUrl) return;
       const savedAt = new Date().toLocaleString("ko-KR");
-      const label = `주요 정보 저장 · ${sourceLabel}`;
+      const label = `${imageCategory} · ${sourceLabel}`;
       const nextImages: SavedImage[] = [
-        { id: `${Date.now()}`, type: "key-info", label, savedAt, dataUrl },
+        { id: `${Date.now()}`, type: imageCategory, label, savedAt, dataUrl },
         ...images,
       ].slice(0, 6);
       setImages(nextImages);
@@ -350,6 +419,32 @@ export default function HomePage() {
     setNotice(
       "노트를 임시 저장했습니다. Notion 저장은 다음 단계에서 연결합니다.",
     );
+  };
+
+  const handleSaveDailyDraft = () => {
+    setNotice(
+      dailyStatus === "normal"
+        ? "일일 업무 기록을 임시 저장했습니다. 상태: 이상 없음"
+        : "일일 업무 기록을 임시 저장했습니다. 특이사항 입력 화면을 확인하세요.",
+    );
+  };
+
+  const handlePrepareNotionDaily = () => {
+    setNotice("Notion 일일 업무 기록 저장은 다음 단계에서 백엔드 API로 연결합니다.");
+  };
+
+  const handlePrepareIssueNotion = () => {
+    if (!issueFlight.trim()) {
+      setNotice("특이사항 기록을 위해 편명을 입력하세요.");
+      return;
+    }
+
+    if (!issueText.trim()) {
+      setNotice("특이사항 내용을 입력하세요.");
+      return;
+    }
+
+    setNotice("Notion 특이사항 저장은 다음 단계에서 백엔드 API로 연결합니다.");
   };
 
   const openLatestImage = (image: SavedImage) => {
@@ -464,12 +559,41 @@ export default function HomePage() {
         </section>
 
         <section style={cardStyle}>
-          <div style={cardLabelStyle}>주요 정보 저장</div>
-          <h2 style={cardTitleStyle}>사진으로 주요 정보 보관</h2>
+          <div style={cardLabelStyle}>일일 업무 기록</div>
+          <h2 style={cardTitleStyle}>사진 중심 업무 내용 정리</h2>
           <p style={cardDescriptionStyle}>
-            현장 화면, 운항표, 메모 이미지를 촬영하거나 아이폰 사진첩에서 가져와
-            앱 안에 임시 저장합니다.
+            매일 발생하는 업무일정, 화물기 CHECK, 점검 대상 결과 이미지를 날짜 기준으로 정리합니다.
           </p>
+
+          <div style={statusToggleStyle}>
+            <button
+              onClick={() => setDailyStatus("normal")}
+              style={dailyStatus === "normal" ? statusActiveButtonStyle : statusButtonStyle}
+            >
+              이상 없음
+            </button>
+            <button
+              onClick={() => setDailyStatus("issue")}
+              style={dailyStatus === "issue" ? statusIssueButtonStyle : statusButtonStyle}
+            >
+              특이사항 있음
+            </button>
+          </div>
+
+          <div style={fieldBlockStyle}>
+            <label style={fieldLabelStyle}>이미지 구분</label>
+            <select
+              value={imageCategory}
+              onChange={(event) => setImageCategory(event.target.value)}
+              style={selectStyle}
+            >
+              <option value="업무일정 이미지">1. 업무일정 이미지</option>
+              <option value="화물기 CHECK 이미지">2. 화물기 CHECK 사항 이미지</option>
+              <option value="점검 대상 결과 이미지">3. 점검 대상 결과 이미지</option>
+              <option value="특이사항 이미지">4. 특이사항 이미지</option>
+            </select>
+          </div>
+
           <div style={buttonStackStyle}>
             <button onClick={openCamera} style={grayButtonStyle}>
               사진 촬영
@@ -478,6 +602,7 @@ export default function HomePage() {
               사진첩에서 가져오기
             </button>
           </div>
+
           <input
             ref={cameraInputRef}
             type="file"
@@ -493,9 +618,26 @@ export default function HomePage() {
             onChange={(event) => handleImageSelected(event, "사진첩 선택")}
             style={{ display: "none" }}
           />
+
+          <textarea
+            value={note}
+            onChange={(event) => setNote(event.target.value)}
+            placeholder="주요 사항을 입력하세요. 예: 점검 대상 결과 이상 없음."
+            style={noteStyle}
+          />
+
+          <div style={buttonStackStyle}>
+            <button onClick={handleSaveDailyDraft} style={greenButtonStyle}>
+              일일 업무 임시 저장
+            </button>
+            <button onClick={handlePrepareNotionDaily} style={darkButtonStyle}>
+              Notion 일일 기록 저장 준비
+            </button>
+          </div>
+
           {images.length > 0 && (
             <div style={imageListStyle}>
-              {images.slice(0, 3).map((image) => (
+              {images.slice(0, 4).map((image) => (
                 <button
                   key={image.id}
                   onClick={() => openLatestImage(image)}
@@ -516,31 +658,85 @@ export default function HomePage() {
           )}
         </section>
 
-        <section style={cardStyle}>
-          <div style={cardLabelStyle}>노트</div>
-          <h2 style={cardTitleStyle}>현장 메모</h2>
-          <textarea
-            value={note}
-            onChange={(event) => setNote(event.target.value)}
-            placeholder="예: KJ919 게이트 672 확인. 특이사항 없음."
-            style={noteStyle}
-          />
-          <div style={buttonStackStyle}>
-            <button onClick={handleSaveNoteLocal} style={greenButtonStyle}>
-              임시 저장
-            </button>
-            <button
-              onClick={() =>
-                setNotice(
-                  "Notion 저장은 다음 단계에서 백엔드 API로 연결합니다.",
-                )
-              }
-              style={darkButtonStyle}
-            >
-              Notion 저장 준비 중
-            </button>
-          </div>
-        </section>
+        {dailyStatus === "issue" && (
+          <section style={{ ...cardStyle, borderColor: "#f9731666" }}>
+            <div style={cardLabelStyle}>특이사항 기록</div>
+            <h2 style={cardTitleStyle}>문제 발생 대비 증빙 기록</h2>
+            <p style={cardDescriptionStyle}>
+              특이사항 발생 시 날짜, 시간, 편명, 구간, HL NBR, 날씨, 작성자, 이미지와 메모를 함께 저장합니다.
+            </p>
+
+            <div style={formGridStyle}>
+              <div style={fieldBlockStyle}>
+                <label style={fieldLabelStyle}>날짜</label>
+                <input value={todayText} readOnly style={inputStyle} />
+              </div>
+
+              <div style={fieldBlockStyle}>
+                <label style={fieldLabelStyle}>시간</label>
+                <input value={getCurrentTimeText()} readOnly style={inputStyle} />
+              </div>
+
+              <div style={fieldBlockStyle}>
+                <label style={fieldLabelStyle}>편명</label>
+                <input
+                  value={issueFlight}
+                  onChange={(event) => setIssueFlight(event.target.value.toUpperCase())}
+                  placeholder="예: KJ919"
+                  style={inputStyle}
+                />
+              </div>
+
+              <div style={fieldBlockStyle}>
+                <label style={fieldLabelStyle}>구간</label>
+                <input
+                  value={issueRoute}
+                  onChange={(event) => setIssueRoute(event.target.value.toUpperCase())}
+                  placeholder="편명 입력 시 자동 표시"
+                  style={inputStyle}
+                />
+              </div>
+
+              <div style={fieldBlockStyle}>
+                <label style={fieldLabelStyle}>HL NBR</label>
+                <input
+                  value={issueHlnbr}
+                  onChange={(event) => setIssueHlnbr(event.target.value.toUpperCase())}
+                  placeholder="예: HL8000"
+                  style={inputStyle}
+                />
+              </div>
+
+              <div style={fieldBlockStyle}>
+                <label style={fieldLabelStyle}>작성자</label>
+                <input
+                  value={author}
+                  onChange={(event) => setAuthor(event.target.value)}
+                  placeholder="작성자"
+                  style={inputStyle}
+                />
+              </div>
+            </div>
+
+            <div style={fieldBlockStyle}>
+              <label style={fieldLabelStyle}>날씨</label>
+              <input value={getWeatherSummary(weather)} readOnly style={inputStyle} />
+            </div>
+
+            <textarea
+              value={issueText}
+              onChange={(event) => setIssueText(event.target.value)}
+              placeholder="특이사항을 입력하세요. 예: 게이트 변경, 지연, 점검 결과 이상 등"
+              style={noteStyle}
+            />
+
+            <div style={buttonStackStyle}>
+              <button onClick={handlePrepareIssueNotion} style={orangeButtonStyle}>
+                Notion 특이사항 저장 준비
+              </button>
+            </div>
+          </section>
+        )}
 
         {notice && <div style={noticeStyle}>{notice}</div>}
       </section>
@@ -1007,6 +1203,86 @@ const noteStyle: CSSProperties = {
   lineHeight: 1.5,
   resize: "vertical",
 };
+const statusToggleStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 10,
+  margin: "12px 0 16px",
+};
+
+const statusButtonStyle: CSSProperties = {
+  padding: "12px 12px",
+  borderRadius: 14,
+  border: "1px solid #334155",
+  background: "#0f172a",
+  color: "#cbd5e1",
+  fontWeight: 900,
+  fontSize: 14,
+  cursor: "pointer",
+};
+
+const statusActiveButtonStyle: CSSProperties = {
+  ...statusButtonStyle,
+  background: "#14532d",
+  border: "1px solid #22c55e",
+  color: "#dcfce7",
+};
+
+const statusIssueButtonStyle: CSSProperties = {
+  ...statusButtonStyle,
+  background: "#7c2d12",
+  border: "1px solid #fb923c",
+  color: "#ffedd5",
+};
+
+const fieldBlockStyle: CSSProperties = {
+  display: "flex",
+  flexDirection: "column",
+  gap: 6,
+  marginTop: 12,
+};
+
+const fieldLabelStyle: CSSProperties = {
+  color: "#cbd5e1",
+  fontSize: 13,
+  fontWeight: 900,
+};
+
+const inputStyle: CSSProperties = {
+  width: "100%",
+  boxSizing: "border-box",
+  padding: "12px 12px",
+  borderRadius: 12,
+  border: "1px solid #334155",
+  background: "#020617",
+  color: "#f8fafc",
+  fontSize: 15,
+  fontWeight: 800,
+};
+
+const selectStyle: CSSProperties = {
+  ...inputStyle,
+  cursor: "pointer",
+};
+
+const formGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr",
+  gap: 8,
+};
+
+const orangeButtonStyle: CSSProperties = {
+  width: "100%",
+  padding: "13px 14px",
+  borderRadius: 14,
+  border: "none",
+  background: "#f97316",
+  color: "white",
+  fontSize: 15,
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
 const noticeStyle: CSSProperties = {
   padding: 14,
   borderRadius: 18,

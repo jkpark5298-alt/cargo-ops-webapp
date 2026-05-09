@@ -259,13 +259,13 @@ async def delete_daily_record(page_id: str) -> dict[str, Any]:
         response = await client.patch(
             f"{NOTION_API_BASE}/pages/{page_id}",
             headers=_headers(),
-            json={"archived": True},
+            json={"in_trash": True},
         )
 
     if response.status_code >= 400:
         raise HTTPException(
             status_code=502,
-            detail=f"Notion daily record delete failed: {response.text}",
+            detail=f"Notion daily record trash failed: {response.text}",
         )
 
     result = response.json()
@@ -273,7 +273,7 @@ async def delete_daily_record(page_id: str) -> dict[str, Any]:
         "success": True,
         "message": "Daily record deleted from Notion",
         "pageId": result.get("id"),
-        "archived": result.get("archived", True),
+        "in_trash": result.get("in_trash", True),
     }
 
 

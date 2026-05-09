@@ -157,7 +157,46 @@ function getLatestScheduleRoom(rooms: MonitorRoom[]) {
 
 function getFlightSummary(room: MonitorRoom | null) {
   if (!room) return "저장된 Schedule Flight가 없습니다.";
-  return room.flightsInput || "-";
+
+  const inputFlights = room.flightsInput
+    .split(",")
+    .map((flight) => flight.trim())
+    .filter(Boolean);
+
+  const rows = Array.isArray(room.rows) ? room.rows : [];
+  const rowFlights = rows.map((row) => getFlightNo(row)).filter(Boolean);
+  const uniqueFlights = Array.from(new Set(inputFlights.length > 0 ? inputFlights : rowFlights));
+
+  if (uniqueFlights.length === 0) return "-";
+
+  return uniqueFlights
+    .map((flight) => {
+      const matchedRow = rows.find((row) => {
+        const rowFlight = getFlightNo(row).replace(/\s+/g, "").toUpperCase();
+        const targetFlight = flight.replace(/\s+/g, "").toUpperCase();
+        return rowFlight === targetFlight || rowFlight.includes(targetFlight);
+      });
+
+      const route = getRouteDisplay(matchedRow);
+      return route ? `${flight} ${route}` : flight;
+    })
+    .join(", ");
+}
+
+function getFlightNo(row?: FlightRow) {
+  if (!row) return "";
+  return row.flightId || row.flightNo || "";
+}
+
+function getRouteDisplay(row?: FlightRow) {
+  if (!row) return "";
+  const departure = row.departureCode || "";
+  const arrival = row.arrivalCode || "";
+
+  if (!departure && !arrival) return "";
+  if (departure && arrival) return `${departure}→${arrival}`;
+  if (departure) return `${departure}→-`;
+  return `-→${arrival}`;
 }
 
 function getRoomRowsCount(room: MonitorRoom | null) {
@@ -362,7 +401,7 @@ export default function HomePage() {
             {latestRoom?.name || "저장된 스케줄 없음"}
           </h2>
           <div style={infoListStyle}>
-            <InfoRow label="편명" value={getFlightSummary(latestRoom)} />
+            <InfoRow label="편명 / 구간" value={getFlightSummary(latestRoom)} />
             <InfoRow
               label="조회범위"
               value={

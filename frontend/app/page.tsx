@@ -15,6 +15,7 @@ const NOTE_STORAGE_KEY = "cargo_ops_home_note_v1";
 const DAILY_NOTION_RECORD_KEY = "cargo_ops_daily_notion_record_v1";
 const ISSUE_NOTION_RECORD_KEY = "cargo_ops_issue_notion_record_v1";
 const FLIGHT_ALERT_SNAPSHOT_KEY = "cargo_ops_flight_alert_snapshot_v1";
+const FLIGHT_ALERT_HISTORY_KEY = "cargo_ops_flight_alert_history_v1";
 
 type DailyNotionRecord = {
   pageId: string;
@@ -158,6 +159,11 @@ type FlightAlertItem = {
   description: string;
 };
 
+type FlightAlertHistoryItem = FlightAlertItem & {
+  checkedAt: string;
+  roomName: string;
+};
+
 type SavedImage = {
   id: string;
   type: ImageSlotKey;
@@ -284,6 +290,28 @@ function loadFlightAlertSnapshot(): FlightAlertSnapshot | null {
 function saveFlightAlertSnapshot(snapshot: FlightAlertSnapshot) {
   if (typeof window === "undefined") return;
   localStorage.setItem(FLIGHT_ALERT_SNAPSHOT_KEY, JSON.stringify(snapshot));
+}
+
+function loadFlightAlertHistory(): FlightAlertHistoryItem[] {
+  if (typeof window === "undefined") return [];
+  try {
+    const raw = localStorage.getItem(FLIGHT_ALERT_HISTORY_KEY);
+    if (!raw) return [];
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveFlightAlertHistory(items: FlightAlertHistoryItem[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(FLIGHT_ALERT_HISTORY_KEY, JSON.stringify(items.slice(0, 20)));
+}
+
+function clearFlightAlertHistory() {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(FLIGHT_ALERT_HISTORY_KEY);
 }
 
 function normalizeFlightKey(flight: string) {
@@ -633,6 +661,8 @@ export default function HomePage() {
   const [alertCheckedAt, setAlertCheckedAt] = useState("");
   const [flightAlertSnapshot, setFlightAlertSnapshot] =
     useState<FlightAlertSnapshot | null>(null);
+  const [flightAlertHistory, setFlightAlertHistory] =
+    useState<FlightAlertHistoryItem[]>([]);
   const [dailyStatus, setDailyStatus] = useState<"normal" | "issue">("normal");
   const [author, setAuthor] = useState("jkpark");
   const [issueFlight, setIssueFlight] = useState("");
@@ -660,6 +690,7 @@ export default function HomePage() {
 
     const savedSnapshot = loadFlightAlertSnapshot();
     setFlightAlertSnapshot(savedSnapshot);
+    setFlightAlertHistory(loadFlightAlertHistory());
     setAlertCheckedAt(savedSnapshot?.savedAt || getCurrentTimeLabel());
 
     void fetchWeather();
@@ -688,10 +719,35 @@ export default function HomePage() {
       return;
     }
 
+    if (flightAlertItems.length > 0) {
+      const checkedAt = getCurrentTimeLabel();
+      const historyItems = flightAlertItems.map((item) => ({
+        ...item,
+        checkedAt,
+        roomName: latestRoom?.name || snapshot.roomName,
+      }));
+      const nextHistory = [...historyItems, ...flightAlertHistory].slice(0, 20);
+      setFlightAlertHistory(nextHistory);
+      saveFlightAlertHistory(nextHistory);
+    }
+
     setFlightAlertSnapshot(snapshot);
     saveFlightAlertSnapshot(snapshot);
     setAlertCheckedAt(snapshot.savedAt);
-    setNotice("현재 Schedule Flight 결과를 변경 감지 기준으로 저장했습니다.");
+    setNotice(
+      flightAlertItems.length > 0
+        ? "변경 알림을 이력에 저장하고 현재 결과를 새 기준으로 저장했습니다."
+        : "현재 Schedule Flight 결과를 변경 감지 기준으로 저장했습니다.",
+    );
+  };
+
+  const handleClearFlightAlertHistory = () => {
+    const confirmed = window.confirm("앱에 저장된 출도착 알림 이력을 초기화할까요?");
+    if (!confirmed) return;
+
+    setFlightAlertHistory([]);
+    clearFlightAlertHistory();
+    setNotice("출도착 알림 이력을 초기화했습니다.");
   };
 
   const openFlights = () => router.push("/flights");
@@ -1260,6 +1316,38 @@ export default function HomePage() {
           <button onClick={handleCheckFlightAlerts} style={secondaryButtonStyle}>
             현재 결과를 기준으로 저장
           </button>
+        </section>
+
+        <section style={flightAlertHistoryCardStyle}>
+          <div style={flightAlertTopStyle}>
+            <div>
+              <div style={cardLabelStyle}>출도착 알림 이력</div>
+              <h2 style={flightAlertTitleStyle}>최근 변경 {flightAlertHistory.length}건</h2>
+            </div>
+            <div style={flightAlertBadgeStyle}>앱 저장</div>
+          </div>
+
+          {flightAlertHistory.length > 0 ? (
+            <div style={flightAlertListStyle}>
+              {flightAlertHistory.slice(0, 5).map((item, index) => (
+                <div key={`${item.key}-${item.checkedAt}-${index}`} style={flightAlertHistoryItemStyle}>
+                  <div style={flightAlertItemTitleStyle}>{item.title}</div>
+                  <div style={flightAlertItemDescStyle}>{item.description}</div>
+                  <div style={flightAlertHistoryMetaStyle}>
+                    확인 {item.checkedAt} · {item.roomName}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div style={flightAlertMetaStyle}>아직 저장된 알림 이력이 없습니다.</div>
+          )}
+
+          {flightAlertHistory.length > 0 && (
+            <button onClick={handleClearFlightAlertHistory} style={resetButtonStyle}>
+              알림 이력 초기화
+            </button>
+          )}
         </section>
       </section>
 
@@ -1939,6 +2027,29 @@ const flightAlertGuideStyle: CSSProperties = {
   fontSize: 12,
   lineHeight: 1.45,
   marginBottom: 12,
+};
+
+const flightAlertHistoryCardStyle: CSSProperties = {
+  background: "linear-gradient(145deg, #0b1120, #111827)",
+  border: "1px solid #1e3a8a",
+  borderRadius: 22,
+  padding: 18,
+  boxShadow: "0 18px 45px rgba(0,0,0,0.22)",
+};
+
+const flightAlertHistoryItemStyle: CSSProperties = {
+  border: "1px solid rgba(59, 130, 246, 0.22)",
+  background: "rgba(30, 64, 175, 0.16)",
+  borderRadius: 14,
+  padding: "10px 12px",
+};
+
+const flightAlertHistoryMetaStyle: CSSProperties = {
+  color: "#93c5fd",
+  fontSize: 11,
+  lineHeight: 1.4,
+  marginTop: 6,
+  fontWeight: 800,
 };
 
 const flightAlertListStyle: CSSProperties = {

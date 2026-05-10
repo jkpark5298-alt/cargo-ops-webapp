@@ -160,6 +160,59 @@ def _get_row_sort_key(row: Dict[str, Any]):
     return (0, dt, flight)
 
 
+
+@router.post("/kj-all")
+async def search_all_kj_flights(payload: FlightRangeRequest) -> Dict[str, Any]:
+    start_dt = _parse_request_datetime(payload.start)
+    end_dt = _parse_request_datetime(payload.end)
+
+    if start_dt is None or end_dt is None:
+        raise HTTPException(status_code=400, detail="시작일시 또는 종료일시 형식이 올바르지 않습니다.")
+
+    if start_dt > end_dt:
+        raise HTTPException(status_code=400, detail="시작일시는 종료일시보다 늦을 수 없습니다.")
+
+    start_date = _extract_date(payload.start)
+    end_date = _extract_date(payload.end)
+
+    if not start_date or not end_date:
+        raise HTTPException(status_code=400, detail="시작일 또는 종료일이 필요합니다.")
+
+    try:
+        rows = await get_all_kj_flight_data(
+            start_date=start_date,
+            end_date=end_date,
+        )
+
+        filtered_rows = [
+            row
+            for row in rows
+            if _row_matches_time_range(row, start_dt, end_dt)
+        ]
+
+    except IncheonApiQuotaExceededError:
+        raise HTTPException(status_code=429, detail="한도 초과로 조회 불가")
+
+    filtered_rows.sort(key=_get_row_sort_key)
+
+    queried_flights = sorted(
+        {
+            str(row.get("flightId") or row.get("flightNo") or "").upper()
+            for row in filtered_rows
+            if str(row.get("flightId") or row.get("flightNo") or "").upper().startswith("KJ")
+        }
+    )
+
+    return {
+        "success": True,
+        "data": filtered_rows,
+        "count": len(filtered_rows),
+        "queriedFlights": queried_flights,
+        "start": payload.start,
+        "end": payload.end,
+    }
+
+
 @router.post("/")
 async def search_flights(payload: FlightQueryRequest) -> Dict[str, Any]:
     normalized_flights = _normalize_flights(payload.flights)

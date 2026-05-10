@@ -60,7 +60,7 @@ function getDefaultStartDateTime() {
 
 function getDefaultEndDateTime() {
   const d = new Date();
-  d.setHours(d.getHours() + 12);
+  d.setHours(d.getHours() + 24);
   return toDateTimeLocalString(d);
 }
 
@@ -91,55 +91,101 @@ function saveRooms(rooms: MonitorRoom[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(rooms));
 }
 
-function getRemarkStatus(row: FlightRow): string {
-  return `${row.remark || ""} ${row.status || ""}`.trim().toUpperCase();
+function parseFlightTime(row: FlightRow): Date | null {
+  const raw =
+    row.formattedEstimatedTime ||
+    row.formattedScheduleTime ||
+    row.estimatedDateTime ||
+    row.scheduleDateTime;
+
+  if (!raw) return null;
+
+  const normalized = raw
+    .trim()
+    .replace(/\./g, "-")
+    .replace(/\//g, "-")
+    .replace("T", " ");
+
+  const direct = new Date(normalized);
+  if (!Number.isNaN(direct.getTime())) return direct;
+
+  const compactMatch = normalized.match(
+    /^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})(?::(\d{2}))?$/
+  );
+  if (compactMatch) {
+    const [, y, m, d, hh, mm, ss] = compactMatch;
+    return new Date(
+      Number(y),
+      Number(m) - 1,
+      Number(d),
+      Number(hh),
+      Number(mm),
+      Number(ss || "0")
+    );
+  }
+
+  return null;
 }
 
-function hasAnyKeyword(value: string, keywords: string[]) {
-  return keywords.some((keyword) => value.includes(keyword));
+function getRemarkStatus(row: FlightRow): string {
+  return `${row.status || ""} ${row.remark || ""}`.trim().toUpperCase();
 }
 
 function getComputedStatus(row: FlightRow) {
   const remarkStatus = getRemarkStatus(row);
 
-  const canceledKeywords = ["CANCEL", "CANCELLED", "CANCELED", "결항", "취소"];
-  const gateChangeKeywords = [
-    "GATE CHANGE",
-    "GATE CHANGED",
-    "GATE",
-    "게이트 변경",
-    "게이트변경",
-  ];
-  const delayKeywords = ["DELAY", "DELAYED", "지연"];
-  const arrivalKeywords = ["ARRIV", "ARRIVAL", "ARRIVED", "도착"];
-  const departureKeywords = ["DEPART", "DEPARTURE", "DEPARTED", "DEP", "출발"];
+  if (row.canceled || remarkStatus.includes("CANCEL")) return "결항";
+  if (row.gateChanged) return "게이트 변경";
 
-  if (row.canceled || hasAnyKeyword(remarkStatus, canceledKeywords)) {
-    return "결항";
-  }
-
-  if (row.gateChanged || hasAnyKeyword(remarkStatus, gateChangeKeywords)) {
-    return "게이트 변경";
-  }
-
-  if (row.delay || hasAnyKeyword(remarkStatus, delayKeywords)) {
-    if (hasAnyKeyword(remarkStatus, arrivalKeywords)) {
+  if (
+    remarkStatus.includes("DELAY") ||
+    remarkStatus.includes("지연") ||
+    row.delay
+  ) {
+    if (
+      remarkStatus.includes("ARRIV") ||
+      remarkStatus.includes("도착") ||
+      row.status === "도착"
+    ) {
       return "도착(지연)";
     }
-
-    if (hasAnyKeyword(remarkStatus, departureKeywords)) {
+    if (
+      remarkStatus.includes("DEPAR") ||
+      remarkStatus.includes("출발") ||
+      row.status === "출발"
+    ) {
       return "출발(지연)";
     }
-
     return "지연";
   }
 
-  if (hasAnyKeyword(remarkStatus, departureKeywords)) {
+  if (
+    row.status === "출발" ||
+    remarkStatus.includes("DEPART") ||
+    remarkStatus.includes("DEP") ||
+    remarkStatus.includes("출발")
+  ) {
     return "출발";
   }
 
-  if (hasAnyKeyword(remarkStatus, arrivalKeywords)) {
+  if (
+    row.status === "도착" ||
+    remarkStatus.includes("ARRIV") ||
+    remarkStatus.includes("ARR") ||
+    remarkStatus.includes("도착")
+  ) {
     return "도착";
+  }
+
+  const dt = parseFlightTime(row);
+  const now = new Date();
+
+  if (dt && dt.getTime() <= now.getTime()) {
+    const dep = (row.departureCode || "").toUpperCase();
+    const arr = (row.arrivalCode || "").toUpperCase();
+
+    if (dep === "ICN") return "출발";
+    if (arr === "ICN") return "도착";
   }
 
   return "-";
@@ -204,6 +250,39 @@ function getRowKey(row: FlightRow, idx: number) {
     row.gatenumber || "",
     idx,
   ].join("|");
+}
+
+function getSelectionKey(row: FlightRow, idx: number) {
+  return [
+    getFlightDisplay(row),
+    row.scheduleDateTime || "",
+    row.estimatedDateTime || "",
+    row.departureCode || "",
+    row.arrivalCode || "",
+    row.gatenumber || "",
+    row.terminalid || "",
+    idx,
+  ].join("|");
+}
+
+function isFinalCompletedRow(row: FlightRow) {
+  const status = getComputedStatus(row);
+  return status === "출발" || status === "도착";
+}
+
+function getUniqueFlightInputs(rows: FlightRow[]) {
+  const seen = new Set<string>();
+  const flights: string[] = [];
+
+  rows.forEach((row) => {
+    const flight = getFlightDisplay(row).replace(/\s+/g, "").toUpperCase();
+    if (!flight || flight === "-") return;
+    if (seen.has(flight)) return;
+    seen.add(flight);
+    flights.push(flight);
+  });
+
+  return flights;
 }
 
 function normalizeFlightsInput(rawInput: string) {
@@ -453,8 +532,10 @@ function FragmentRow({ children }: { children: ReactNode }) {
 export default function FlightsPage() {
   const router = useRouter();
 
+  const [queryMode, setQueryMode] = useState<"manual" | "kj-all">("manual");
   const [input, setInput] = useState("");
   const [rows, setRows] = useState<FlightRow[]>([]);
+  const [selectedScheduleKeys, setSelectedScheduleKeys] = useState<Record<string, boolean>>({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -473,6 +554,11 @@ export default function FlightsPage() {
   }, [startDateTime, endDateTime]);
 
   const alertCounts = useMemo(() => getAlertCounts(rows), [rows]);
+
+  const selectedScheduleRows = useMemo(
+    () => rows.filter((row, idx) => selectedScheduleKeys[getSelectionKey(row, idx)]),
+    [rows, selectedScheduleKeys]
+  );
 
   const selectedRoom = useMemo(
     () => rooms.find((room) => room.id === selectedRoomId) || null,
@@ -609,6 +695,7 @@ export default function FlightsPage() {
     if (q) {
       const upper = q.toUpperCase();
       const normalized = normalizeFlightsInput(upper).join(", ");
+      setQueryMode("manual");
       setInput(normalized);
       void fetchFlights(normalized);
     }
@@ -656,7 +743,9 @@ export default function FlightsPage() {
       return;
     }
 
+    setQueryMode("manual");
     setInput(flights.join(", "));
+    setSelectedScheduleKeys({});
     setLoading(true);
     setError("");
 
@@ -704,6 +793,90 @@ export default function FlightsPage() {
     }
   };
 
+  const fetchAllKjFlights = async () => {
+    setQueryMode("kj-all");
+    setLoading(true);
+    setError("");
+    setSelectedScheduleKeys({});
+    setInput("KJ 전체");
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/flights/kj-all`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          start: startDateTime,
+          end: endDateTime,
+        }),
+      });
+
+      const json = await res.json();
+
+      if (!res.ok || json.success === false) {
+        throw new Error(json.message || json.detail || `서버 오류 (${res.status})`);
+      }
+
+      const nextRows = json.data || [];
+      const fetchedAt = new Date().toLocaleString("ko-KR");
+
+      setRows(nextRows);
+      setLastFetchedAt(fetchedAt);
+      setExpandedDetailKeys({});
+    } catch (e: any) {
+      setError(e.message || "KJ 전체 조회 실패");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleToggleScheduleSelection = (row: FlightRow, idx: number) => {
+    if (isFinalCompletedRow(row)) return;
+
+    const key = getSelectionKey(row, idx);
+    setSelectedScheduleKeys((prev) => ({
+      ...prev,
+      [key]: !prev[key],
+    }));
+  };
+
+  const handleSaveSelectedSchedule = () => {
+    if (selectedScheduleRows.length === 0) {
+      setError("Schedule Flight로 관리할 편명을 먼저 선택하세요.");
+      return;
+    }
+
+    const flights = getUniqueFlightInputs(selectedScheduleRows);
+    if (flights.length === 0) {
+      setError("선택한 결과에서 편명을 확인하지 못했습니다.");
+      return;
+    }
+
+    const now = new Date();
+    const newRoom: MonitorRoom = {
+      id: `${now.getTime()}`,
+      name: `Schedule_${formatMonitorRoomName(now).replace("Monitor_", "")}`,
+      flightsInput: flights.join(", "),
+      startDateTime,
+      endDateTime,
+      fixed: true,
+      lastFetchedAt: lastFetchedAt || new Date().toLocaleString("ko-KR"),
+      rows: selectedScheduleRows,
+    };
+
+    const nextRooms = [newRoom, ...rooms];
+    setRooms(nextRooms);
+    saveRooms(nextRooms);
+    setSelectedRoomId(newRoom.id);
+    setInput(newRoom.flightsInput);
+    setFixed(true);
+    setRows(selectedScheduleRows);
+    setSelectedScheduleKeys({});
+    setExpandedDetailKeys({});
+    setError("");
+  };
+
   const refreshSelectedRoom = async () => {
     if (!selectedRoom) return;
     await refreshRoomData(selectedRoom, true);
@@ -745,6 +918,8 @@ export default function FlightsPage() {
     setFixed(room.fixed);
     setLastFetchedAt(room.lastFetchedAt);
     setRows(room.rows);
+    setQueryMode("manual");
+    setSelectedScheduleKeys({});
     setExpandedDetailKeys({});
     setError("");
   };
@@ -941,30 +1116,61 @@ export default function FlightsPage() {
       <main style={{ flex: 1, padding: 40 }}>
         <h2 style={{ fontSize: 28, marginBottom: 20 }}>✈️ 편명 조회</h2>
 
-        <div style={{ display: "flex", gap: 10, marginTop: 20 }}>
-          <input
-            value={input}
-            onChange={(e) => setInput(e.target.value.toUpperCase())}
-            onBlur={() => {
-              const normalized = normalizeFlightsInput(input).join(", ");
-              if (normalized) setInput(normalized);
+        <div style={{ display: "flex", gap: 10, marginTop: 20, flexWrap: "wrap" }}>
+          <button
+            onClick={() => {
+              setQueryMode("manual");
+              if (input === "KJ 전체") setInput("");
             }}
-            placeholder="예: 247,972 또는 KJ247,KJ972"
-            style={{
-              flex: 1,
-              padding: 12,
-              background: "#111",
-              border: "1px solid #444",
-              borderRadius: 6,
-              color: "white",
-              fontSize: 16,
+            style={queryMode === "manual" ? modeActiveBtn : modeBtn}
+          >
+            편명 직접 조회
+          </button>
+          <button
+            onClick={() => {
+              setQueryMode("kj-all");
+              setInput("KJ 전체");
             }}
-          />
+            style={queryMode === "kj-all" ? modeActiveBtn : modeBtn}
+          >
+            KJ 전체 조회
+          </button>
         </div>
 
-        <div style={{ marginTop: 8, color: "#9fb3c8", fontSize: 13 }}>
-          숫자 3~4자리만 입력하면 KJ를 자동으로 붙여 조회합니다.
-        </div>
+        {queryMode === "manual" ? (
+          <>
+            <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
+              <input
+                value={input}
+                onChange={(e) => setInput(e.target.value.toUpperCase())}
+                onBlur={() => {
+                  const normalized = normalizeFlightsInput(input).join(", ");
+                  if (normalized) setInput(normalized);
+                }}
+                placeholder="예: 247,972 또는 KJ247,KJ972"
+                style={{
+                  flex: 1,
+                  padding: 12,
+                  background: "#111",
+                  border: "1px solid #444",
+                  borderRadius: 6,
+                  color: "white",
+                  fontSize: 16,
+                }}
+              />
+            </div>
+
+            <div style={{ marginTop: 8, color: "#9fb3c8", fontSize: 13 }}>
+              숫자 3~4자리만 입력하면 KJ를 자동으로 붙여 조회합니다.
+            </div>
+          </>
+        ) : (
+          <div style={{ marginTop: 14, color: "#93c5fd", fontSize: 14, lineHeight: 1.55 }}>
+            기본 24시간 범위의 KJ 화물기를 전체 조회합니다. 시작/종료 시간은 아래에서 변경할 수 있습니다.
+            <br />
+            출발·도착이 확정된 항목은 Schedule Flight 선택 대상에서 제외됩니다.
+          </div>
+        )}
 
         {!isSelectedFixedRoom && (
           <>
@@ -1028,16 +1234,30 @@ export default function FlightsPage() {
           </div>
         )}
 
-        <div style={{ display: "flex", gap: 10, marginTop: 16 }}>
-          <button onClick={() => void fetchFlights()} disabled={loading} style={primaryBtn}>
-            조회
-          </button>
+        <div style={{ display: "flex", gap: 10, marginTop: 16, flexWrap: "wrap" }}>
+          {queryMode === "manual" ? (
+            <button onClick={() => void fetchFlights()} disabled={loading} style={primaryBtn}>
+              편명 조회
+            </button>
+          ) : (
+            <button onClick={() => void fetchAllKjFlights()} disabled={loading} style={primaryBtn}>
+              KJ 전체 조회
+            </button>
+          )}
 
           <button
             onClick={handleToggleFixed}
             style={fixed ? fixedOnBtn : fixedOffBtn}
           >
             FIXED
+          </button>
+
+          <button
+            onClick={handleSaveSelectedSchedule}
+            disabled={selectedScheduleRows.length === 0}
+            style={selectedScheduleRows.length > 0 ? saveScheduleBtn : disabledBtn}
+          >
+            선택한 Schedule Flight 저장
           </button>
         </div>
 
@@ -1071,6 +1291,12 @@ export default function FlightsPage() {
               <span style={badgeNormal}>이상 없음</span>
             )}
         </div>
+
+        {rows.length > 0 && (
+          <div style={{ marginTop: 12, color: "#cbd5e1", fontSize: 14 }}>
+            Schedule Flight 선택: {selectedScheduleRows.length}건
+          </div>
+        )}
 
         {selectedRoom && (
           <div
@@ -1237,6 +1463,7 @@ export default function FlightsPage() {
             >
               <thead>
                 <tr style={{ background: "#18263f" }}>
+                  <th style={thStyle}>선택</th>
                   <th style={thStyle}>현황</th>
                   <th style={thStyle}>편명</th>
                   <th style={thStyle}>출발지코드</th>
@@ -1254,41 +1481,62 @@ export default function FlightsPage() {
               <tbody>
                 {rows.length === 0 && (
                   <tr>
-                    <td style={tdStyle} colSpan={12}>
+                    <td style={tdStyle} colSpan={13}>
                       조회 결과가 없습니다.
                     </td>
                   </tr>
                 )}
-                {rows.map((r, i) => (
-                  <tr
-                    key={getRowKey(r, i)}
-                    style={{
-                      borderBottom: "1px solid #2b4269",
-                      background: getRowBackground(r),
-                    }}
-                  >
-                    <td
+                {rows.map((r, i) => {
+                  const selectionKey = getSelectionKey(r, i);
+                  const finalCompleted = isFinalCompletedRow(r);
+                  const selected = Boolean(selectedScheduleKeys[selectionKey]);
+
+                  return (
+                    <tr
+                      key={getRowKey(r, i)}
                       style={{
-                        ...tdStyle,
-                        color: getStatusColor(r),
-                        fontWeight: 700,
+                        borderBottom: "1px solid #2b4269",
+                        background: getRowBackground(r),
+                        opacity: finalCompleted ? 0.72 : 1,
                       }}
                     >
-                      {getComputedStatus(r)}
-                    </td>
-                    <td style={tdStyle}>{getFlightDisplay(r)}</td>
-                    <td style={tdStyle}>{r.departureCode || "-"}</td>
-                    <td style={tdStyle}>{r.departureName || "-"}</td>
-                    <td style={tdStyle}>{r.arrivalCode || "-"}</td>
-                    <td style={tdStyle}>{r.arrivalName || "-"}</td>
-                    <td style={tdStyle}>{r.formattedScheduleTime || "-"}</td>
-                    <td style={tdStyle}>{r.formattedEstimatedTime || "-"}</td>
-                    <td style={tdStyle}>{r.gatenumber || "-"}</td>
-                    <td style={tdStyle}>{r.terminalid || "-"}</td>
-                    <td style={tdStyle}>{r.masterflightid || "-"}</td>
-                    <td style={tdStyle}>{r.codeshare || "-"}</td>
-                  </tr>
-                ))}
+                      <td style={tdStyle}>
+                        <input
+                          type="checkbox"
+                          checked={selected}
+                          disabled={finalCompleted}
+                          onChange={() => handleToggleScheduleSelection(r, i)}
+                          title={finalCompleted ? "출발/도착 확정으로 조회 제외" : "Schedule Flight 선택"}
+                        />
+                        {finalCompleted && (
+                          <div style={{ color: "#94a3b8", fontSize: 11, marginTop: 4 }}>
+                            조회 제외
+                          </div>
+                        )}
+                      </td>
+                      <td
+                        style={{
+                          ...tdStyle,
+                          color: getStatusColor(r),
+                          fontWeight: 700,
+                        }}
+                      >
+                        {getComputedStatus(r)}
+                      </td>
+                      <td style={tdStyle}>{getFlightDisplay(r)}</td>
+                      <td style={tdStyle}>{r.departureCode || "-"}</td>
+                      <td style={tdStyle}>{r.departureName || "-"}</td>
+                      <td style={tdStyle}>{r.arrivalCode || "-"}</td>
+                      <td style={tdStyle}>{r.arrivalName || "-"}</td>
+                      <td style={tdStyle}>{r.formattedScheduleTime || "-"}</td>
+                      <td style={tdStyle}>{r.formattedEstimatedTime || "-"}</td>
+                      <td style={tdStyle}>{r.gatenumber || "-"}</td>
+                      <td style={tdStyle}>{r.terminalid || "-"}</td>
+                      <td style={tdStyle}>{r.masterflightid || "-"}</td>
+                      <td style={tdStyle}>{r.codeshare || "-"}</td>
+                    </tr>
+                  );
+                })}
               </tbody>
             </table>
           </div>
@@ -1380,6 +1628,43 @@ const selectInputStyle: CSSProperties = {
   color: "white",
   fontSize: 14,
   minWidth: 78,
+};
+
+const modeBtn: CSSProperties = {
+  padding: "10px 14px",
+  background: "#111827",
+  color: "#cbd5e1",
+  border: "1px solid #334155",
+  borderRadius: 9999,
+  cursor: "pointer",
+  fontWeight: 800,
+};
+
+const modeActiveBtn: CSSProperties = {
+  ...modeBtn,
+  background: "#1d4ed8",
+  color: "white",
+  border: "1px solid #60a5fa",
+};
+
+const saveScheduleBtn: CSSProperties = {
+  padding: "10px 18px",
+  background: "#16a34a",
+  color: "white",
+  border: "none",
+  borderRadius: 6,
+  cursor: "pointer",
+  fontWeight: 800,
+};
+
+const disabledBtn: CSSProperties = {
+  padding: "10px 18px",
+  background: "#334155",
+  color: "#94a3b8",
+  border: "none",
+  borderRadius: 6,
+  cursor: "not-allowed",
+  fontWeight: 700,
 };
 
 const primaryBtn: CSSProperties = {

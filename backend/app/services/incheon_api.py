@@ -298,3 +298,58 @@ async def get_flight_data(
 
     _set_cached_flight_data(flight_no, start_date, end_date, deduped)
     return copy.deepcopy(deduped)
+
+
+async def get_all_kj_flight_data(
+    start_date: str,
+    end_date: str,
+) -> List[Dict[str, Any]]:
+    if not SERVICE_KEY:
+        raise ValueError("INCHEON_API_SERVICE_KEY 환경변수가 비어 있습니다.")
+
+    cache_flight_no = "__ALL_KJ__"
+    cached = _get_cached_flight_data(cache_flight_no, start_date, end_date)
+    if cached is not None:
+        return cached
+
+    day_list = _date_range(start_date, end_date)
+    all_rows: List[Dict[str, Any]] = []
+
+    async with httpx.AsyncClient(timeout=20.0) as client:
+        for day in day_list:
+            rows = await _fetch_one_day(client, "", day)
+            all_rows.extend(rows)
+
+    filtered_kj_rows = [
+        row
+        for row in all_rows
+        if str(row.get("flightId") or row.get("flightNo") or "").upper().startswith("KJ")
+    ]
+
+    deduped: List[Dict[str, Any]] = []
+    seen = set()
+
+    for row in filtered_kj_rows:
+        key = (
+            row.get("flightId", ""),
+            row.get("scheduleDateTime", ""),
+            row.get("estimatedDateTime", ""),
+            row.get("departureCode", ""),
+            row.get("arrivalCode", ""),
+            row.get("gatenumber", ""),
+            row.get("terminalid", ""),
+        )
+        if key in seen:
+            continue
+        seen.add(key)
+        deduped.append(row)
+
+    deduped.sort(
+        key=lambda x: (
+            x.get("scheduleDateTime", ""),
+            x.get("flightId", ""),
+        )
+    )
+
+    _set_cached_flight_data(cache_flight_no, start_date, end_date, deduped)
+    return copy.deepcopy(deduped)

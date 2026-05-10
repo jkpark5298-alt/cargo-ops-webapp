@@ -102,6 +102,23 @@ async function loadLatestScheduleFromServer() {
   return (json.room || null) as MonitorRoom | null;
 }
 
+async function saveLatestScheduleToServer(room: MonitorRoom) {
+  const res = await fetch(`${BACKEND_URL}/flights/latest-schedule`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ room }),
+  });
+  const json = await res.json();
+
+  if (!res.ok || json.success === false) {
+    throw new Error(json.detail || json.message || "Schedule Flight 서버 저장 실패");
+  }
+
+  return (json.room || room) as MonitorRoom;
+}
+
 function normalizeFlightsInput(rawInput: string) {
   return rawInput
     .split(/[\s,\n,]+/)
@@ -638,6 +655,12 @@ export default function FixedLitePage() {
         return nextRooms;
       });
 
+      try {
+        await saveLatestScheduleToServer(updatedRoom);
+      } catch (syncError) {
+        console.warn("Schedule Flight 서버 기준 저장 실패", syncError);
+      }
+
       setLastKnownItemsByRoom((prev) => ({
         ...prev,
         [room.id]: nextItems,
@@ -743,7 +766,7 @@ export default function FixedLitePage() {
           <div style={{ color: "#b8c7db", fontSize: 13, lineHeight: 1.5 }}>
             기본 30분 자동조회입니다.
             <br />
-            출발 집중구간은 10분 전~30분 후, 도착 집중구간은 60분 전~30분 후이며 이때 5분 간격으로 조회합니다.
+            출발 집중구간은 10분 전~1시간 후, 도착 집중구간은 30분 전~30분 후이며 이때 5분 간격으로 조회합니다.
           </div>
         </section>
 

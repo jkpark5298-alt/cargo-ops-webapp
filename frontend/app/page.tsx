@@ -344,6 +344,8 @@ export default function HomePage() {
   const router = useRouter();
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const libraryInputRef = useRef<HTMLInputElement | null>(null);
+  const dailySavingRef = useRef(false);
+  const issueSavingRef = useRef(false);
   const pendingImageSlotRef = useRef<ImageSlotKey>("daily-schedule");
   const [rooms, setRooms] = useState<MonitorRoom[]>([]);
   const [images, setImages] = useState<SavedImage[]>([]);
@@ -628,6 +630,18 @@ export default function HomePage() {
   };
 
   const handleSaveDailyToNotion = async () => {
+    if (dailySavingRef.current) {
+      setNotice("Notion 일일 업무 기록 저장 중입니다. 잠시만 기다려 주세요.");
+      return;
+    }
+
+    if (dailyNotionRecord?.pageId) {
+      setNotice("이미 저장된 일일 업무 기록이 있습니다. 새로 만들지 않고 수정 버튼을 사용하세요.");
+      return;
+    }
+
+    dailySavingRef.current = true;
+
     try {
       const result = await saveDailyRecord(buildDailyPayload());
 
@@ -642,6 +656,8 @@ export default function HomePage() {
       setNotice("Notion에 일일 업무 기록을 저장했습니다.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Notion 저장 중 오류가 발생했습니다.");
+    } finally {
+      dailySavingRef.current = false;
     }
   };
 
@@ -763,7 +779,19 @@ export default function HomePage() {
   };
 
   const handleSaveIssueToNotion = async () => {
+    if (issueSavingRef.current) {
+      setNotice("Notion 특이사항 기록 저장 중입니다. 잠시만 기다려 주세요.");
+      return;
+    }
+
+    if (issueNotionRecord?.pageId) {
+      setNotice("이미 저장된 특이사항 기록이 있습니다. 새로 만들지 않고 수정 버튼을 사용하세요.");
+      return;
+    }
+
     if (!validateIssueForm()) return;
+
+    issueSavingRef.current = true;
 
     try {
       const result = await saveIssueRecord(buildIssuePayload());
@@ -779,6 +807,8 @@ export default function HomePage() {
       setNotice("Notion에 특이사항 기록을 저장했습니다.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Notion 저장 중 오류가 발생했습니다.");
+    } finally {
+      issueSavingRef.current = false;
     }
   };
 

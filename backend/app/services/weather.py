@@ -28,8 +28,12 @@ MOCK_WEATHER = {
     "windSpeed": "3.3",
     "pm10Grade": "좋음",
     "pm25Grade": "좋음",
-    "uvGrade": "보통",
-    "sunset": "19:30",
+    "hourly": [
+        {"time": "18시", "condition": "맑음", "temperature": "19", "icon": "☀️"},
+        {"time": "21시", "condition": "구름많음", "temperature": "17", "icon": "⛅"},
+        {"time": "00시", "condition": "흐림", "temperature": "15", "icon": "☁️"},
+        {"time": "03시", "condition": "맑음", "temperature": "14", "icon": "☀️"},
+    ],
     "baseTime": "14:00",
     "icon": "☀️",
     "message": "날씨 API 키가 없거나 응답이 없어 예시값을 표시합니다.",
@@ -119,6 +123,51 @@ def _weather_condition(pty: str | None, sky: str | None) -> tuple[str, str]:
     return sky_map.get(str(sky or "1"), ("맑음", "☀️"))
 
 
+def _build_hourly_forecast(items: list[dict[str, Any]]) -> list[dict[str, str]]:
+    by_time: dict[tuple[str, str], dict[str, Any]] = {}
+
+    for item in items:
+        fcst_date = str(item.get("fcstDate") or "")
+        fcst_time = str(item.get("fcstTime") or "")
+        category = str(item.get("category") or "")
+        value = item.get("fcstValue")
+
+        if not fcst_date or not fcst_time:
+            continue
+
+        key = (fcst_date, fcst_time)
+        if key not in by_time:
+            by_time[key] = {}
+        by_time[key][category] = value
+
+    hourly: list[dict[str, str]] = []
+
+    for (fcst_date, fcst_time), values in sorted(by_time.items()):
+        if "T1H" not in values and "SKY" not in values and "PTY" not in values:
+            continue
+
+        condition, icon = _weather_condition(
+            str(values.get("PTY")) if values.get("PTY") is not None else None,
+            str(values.get("SKY")) if values.get("SKY") is not None else None,
+        )
+        temperature = str(values.get("T1H") or "-")
+        label = f"{fcst_time[:2]}시"
+
+        hourly.append(
+            {
+                "time": label,
+                "condition": condition,
+                "temperature": temperature,
+                "icon": icon,
+            }
+        )
+
+        if len(hourly) >= 4:
+            break
+
+    return hourly
+
+
 def _grade_text(value: Any) -> str:
     grade_map = {
         "1": "좋음",
@@ -127,16 +176,6 @@ def _grade_text(value: Any) -> str:
         "4": "매우나쁨",
     }
     return grade_map.get(str(value or ""), "-")
-
-
-def _uv_grade() -> str:
-    # A proper UV endpoint can be added later. Keep safe placeholder for current card.
-    return "보통"
-
-
-def _sunset_text() -> str:
-    # Incheon around May. Can be replaced by astronomy API later.
-    return "19:30"
 
 
 async def _fetch_kma_weather(client: httpx.AsyncClient) -> dict[str, Any]:
@@ -189,10 +228,11 @@ async def _fetch_kma_weather(client: httpx.AsyncClient) -> dict[str, Any]:
     forecast: dict[str, Any] = {}
     for item in fcst_items:
         category = item.get("category")
-        if category in {"SKY", "PTY"} and category not in forecast:
+        if category in {"SKY", "PTY", "T1H"} and category not in forecast:
             forecast[category] = item.get("fcstValue")
 
-    temperature = current.get("T1H") or "-"
+    hourly = _build_hourly_forecast(fcst_items)
+    temperature = current.get("T1H") or forecast.get("T1H") or "-"
     humidity = current.get("REH") or "-"
     wind_speed = current.get("WSD") or "-"
     pty = current.get("PTY") or forecast.get("PTY")
@@ -210,6 +250,7 @@ async def _fetch_kma_weather(client: httpx.AsyncClient) -> dict[str, Any]:
         "windSpeed": str(wind_speed),
         "baseTime": _format_base_time(base_date, base_time),
         "icon": icon,
+        "hourly": hourly,
     }
 
 
@@ -278,8 +319,6 @@ async def get_current_weather() -> dict[str, Any]:
             errors.append(f"air: {exc}")
 
     result["location"] = "인천시 중구 운서동"
-    result["uvGrade"] = _uv_grade()
-    result["sunset"] = _sunset_text()
     if errors:
         result["errors"] = errors
     return result

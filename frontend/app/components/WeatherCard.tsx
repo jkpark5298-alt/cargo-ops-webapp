@@ -2,6 +2,13 @@
 
 import type { CSSProperties } from "react";
 
+type HourlyWeather = {
+  time?: string;
+  condition?: string;
+  temperature?: string;
+  icon?: string;
+};
+
 type WeatherInfo = {
   location?: string;
   temperature?: string;
@@ -12,8 +19,7 @@ type WeatherInfo = {
   icon?: string;
   pm10Grade?: string;
   pm25Grade?: string;
-  uvGrade?: string;
-  sunset?: string;
+  hourly?: HourlyWeather[];
   baseTime?: string;
   source?: string;
   message?: string;
@@ -32,6 +38,8 @@ export function WeatherCard({
   onRefresh,
   onOpenNaver,
 }: WeatherCardProps) {
+  const hourly = weather.hourly || [];
+
   return (
     <section style={weatherCardStyle}>
       <div style={weatherTopRowStyle}>
@@ -64,8 +72,26 @@ export function WeatherCard({
       <div style={weatherGridStyle}>
         <WeatherMetric label="미세먼지" value={weather.pm10Grade || "-"} tone={getAirTone(weather.pm10Grade)} />
         <WeatherMetric label="초미세먼지" value={weather.pm25Grade || "-"} tone={getAirTone(weather.pm25Grade)} />
-        <WeatherMetric label="자외선" value={weather.uvGrade || "-"} tone={getUvTone(weather.uvGrade)} />
-        <WeatherMetric label="일몰" value={weather.sunset || "-"} tone="time" />
+      </div>
+
+      <div style={hourlyBlockStyle}>
+        <div style={hourlyTitleStyle}>시간별 날씨</div>
+        <div style={hourlyRowsStyle}>
+          {hourly.length > 0 ? (
+            hourly.map((item, idx) => (
+              <div key={`${item.time || "hour"}-${idx}`} style={hourlyRowStyle}>
+                <span style={hourlyTimeStyle}>{item.time || "-"}</span>
+                <span style={hourlyConditionStyle}>
+                  <span style={hourlyIconStyle}>{item.icon || "☀️"}</span>
+                  {item.condition || "-"}
+                </span>
+                <strong style={hourlyTempStyle}>{item.temperature || "-"}°</strong>
+              </div>
+            ))
+          ) : (
+            <div style={hourlyEmptyStyle}>시간별 예보를 불러오면 여기에 표시됩니다.</div>
+          )}
+        </div>
       </div>
 
       <div style={weatherNoteStyle}>
@@ -83,10 +109,9 @@ function WeatherMetric({
 }: {
   label: string;
   value: string;
-  tone: "good" | "normal" | "bad" | "time";
+  tone: "good" | "normal" | "bad";
 }) {
-  const color =
-    tone === "good" ? "#86efac" : tone === "bad" ? "#fca5a5" : tone === "time" ? "#93c5fd" : "#fde68a";
+  const color = tone === "good" ? "#86efac" : tone === "bad" ? "#fca5a5" : "#fde68a";
 
   return (
     <div style={weatherMetricStyle}>
@@ -100,13 +125,6 @@ function getAirTone(value?: string): "good" | "normal" | "bad" {
   if (!value) return "normal";
   if (value.includes("좋음")) return "good";
   if (value.includes("나쁨") || value.includes("매우")) return "bad";
-  return "normal";
-}
-
-function getUvTone(value?: string): "good" | "normal" | "bad" {
-  if (!value) return "normal";
-  if (value.includes("낮음")) return "good";
-  if (value.includes("높음") || value.includes("위험")) return "bad";
   return "normal";
 }
 
@@ -220,6 +238,68 @@ const weatherMetricLabelStyle: CSSProperties = {
 const weatherMetricValueStyle: CSSProperties = {
   fontSize: 15,
   fontWeight: 950,
+};
+
+const hourlyBlockStyle: CSSProperties = {
+  marginTop: 14,
+  border: "1px solid rgba(148, 163, 184, 0.18)",
+  borderRadius: 16,
+  padding: 12,
+  background: "rgba(15, 23, 42, 0.48)",
+};
+
+const hourlyTitleStyle: CSSProperties = {
+  color: "#dbeafe",
+  fontSize: 13,
+  fontWeight: 950,
+  marginBottom: 8,
+};
+
+const hourlyRowsStyle: CSSProperties = {
+  display: "grid",
+  gap: 8,
+};
+
+const hourlyRowStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "52px 1fr 52px",
+  alignItems: "center",
+  gap: 8,
+  minHeight: 34,
+  borderRadius: 10,
+  padding: "7px 9px",
+  background: "rgba(2, 6, 23, 0.34)",
+};
+
+const hourlyTimeStyle: CSSProperties = {
+  color: "#93c5fd",
+  fontSize: 13,
+  fontWeight: 950,
+};
+
+const hourlyConditionStyle: CSSProperties = {
+  color: "#e5edf7",
+  fontSize: 13,
+  fontWeight: 850,
+  display: "flex",
+  alignItems: "center",
+  gap: 7,
+};
+
+const hourlyIconStyle: CSSProperties = {
+  fontSize: 16,
+};
+
+const hourlyTempStyle: CSSProperties = {
+  color: "#f8fafc",
+  textAlign: "right",
+  fontSize: 14,
+};
+
+const hourlyEmptyStyle: CSSProperties = {
+  color: "#94a3b8",
+  fontSize: 13,
+  lineHeight: 1.5,
 };
 
 const weatherNoteStyle: CSSProperties = {

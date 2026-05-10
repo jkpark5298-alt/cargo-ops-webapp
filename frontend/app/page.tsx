@@ -110,6 +110,13 @@ const IMAGE_SLOT_PROPERTY_NAME: Record<ImageSlotKey, string> = {
 const BACKEND_URL =
   process.env.NEXT_PUBLIC_API_URL || "https://cargo-ops-backend.onrender.com";
 
+type HourlyWeather = {
+  time?: string;
+  condition?: string;
+  temperature?: string;
+  icon?: string;
+};
+
 type WeatherInfo = {
   success?: boolean;
   location?: string;
@@ -120,8 +127,7 @@ type WeatherInfo = {
   windSpeed?: string;
   pm10Grade?: string;
   pm25Grade?: string;
-  uvGrade?: string;
-  sunset?: string;
+  hourly?: HourlyWeather[];
   baseTime?: string;
   icon?: string;
   source?: string;
@@ -138,8 +144,12 @@ const DEFAULT_WEATHER: WeatherInfo = {
   windSpeed: "3.3",
   pm10Grade: "좋음",
   pm25Grade: "좋음",
-  uvGrade: "보통",
-  sunset: "19:30",
+  hourly: [
+    { time: "18시", condition: "맑음", temperature: "19", icon: "☀️" },
+    { time: "21시", condition: "구름많음", temperature: "17", icon: "⛅" },
+    { time: "00시", condition: "흐림", temperature: "15", icon: "☁️" },
+    { time: "03시", condition: "맑음", temperature: "14", icon: "☀️" },
+  ],
   baseTime: "14:00",
   icon: "☀️",
   source: "fallback",
@@ -788,7 +798,7 @@ export default function HomePage() {
 
   const openNaverWeather = () => {
     window.open(
-      "https://search.naver.com/search.naver?query=%EC%9D%B8%EC%B2%9C%EC%8B%9C%20%EC%A4%91%EA%B5%AC%20%EC%9A%B4%EC%84%9C%EB%8F%99%20%EB%82%A0%EC%94%A8%20%EB%AF%B8%EC%84%B8%EB%A8%BC%EC%A7%80",
+      "https://search.naver.com/search.naver?query=%EC%A4%91%EA%B5%AC%20%EC%9A%B4%EC%84%9C%EB%8F%99%20%EB%82%A0%EC%94%A8",
       "_blank",
       "noopener,noreferrer",
     );

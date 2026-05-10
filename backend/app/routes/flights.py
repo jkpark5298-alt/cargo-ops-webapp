@@ -8,6 +8,7 @@ from pydantic import BaseModel, Field
 
 from app.services.incheon_api import (
     IncheonApiQuotaExceededError,
+    get_all_kj_flight_data,
     get_flight_data,
 )
 
@@ -16,6 +17,11 @@ router = APIRouter()
 
 class FlightQueryRequest(BaseModel):
     flights: List[str] = Field(default_factory=list)
+    start: str
+    end: str
+
+
+class FlightRangeRequest(BaseModel):
     start: str
     end: str
 
@@ -160,11 +166,9 @@ def _get_row_sort_key(row: Dict[str, Any]):
     return (0, dt, flight)
 
 
-
-@router.post("/kj-all")
-async def search_all_kj_flights(payload: FlightRangeRequest) -> Dict[str, Any]:
-    start_dt = _parse_request_datetime(payload.start)
-    end_dt = _parse_request_datetime(payload.end)
+def _validate_range(start: str, end: str):
+    start_dt = _parse_request_datetime(start)
+    end_dt = _parse_request_datetime(end)
 
     if start_dt is None or end_dt is None:
         raise HTTPException(status_code=400, detail="시작일시 또는 종료일시 형식이 올바르지 않습니다.")
@@ -172,11 +176,18 @@ async def search_all_kj_flights(payload: FlightRangeRequest) -> Dict[str, Any]:
     if start_dt > end_dt:
         raise HTTPException(status_code=400, detail="시작일시는 종료일시보다 늦을 수 없습니다.")
 
-    start_date = _extract_date(payload.start)
-    end_date = _extract_date(payload.end)
+    start_date = _extract_date(start)
+    end_date = _extract_date(end)
 
     if not start_date or not end_date:
         raise HTTPException(status_code=400, detail="시작일 또는 종료일이 필요합니다.")
+
+    return start_dt, end_dt, start_date, end_date
+
+
+@router.post("/kj-all")
+async def search_all_kj_flights(payload: FlightRangeRequest) -> Dict[str, Any]:
+    start_dt, end_dt, start_date, end_date = _validate_range(payload.start, payload.end)
 
     try:
         rows = await get_all_kj_flight_data(
@@ -220,20 +231,7 @@ async def search_flights(payload: FlightQueryRequest) -> Dict[str, Any]:
     if not normalized_flights:
         raise HTTPException(status_code=400, detail="조회할 편명이 없습니다.")
 
-    start_dt = _parse_request_datetime(payload.start)
-    end_dt = _parse_request_datetime(payload.end)
-
-    if start_dt is None or end_dt is None:
-        raise HTTPException(status_code=400, detail="시작일시 또는 종료일시 형식이 올바르지 않습니다.")
-
-    if start_dt > end_dt:
-        raise HTTPException(status_code=400, detail="시작일시는 종료일시보다 늦을 수 없습니다.")
-
-    start_date = _extract_date(payload.start)
-    end_date = _extract_date(payload.end)
-
-    if not start_date or not end_date:
-        raise HTTPException(status_code=400, detail="시작일 또는 종료일이 필요합니다.")
+    start_dt, end_dt, start_date, end_date = _validate_range(payload.start, payload.end)
 
     all_rows: List[Dict[str, Any]] = []
 

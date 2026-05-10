@@ -579,6 +579,28 @@ export default function FlightsPage() {
     });
   };
 
+  const resetLookupView = () => {
+    setRows([]);
+    setSelectedScheduleKeys({});
+    setExpandedDetailKeys({});
+    setError("");
+    setLastFetchedAt("");
+    setSelectedRoomId("");
+    setFixed(false);
+  };
+
+  const switchToManualMode = () => {
+    setQueryMode("manual");
+    if (input === "KJ 전체") setInput("");
+    resetLookupView();
+  };
+
+  const switchToKjAllMode = () => {
+    setQueryMode("kj-all");
+    setInput("");
+    resetLookupView();
+  };
+
   const handleStartDateTimeChange = (value: string) => {
     setStartDateTime(value);
     updateSelectedRoomDraft({ startDateTime: value });
@@ -745,7 +767,11 @@ export default function FlightsPage() {
 
     setQueryMode("manual");
     setInput(flights.join(", "));
+    setSelectedRoomId("");
+    setFixed(false);
+    setRows([]);
     setSelectedScheduleKeys({});
+    setExpandedDetailKeys({});
     setLoading(true);
     setError("");
 
@@ -795,10 +821,14 @@ export default function FlightsPage() {
 
   const fetchAllKjFlights = async () => {
     setQueryMode("kj-all");
+    setSelectedRoomId("");
+    setFixed(false);
+    setRows([]);
+    setLastFetchedAt("");
+    setExpandedDetailKeys({});
+    setSelectedScheduleKeys({});
     setLoading(true);
     setError("");
-    setSelectedScheduleKeys({});
-    setInput("KJ 전체");
 
     try {
       const res = await fetch(`${BACKEND_URL}/flights/kj-all`, {
@@ -815,7 +845,13 @@ export default function FlightsPage() {
       const json = await res.json();
 
       if (!res.ok || json.success === false) {
-        throw new Error(json.message || json.detail || `서버 오류 (${res.status})`);
+        throw new Error(
+          json.message ||
+            json.detail ||
+            (res.status === 404
+              ? "KJ 전체 조회 API가 아직 백엔드에 반영되지 않았습니다. Render 백엔드 배포를 확인하세요."
+              : `서버 오류 (${res.status})`)
+        );
       }
 
       const nextRows = json.data || [];
@@ -1118,19 +1154,13 @@ export default function FlightsPage() {
 
         <div style={{ display: "flex", gap: 10, marginTop: 20, flexWrap: "wrap" }}>
           <button
-            onClick={() => {
-              setQueryMode("manual");
-              if (input === "KJ 전체") setInput("");
-            }}
+            onClick={switchToManualMode}
             style={queryMode === "manual" ? modeActiveBtn : modeBtn}
           >
             편명 직접 조회
           </button>
           <button
-            onClick={() => {
-              setQueryMode("kj-all");
-              setInput("KJ 전체");
-            }}
+            onClick={switchToKjAllMode}
             style={queryMode === "kj-all" ? modeActiveBtn : modeBtn}
           >
             KJ 전체 조회
@@ -1167,6 +1197,8 @@ export default function FlightsPage() {
         ) : (
           <div style={{ marginTop: 14, color: "#93c5fd", fontSize: 14, lineHeight: 1.55 }}>
             기본 24시간 범위의 KJ 화물기를 전체 조회합니다. 시작/종료 시간은 아래에서 변경할 수 있습니다.
+            <br />
+            KJ 전체 조회로 전환하면 기존 편명 직접 조회 결과는 비우고 새 조회 결과만 표시합니다.
             <br />
             출발·도착이 확정된 항목은 Schedule Flight 선택 대상에서 제외됩니다.
           </div>

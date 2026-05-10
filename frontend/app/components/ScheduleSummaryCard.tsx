@@ -104,6 +104,7 @@ function getFlightRouteItems(room: MonitorRoom | null) {
         flight: string;
         route: string;
         direction: string;
+        status: string;
         time: string;
         hasResult: boolean;
       } => Boolean(item),

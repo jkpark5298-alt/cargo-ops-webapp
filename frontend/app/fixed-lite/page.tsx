@@ -55,6 +55,7 @@ type WidgetSummaryItem = {
   arrivalCode: string;
   displayTime: string;
   gate: string;
+  excludeReason?: string;
 };
 
 type WidgetSummaryResponse = {
@@ -206,6 +207,22 @@ function getComputedStatus(row: FlightRow) {
   return "-";
 }
 
+function getRefreshExcludeReasonFromRow(row: FlightRow) {
+  const remarkStatus = getRemarkStatus(row);
+  const rawStatus = String(row.status || "").toUpperCase();
+  const combined = `${remarkStatus} ${rawStatus}`;
+
+  if (combined.includes("도착") || combined.includes("ARRIVED")) {
+    return "도착 확정";
+  }
+
+  if (combined.includes("출발") || combined.includes("DEPARTED")) {
+    return "출발 확정";
+  }
+
+  return "";
+}
+
 function isFinalCompletedStatus(status: string) {
   return status === "출발" || status === "도착";
 }
@@ -235,14 +252,24 @@ function getCompletedFlightSetFromRows(rows: FlightRow[]) {
   const now = Date.now();
   const bufferMs = COMPLETED_EXCLUDE_BUFFER_MINUTES * 60 * 1000;
 
-  latestMap.forEach(({ row, time }, flight) => {
-    const status = getComputedStatus(row);
-    if (!isFinalCompletedStatus(status)) return;
-    if (time < 0) return;
-    if (time <= now - bufferMs) completed.add(flight);
+  latestMap.forEach(({ row }, flight) => {
+    const reason = getRefreshExcludeReasonFromRow(row);
+    if (reason) completed.add(flight);
   });
 
   return completed;
+}
+
+function getRefreshExcludeReasonMapFromRows(rows: FlightRow[]) {
+  const reasonMap = new Map<string, string>();
+  const latestMap = getLatestRowsByFlight(rows);
+
+  latestMap.forEach(({ row }, flight) => {
+    const reason = getRefreshExcludeReasonFromRow(row);
+    if (reason) reasonMap.set(flight, reason);
+  });
+
+  return reasonMap;
 }
 
 function statusColor(status: string) {
@@ -381,18 +408,20 @@ export default function FixedLitePage() {
 
     const requested = normalizeFlightsInput(selectedRoom.flightsInput);
     const latestRowMap = getLatestRowsByFlight(selectedRoom.rows);
+    const reasonMap = getRefreshExcludeReasonMapFromRows(selectedRoom.rows || []);
     const knownItemsMap = new Map(
       (lastKnownItemsByRoom[selectedRoom.id] || []).map((item) => [item.flight, item])
     );
 
     return requested.map((flight) => {
       const known = knownItemsMap.get(flight);
-      if (known) return known;
+      const excludeReason = reasonMap.get(flight);
+      if (known) return { ...known, excludeReason };
 
       const latestRow = latestRowMap.get(flight)?.row;
-      if (latestRow) return formatDisplayItemFromRow(flight, latestRow);
+      if (latestRow) return { ...formatDisplayItemFromRow(flight, latestRow), excludeReason };
 
-      return formatFallbackDisplayItem(flight);
+      return { ...formatFallbackDisplayItem(flight), excludeReason };
     });
   }, [selectedRoom, lastKnownItemsByRoom]);
 
@@ -548,10 +577,12 @@ export default function FixedLitePage() {
       }
 
       const latestRowMap = getLatestRowsByFlight(nextRows);
+      const excludeReasonMap = getRefreshExcludeReasonMapFromRows(nextRows);
       const nextItems = requestedFlights.map((flight) => {
         const latestRow = latestRowMap.get(flight)?.row;
-        if (latestRow) return formatDisplayItemFromRow(flight, latestRow);
-        return formatFallbackDisplayItem(flight);
+        const excludeReason = excludeReasonMap.get(flight);
+        if (latestRow) return { ...formatDisplayItemFromRow(flight, latestRow), excludeReason };
+        return { ...formatFallbackDisplayItem(flight), excludeReason };
       });
 
       const fetchedAt = new Date().toLocaleString("ko-KR");
@@ -888,7 +919,9 @@ export default function FixedLitePage() {
                         )}
 
                         {completed && (
-                          <span style={completedBadgeStyle}>자동조회 제외</span>
+                          <span style={completedBadgeStyle}>
+                            자동조회 제외{item.excludeReason ? ` · ${item.excludeReason}` : ""}
+                          </span>
                         )}
 
                         <div

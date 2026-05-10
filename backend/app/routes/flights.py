@@ -667,10 +667,10 @@ def _is_row_in_focus_window(row: Dict[str, Any], now: Optional[datetime] = None)
     now = now or datetime.now()
 
     if _is_departure_row(row):
-        return target_dt - timedelta(minutes=10) <= now <= target_dt + timedelta(hours=1)
+        return target_dt - timedelta(minutes=30) <= now <= target_dt + timedelta(hours=1)
 
     if _is_arrival_row(row):
-        return target_dt - timedelta(minutes=30) <= now <= target_dt + timedelta(minutes=30)
+        return target_dt - timedelta(hours=1) <= now <= target_dt + timedelta(minutes=30)
 
     return False
 

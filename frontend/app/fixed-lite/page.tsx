@@ -119,6 +119,28 @@ async function saveLatestScheduleToServer(room: MonitorRoom) {
   return (json.room || room) as MonitorRoom;
 }
 
+async function checkScheduleAndPushBeforePersist() {
+  const res = await fetch(`${BACKEND_URL}/flights/check-schedule-and-push`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+  });
+
+  const json = await res.json();
+
+  if (!res.ok || json.success === false) {
+    throw new Error(json.detail || json.message || "Schedule Flight 변경 확인 실패");
+  }
+
+  return json as {
+    changed?: number;
+    sent?: number;
+    failed?: number;
+    message?: string;
+  };
+}
+
 function normalizeFlightsInput(rawInput: string) {
   return rawInput
     .split(/[\s,\n,]+/)
@@ -398,8 +420,8 @@ function isItemInFocusWindow(item: WidgetSummaryItem) {
   const direction = getItemDirection(item);
 
   if (direction === "departure") {
-    const start = t - 10 * 60 * 1000;
-    const end = t + 30 * 60 * 1000;
+    const start = t - 30 * 60 * 1000;
+    const end = t + 60 * 60 * 1000;
     return now >= start && now <= end;
   }
 
@@ -656,9 +678,12 @@ export default function FixedLitePage() {
       });
 
       try {
+        if (activeFlights.length > 0) {
+          await checkScheduleAndPushBeforePersist();
+        }
         await saveLatestScheduleToServer(updatedRoom);
       } catch (syncError) {
-        console.warn("Schedule Flight 서버 기준 저장 실패", syncError);
+        console.warn("Schedule Flight 변경 알림 또는 서버 기준 저장 실패", syncError);
       }
 
       setLastKnownItemsByRoom((prev) => ({
@@ -766,7 +791,7 @@ export default function FixedLitePage() {
           <div style={{ color: "#b8c7db", fontSize: 13, lineHeight: 1.5 }}>
             기본 30분 자동조회입니다.
             <br />
-            출발 집중구간은 10분 전~1시간 후, 도착 집중구간은 30분 전~30분 후이며 이때 5분 간격으로 조회합니다.
+            출발 집중구간은 30분 전~1시간 후, 도착 집중구간은 1시간 전~30분 후이며 이때 5분 간격으로 조회합니다.
           </div>
         </section>
 

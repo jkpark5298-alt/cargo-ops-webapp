@@ -600,7 +600,13 @@ export default function HomePage() {
         return;
       }
 
-      const registration = await navigator.serviceWorker.register("/sw.js");
+      await navigator.serviceWorker.register("/sw.js");
+      const registration = await navigator.serviceWorker.ready;
+
+      if (!registration.active) {
+        throw new Error("Service Worker가 아직 활성화되지 않았습니다. 앱을 한 번 새로고침한 뒤 다시 시도하세요.");
+      }
+
       const existingSubscription = await registration.pushManager.getSubscription();
       const subscription =
         existingSubscription ||

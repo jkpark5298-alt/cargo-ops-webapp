@@ -25,12 +25,20 @@ import {
   type FlightAlertHistoryItem,
   type FlightAlertSnapshot,
 } from "./lib/flight-alerts";
+import {
+  clearDailyNotionRecord,
+  clearIssueNotionRecord,
+  loadDailyNotionRecord,
+  loadImages,
+  loadIssueNotionRecord,
+  loadNote,
+  saveDailyNotionRecord,
+  saveImages,
+  saveIssueNotionRecord,
+  saveNote,
+} from "./lib/local-storage";
 
 const STORAGE_KEY = "cargo_ops_monitor_rooms_v6";
-const IMAGE_STORAGE_KEY = "cargo_ops_home_images_v1";
-const NOTE_STORAGE_KEY = "cargo_ops_home_note_v1";
-const DAILY_NOTION_RECORD_KEY = "cargo_ops_daily_notion_record_v1";
-const ISSUE_NOTION_RECORD_KEY = "cargo_ops_issue_notion_record_v1";
 
 type DailyNotionRecord = {
   pageId: string;
@@ -174,23 +182,6 @@ function loadRooms(): MonitorRoom[] {
   }
 }
 
-function loadImages(): SavedImage[] {
-  if (typeof window === "undefined") return [];
-  try {
-    const raw = localStorage.getItem(IMAGE_STORAGE_KEY);
-    if (!raw) return [];
-    const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
-  } catch {
-    return [];
-  }
-}
-
-function saveImages(images: SavedImage[]) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(IMAGE_STORAGE_KEY, JSON.stringify(images.slice(0, 6)));
-}
-
 function getImageBySlot(images: SavedImage[], slotKey: ImageSlotKey) {
   return images.find((image) => image.type === slotKey) || null;
 }
@@ -205,64 +196,6 @@ function upsertImageBySlot(
 
 function removeImageBySlot(images: SavedImage[], slotKey: ImageSlotKey) {
   return images.filter((image) => image.type !== slotKey);
-}
-
-function loadNote() {
-  if (typeof window === "undefined") return "";
-  try {
-    return localStorage.getItem(NOTE_STORAGE_KEY) || "";
-  } catch {
-    return "";
-  }
-}
-
-function saveNote(note: string) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(NOTE_STORAGE_KEY, note);
-}
-
-function loadDailyNotionRecord(): DailyNotionRecord | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem(DAILY_NOTION_RECORD_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return parsed?.pageId ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function saveDailyNotionRecord(record: DailyNotionRecord) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(DAILY_NOTION_RECORD_KEY, JSON.stringify(record));
-}
-
-function clearDailyNotionRecord() {
-  if (typeof window === "undefined") return;
-  localStorage.removeItem(DAILY_NOTION_RECORD_KEY);
-}
-
-function loadIssueNotionRecord(): IssueNotionRecord | null {
-  if (typeof window === "undefined") return null;
-  try {
-    const raw = localStorage.getItem(ISSUE_NOTION_RECORD_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw);
-    return parsed?.pageId ? parsed : null;
-  } catch {
-    return null;
-  }
-}
-
-function saveIssueNotionRecord(record: IssueNotionRecord) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(ISSUE_NOTION_RECORD_KEY, JSON.stringify(record));
-}
-
-function clearIssueNotionRecord() {
-  if (typeof window === "undefined") return;
-  localStorage.removeItem(ISSUE_NOTION_RECORD_KEY);
 }
 
 function formatDateForTitle(date: Date) {

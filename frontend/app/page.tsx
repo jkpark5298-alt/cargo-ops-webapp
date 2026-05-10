@@ -348,11 +348,15 @@ export default function HomePage() {
   const router = useRouter();
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const libraryInputRef = useRef<HTMLInputElement | null>(null);
+  const dailySavingRef = useRef(false);
+  const issueSavingRef = useRef(false);
   const pendingImageSlotRef = useRef<ImageSlotKey>("daily-schedule");
   const [rooms, setRooms] = useState<MonitorRoom[]>([]);
   const [images, setImages] = useState<SavedImage[]>([]);
   const [note, setNote] = useState("");
   const [notice, setNotice] = useState("");
+  const [isDailySaving, setIsDailySaving] = useState(false);
+  const [isIssueSaving, setIsIssueSaving] = useState(false);
   const [weather, setWeather] = useState<WeatherInfo>(DEFAULT_WEATHER);
   const [weatherLoading, setWeatherLoading] = useState(false);
   const [alertCheckedAt, setAlertCheckedAt] = useState("");

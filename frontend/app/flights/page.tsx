@@ -48,6 +48,8 @@ type MonitorRoom = {
 };
 
 const STORAGE_KEY = "cargo_ops_monitor_rooms_v6";
+const FLIGHT_ALERT_SNAPSHOT_KEY = "cargo_ops_flight_alert_snapshot_v1";
+const FLIGHT_ALERT_HISTORY_KEY = "cargo_ops_flight_alert_history_v1";
 
 function toDateTimeLocalString(date: Date) {
   const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
@@ -89,6 +91,12 @@ function loadRooms(): MonitorRoom[] {
 function saveRooms(rooms: MonitorRoom[]) {
   if (typeof window === "undefined") return;
   localStorage.setItem(STORAGE_KEY, JSON.stringify(rooms));
+}
+
+function clearFlightAlertBaselineAndHistory() {
+  if (typeof window === "undefined") return;
+  localStorage.removeItem(FLIGHT_ALERT_SNAPSHOT_KEY);
+  localStorage.removeItem(FLIGHT_ALERT_HISTORY_KEY);
 }
 
 function parseFlightTime(row: FlightRow): Date | null {
@@ -939,12 +947,13 @@ export default function FlightsPage() {
     const nextRooms = [newRoom, ...rooms.filter((room) => !room.fixed)];
     setRooms(nextRooms);
     saveRooms(nextRooms);
+    clearFlightAlertBaselineAndHistory();
     setSelectedRoomId(newRoom.id);
     setInput(newRoom.flightsInput);
     setFixed(false);
     setSelectedScheduleKeys({});
     setExpandedDetailKeys({});
-    setError("선택한 Schedule Flight를 저장했습니다. 기존 Schedule Flight 방은 새 선택값으로 교체했습니다.");
+    setError("선택한 Schedule Flight를 저장했습니다. 기존 Schedule Flight 방과 출도착 알림 이력을 새 기준으로 정리했습니다.");
   };
 
   const refreshSelectedRoom = async () => {

@@ -169,6 +169,9 @@ export type FlightRow = {
   terminalid?: string;
   remark?: string;
   status?: string;
+  delay?: boolean;
+  canceled?: boolean;
+  gateChanged?: boolean;
 };
 
 export type MonitorRoom = {

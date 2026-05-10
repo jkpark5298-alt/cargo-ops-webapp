@@ -80,6 +80,28 @@ function loadRooms(): MonitorRoom[] {
   }
 }
 
+function saveRooms(rooms: MonitorRoom[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(rooms));
+}
+
+function mergeLatestScheduleRoom(rooms: MonitorRoom[], latestRoom: MonitorRoom) {
+  return [latestRoom, ...rooms.filter((room) => !room.fixed)];
+}
+
+async function loadLatestScheduleFromServer() {
+  const res = await fetch(`${BACKEND_URL}/flights/latest-schedule`, {
+    cache: "no-store",
+  });
+  const json = await res.json();
+
+  if (!res.ok || json.success === false) {
+    throw new Error(json.detail || json.message || "Schedule Flight 동기화 실패");
+  }
+
+  return (json.room || null) as MonitorRoom | null;
+}
+
 function normalizeFlightsInput(rawInput: string) {
   return rawInput
     .split(/[\s,\n,]+/)
@@ -472,32 +494,48 @@ export default function FixedLitePage() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
+    const selectTargetRoom = (nextRooms: MonitorRoom[]) => {
+      const fixedOnly = nextRooms.filter((room) => room.fixed);
+      const params = new URLSearchParams(window.location.search);
+      const roomIdFromQuery = params.get("roomId") || "";
+      const lastRoomId = localStorage.getItem(LAST_FIXED_ROOM_KEY);
+
+      let target: MonitorRoom | undefined;
+
+      if (roomIdFromQuery) {
+        target = fixedOnly.find((room) => room.id === roomIdFromQuery);
+      }
+
+      if (!target && lastRoomId) {
+        target = fixedOnly.find((room) => room.id === lastRoomId);
+      }
+
+      if (!target && fixedOnly.length > 0) {
+        target = fixedOnly[0];
+      }
+
+      if (target) {
+        setSelectedRoomId(target.id);
+        localStorage.setItem(LAST_FIXED_ROOM_KEY, target.id);
+      }
+    };
+
     const savedRooms = loadRooms();
     setRooms(savedRooms);
+    selectTargetRoom(savedRooms);
 
-    const fixedOnly = savedRooms.filter((room) => room.fixed);
-    const params = new URLSearchParams(window.location.search);
-    const roomIdFromQuery = params.get("roomId") || "";
-    const lastRoomId = localStorage.getItem(LAST_FIXED_ROOM_KEY);
-
-    let target: MonitorRoom | undefined;
-
-    if (roomIdFromQuery) {
-      target = fixedOnly.find((room) => room.id === roomIdFromQuery);
-    }
-
-    if (!target && lastRoomId) {
-      target = fixedOnly.find((room) => room.id === lastRoomId);
-    }
-
-    if (!target && fixedOnly.length > 0) {
-      target = fixedOnly[0];
-    }
-
-    if (target) {
-      setSelectedRoomId(target.id);
-      localStorage.setItem(LAST_FIXED_ROOM_KEY, target.id);
-    }
+    void loadLatestScheduleFromServer()
+      .then((serverRoom) => {
+        if (!serverRoom) return;
+        const nextRooms = mergeLatestScheduleRoom(loadRooms(), serverRoom);
+        setRooms(nextRooms);
+        saveRooms(nextRooms);
+        setSelectedRoomId(serverRoom.id);
+        localStorage.setItem(LAST_FIXED_ROOM_KEY, serverRoom.id);
+      })
+      .catch(() => {
+        // 서버 동기화 실패 시 로컬 Schedule Flight를 그대로 사용합니다.
+      });
   }, []);
 
   useEffect(() => {

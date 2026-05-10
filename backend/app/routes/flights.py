@@ -1,7 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Dict, List, Optional
+import json
+import os
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -14,6 +17,14 @@ from app.services.incheon_api import (
 
 router = APIRouter()
 
+LATEST_SCHEDULE_FILE = Path(
+    os.getenv("LATEST_SCHEDULE_FILE", "/tmp/cargo_ops_latest_schedule.json")
+)
+
+
+class LatestScheduleRequest(BaseModel):
+    room: Dict[str, Any]
+
 
 class FlightQueryRequest(BaseModel):
     flights: List[str] = Field(default_factory=list)
@@ -24,6 +35,31 @@ class FlightQueryRequest(BaseModel):
 class FlightRangeRequest(BaseModel):
     start: str
     end: str
+
+
+def _read_latest_schedule() -> Optional[Dict[str, Any]]:
+    try:
+        if not LATEST_SCHEDULE_FILE.exists():
+            return None
+
+        data = json.loads(LATEST_SCHEDULE_FILE.read_text(encoding="utf-8"))
+        room = data.get("room")
+        return room if isinstance(room, dict) else None
+    except Exception:
+        return None
+
+
+def _write_latest_schedule(room: Dict[str, Any]) -> Dict[str, Any]:
+    payload = {
+        "room": room,
+        "savedAt": datetime.now().isoformat(timespec="seconds"),
+    }
+    LATEST_SCHEDULE_FILE.parent.mkdir(parents=True, exist_ok=True)
+    LATEST_SCHEDULE_FILE.write_text(
+        json.dumps(payload, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return payload
 
 
 def _normalize_flight_code(value: str) -> str:
@@ -183,6 +219,36 @@ def _validate_range(start: str, end: str):
         raise HTTPException(status_code=400, detail="시작일 또는 종료일이 필요합니다.")
 
     return start_dt, end_dt, start_date, end_date
+
+
+@router.get("/latest-schedule")
+async def get_latest_schedule() -> Dict[str, Any]:
+    room = _read_latest_schedule()
+    return {
+        "success": True,
+        "room": room,
+    }
+
+
+@router.post("/latest-schedule")
+async def save_latest_schedule(payload: LatestScheduleRequest) -> Dict[str, Any]:
+    room = dict(payload.room or {})
+
+    if not room.get("fixed"):
+        room["fixed"] = True
+
+    if not room.get("id"):
+        room["id"] = str(int(datetime.now().timestamp() * 1000))
+
+    if not room.get("name"):
+        room["name"] = "Schedule_Synced"
+
+    saved = _write_latest_schedule(room)
+    return {
+        "success": True,
+        "room": saved["room"],
+        "savedAt": saved["savedAt"],
+    }
 
 
 @router.post("/kj-all")

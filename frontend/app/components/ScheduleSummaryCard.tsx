@@ -33,7 +33,7 @@ export function ScheduleSummaryCard({
       </div>
       <div style={buttonStackStyle}>
         <button onClick={onRefreshLatestSchedule} style={refreshButtonStyle}>
-          최신 정보 조회
+          Schedule Flight 동기화
         </button>
         <button onClick={onOpenScheduleFlight} style={secondaryButtonStyle}>
           최근 Schedule Flight 열기

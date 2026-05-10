@@ -93,6 +93,24 @@ function saveRooms(rooms: MonitorRoom[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(rooms));
 }
 
+async function saveLatestScheduleToServer(room: MonitorRoom) {
+  const res = await fetch(`${BACKEND_URL}/flights/latest-schedule`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ room }),
+  });
+
+  const json = await res.json();
+
+  if (!res.ok || json.success === false) {
+    throw new Error(json.detail || json.message || "Schedule Flight 서버 동기화 실패");
+  }
+
+  return json.room as MonitorRoom;
+}
+
 function clearFlightAlertBaselineAndHistory() {
   if (typeof window === "undefined") return;
   localStorage.removeItem(FLIGHT_ALERT_SNAPSHOT_KEY);
@@ -942,7 +960,7 @@ export default function FlightsPage() {
     }));
   };
 
-  const handleSaveSelectedSchedule = () => {
+  const handleSaveSelectedSchedule = async () => {
     if (selectedScheduleRows.length === 0) {
       setError("Schedule Flight로 관리할 편명을 먼저 선택하세요.");
       return;
@@ -975,7 +993,17 @@ export default function FlightsPage() {
     setFixed(false);
     setSelectedScheduleKeys({});
     setExpandedDetailKeys({});
-    setError("선택한 Schedule Flight를 저장했습니다. 기존 Schedule Flight 방과 출도착 알림 이력을 새 기준으로 정리했습니다.");
+
+    try {
+      await saveLatestScheduleToServer(newRoom);
+      setError("선택한 Schedule Flight를 저장하고 PC/아이폰 동기화 기준으로 올렸습니다.");
+    } catch (syncError) {
+      setError(
+        syncError instanceof Error
+          ? `로컬 저장 완료. 서버 동기화 실패: ${syncError.message}`
+          : "로컬 저장 완료. 서버 동기화 중 오류가 발생했습니다.",
+      );
+    }
   };
 
   const refreshSelectedRoom = async () => {
@@ -1355,7 +1383,7 @@ export default function FlightsPage() {
           </button>
 
           <button
-            onClick={handleSaveSelectedSchedule}
+            onClick={() => void handleSaveSelectedSchedule()}
             disabled={selectedScheduleRows.length === 0}
             style={selectedScheduleRows.length > 0 ? saveScheduleBtn : disabledBtn}
           >

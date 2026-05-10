@@ -195,6 +195,15 @@ function loadRooms(): MonitorRoom[] {
   }
 }
 
+function saveRooms(rooms: MonitorRoom[]) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(rooms));
+}
+
+function mergeLatestScheduleRoom(rooms: MonitorRoom[], latestRoom: MonitorRoom) {
+  return [latestRoom, ...rooms.filter((room) => !room.fixed)];
+}
+
 function getImageBySlot(images: SavedImage[], slotKey: ImageSlotKey) {
   return images.find((image) => image.type === slotKey) || null;
 }
@@ -394,6 +403,7 @@ export default function HomePage() {
     setAlertCheckedAt(savedSnapshot?.savedAt || getCurrentTimeLabel());
 
     void fetchWeather();
+    void syncLatestScheduleFromServer(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -472,8 +482,50 @@ export default function HomePage() {
     router.push("/flights");
   };
 
+  const syncLatestScheduleFromServer = async (showNotice = true) => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/flights/latest-schedule`, {
+        cache: "no-store",
+      });
+      const json = await res.json();
+
+      if (!res.ok || json.success === false) {
+        throw new Error(json.detail || json.message || "Schedule Flight 동기화 실패");
+      }
+
+      const serverRoom = json.room as MonitorRoom | null;
+
+      if (!serverRoom) {
+        if (showNotice) setNotice("서버에 동기화된 Schedule Flight가 없습니다.");
+        return;
+      }
+
+      const nextRooms = mergeLatestScheduleRoom(loadRooms(), serverRoom);
+      setRooms(nextRooms);
+      saveRooms(nextRooms);
+
+      const nextSnapshot = buildFlightAlertSnapshot(serverRoom);
+      if (nextSnapshot) {
+        setFlightAlertSnapshot(nextSnapshot);
+        saveFlightAlertSnapshot(nextSnapshot);
+        setAlertCheckedAt(nextSnapshot.savedAt);
+      }
+
+      setFlightAlertHistory([]);
+      clearFlightAlertHistory();
+
+      if (showNotice) {
+        setNotice("서버의 최신 Schedule Flight를 이 기기에 동기화했습니다.");
+      }
+    } catch (error) {
+      if (showNotice) {
+        setNotice(error instanceof Error ? error.message : "Schedule Flight 동기화 중 오류가 발생했습니다.");
+      }
+    }
+  };
+
   const handleRefreshLatestSchedule = () => {
-    setNotice("최신 정보 조회는 다음 단계에서 KJ 전체 조회 방식과 함께 연결합니다. 지금은 편명조회 열기에서 기존 조회를 사용하세요.");
+    void syncLatestScheduleFromServer(true);
   };
 
   async function fetchWeather() {

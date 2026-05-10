@@ -14,6 +14,7 @@ import { WeatherCard } from "./components/WeatherCard";
 import { ScheduleSummaryCard } from "./components/ScheduleSummaryCard";
 import { DailyRecordCard } from "./components/DailyRecordCard";
 import { IssueRecordCard } from "./components/IssueRecordCard";
+import { PwaNotificationCard } from "./components/PwaNotificationCard";
 import {
   buildFlightAlertSnapshot,
   clearFlightAlertHistory,
@@ -241,6 +242,19 @@ function formatDateTime(value?: string) {
   return value.replace("T", " ");
 }
 
+function urlBase64ToUint8Array(base64String: string) {
+  const padding = "=".repeat((4 - (base64String.length % 4)) % 4);
+  const base64 = `${base64String}${padding}`.replace(/-/g, "+").replace(/_/g, "/");
+  const rawData = window.atob(base64);
+  const outputArray = new Uint8Array(rawData.length);
+
+  for (let i = 0; i < rawData.length; i += 1) {
+    outputArray[i] = rawData.charCodeAt(i);
+  }
+
+  return outputArray;
+}
+
 function getLatestScheduleRoom(rooms: MonitorRoom[]) {
   const scheduleRooms = rooms.filter((room) => room.fixed);
   return scheduleRooms[0] || null;
@@ -363,6 +377,10 @@ export default function HomePage() {
   const [images, setImages] = useState<SavedImage[]>([]);
   const [note, setNote] = useState("");
   const [notice, setNotice] = useState("");
+  const [pwaPermissionLabel, setPwaPermissionLabel] = useState("확인 전");
+  const [pwaStatusMessage, setPwaStatusMessage] = useState("");
+  const [pwaLoading, setPwaLoading] = useState(false);
+  const [pwaTestLoading, setPwaTestLoading] = useState(false);
   const [isDailySaving, setIsDailySaving] = useState(false);
   const [isIssueSaving, setIsIssueSaving] = useState(false);
   const [weather, setWeather] = useState<WeatherInfo>(DEFAULT_WEATHER);
@@ -405,6 +423,24 @@ export default function HomePage() {
     void fetchWeather();
     void syncLatestScheduleFromServer(false);
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+      setPwaPermissionLabel("미지원");
+      setPwaStatusMessage("이 브라우저에서는 PWA 푸시 알림을 지원하지 않습니다.");
+      return;
+    }
+
+    setPwaPermissionLabel(
+      Notification.permission === "granted"
+        ? "허용됨"
+        : Notification.permission === "denied"
+          ? "차단됨"
+          : "미설정",
+    );
   }, []);
 
   useEffect(() => {
@@ -526,6 +562,104 @@ export default function HomePage() {
 
   const handleRefreshLatestSchedule = () => {
     void syncLatestScheduleFromServer(true);
+  };
+
+  const handleEnablePwaPush = async () => {
+    if (typeof window === "undefined") return;
+
+    if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+      setPwaPermissionLabel("미지원");
+      setPwaStatusMessage("이 브라우저에서는 PWA 푸시 알림을 지원하지 않습니다.");
+      return;
+    }
+
+    setPwaLoading(true);
+    setPwaStatusMessage("");
+
+    try {
+      const permission = await Notification.requestPermission();
+      setPwaPermissionLabel(permission === "granted" ? "허용됨" : permission === "denied" ? "차단됨" : "미설정");
+
+      if (permission !== "granted") {
+        setPwaStatusMessage("알림 권한이 허용되지 않았습니다. 아이폰 설정 또는 Safari 설정에서 알림 권한을 확인하세요.");
+        return;
+      }
+
+      const keyRes = await fetch(`${BACKEND_URL}/flights/push-public-key`, {
+        cache: "no-store",
+      });
+      const keyJson = await keyRes.json();
+
+      if (!keyRes.ok || keyJson.success === false) {
+        throw new Error(keyJson.detail || keyJson.message || "Push 공개키 확인 실패");
+      }
+
+      if (!keyJson.configured || !keyJson.publicKey) {
+        setPwaStatusMessage("알림 권한은 허용됐지만, 백엔드 WEB_PUSH_PUBLIC_KEY 설정이 아직 없습니다. 실제 푸시 발송 전 VAPID 키 설정이 필요합니다.");
+        return;
+      }
+
+      const registration = await navigator.serviceWorker.register("/sw.js");
+      const existingSubscription = await registration.pushManager.getSubscription();
+      const subscription =
+        existingSubscription ||
+        (await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(keyJson.publicKey),
+        }));
+
+      const saveRes = await fetch(`${BACKEND_URL}/flights/push-subscriptions`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          subscription,
+          userAgent: navigator.userAgent,
+          deviceName: /iPhone|iPad|iPod/i.test(navigator.userAgent) ? "iPhone/iPad PWA" : "Web browser",
+        }),
+      });
+      const saveJson = await saveRes.json();
+
+      if (!saveRes.ok || saveJson.success === false) {
+        throw new Error(saveJson.detail || saveJson.message || "Push 구독 저장 실패");
+      }
+
+      setPwaStatusMessage("알림 권한과 구독 정보가 저장되었습니다. 실제 변경 푸시 발송은 다음 단계에서 연결합니다.");
+    } catch (error) {
+      setPwaStatusMessage(error instanceof Error ? error.message : "PWA 알림 준비 중 오류가 발생했습니다.");
+    } finally {
+      setPwaLoading(false);
+    }
+  };
+
+  const handleSendTestPush = async () => {
+    setPwaTestLoading(true);
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/flights/push-test`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          title: "KJ Cargo Ops 테스트 알림",
+          body: "아이폰 PWA 푸시 알림 수신 테스트입니다.",
+          url: "/",
+        }),
+      });
+      const json = await res.json();
+
+      if (!res.ok || json.success === false) {
+        throw new Error(json.detail || json.message || "테스트 알림 발송 실패");
+      }
+
+      setPwaStatusMessage(`테스트 알림을 발송했습니다. 성공 ${json.sent ?? 0}건 / 실패 ${json.failed ?? 0}건`);
+    } catch (error) {
+      setPwaStatusMessage(error instanceof Error ? error.message : "테스트 알림 발송 중 오류가 발생했습니다.");
+    } finally {
+      setPwaTestLoading(false);
+    }
   };
 
   async function fetchWeather() {
@@ -1026,10 +1160,19 @@ export default function HomePage() {
         <ActionCard
           label="오늘 KJ 화물기 조회"
           title="오늘 KJ 화물기 조회"
-          description="편명 직접 조회는 유지하고, 다음 단계에서 KJ 전체 24시간 조회와 선택 저장을 추가합니다."
+          description="편명 직접 조회는 유지하고, KJ 전체 조회에서 Schedule Flight를 선택 저장합니다."
           buttonLabel="편명조회 열기"
           onClick={openFlights}
           accent="#2563eb"
+        />
+
+        <PwaNotificationCard
+          permissionLabel={pwaPermissionLabel}
+          statusMessage={pwaStatusMessage}
+          loading={pwaLoading}
+          testLoading={pwaTestLoading}
+          onEnable={handleEnablePwaPush}
+          onSendTest={handleSendTestPush}
         />
 
         <DailyRecordCard

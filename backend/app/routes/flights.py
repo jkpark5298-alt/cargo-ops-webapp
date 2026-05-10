@@ -8,6 +8,7 @@ import os
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
+from pywebpush import WebPushException, webpush
 
 from app.services.incheon_api import (
     IncheonApiQuotaExceededError,
@@ -20,6 +21,21 @@ router = APIRouter()
 LATEST_SCHEDULE_FILE = Path(
     os.getenv("LATEST_SCHEDULE_FILE", "/tmp/cargo_ops_latest_schedule.json")
 )
+PUSH_SUBSCRIPTIONS_FILE = Path(
+    os.getenv("PUSH_SUBSCRIPTIONS_FILE", "/tmp/cargo_ops_push_subscriptions.json")
+)
+
+
+class PushSubscriptionRequest(BaseModel):
+    subscription: Dict[str, Any]
+    userAgent: Optional[str] = None
+    deviceName: Optional[str] = None
+
+
+class TestPushRequest(BaseModel):
+    title: str = "KJ Cargo Ops 테스트 알림"
+    body: str = "PWA 푸시 알림 수신 준비가 완료되었습니다."
+    url: str = "/"
 
 
 class LatestScheduleRequest(BaseModel):
@@ -60,6 +76,25 @@ def _write_latest_schedule(room: Dict[str, Any]) -> Dict[str, Any]:
         encoding="utf-8",
     )
     return payload
+
+
+def _read_push_subscriptions() -> List[Dict[str, Any]]:
+    try:
+        if not PUSH_SUBSCRIPTIONS_FILE.exists():
+            return []
+
+        data = json.loads(PUSH_SUBSCRIPTIONS_FILE.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except Exception:
+        return []
+
+
+def _write_push_subscriptions(items: List[Dict[str, Any]]) -> None:
+    PUSH_SUBSCRIPTIONS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    PUSH_SUBSCRIPTIONS_FILE.write_text(
+        json.dumps(items, ensure_ascii=False),
+        encoding="utf-8",
+    )
 
 
 def _normalize_flight_code(value: str) -> str:
@@ -219,6 +254,118 @@ def _validate_range(start: str, end: str):
         raise HTTPException(status_code=400, detail="시작일 또는 종료일이 필요합니다.")
 
     return start_dt, end_dt, start_date, end_date
+
+
+def _get_vapid_settings() -> tuple[str, str, str]:
+    public_key = os.getenv("WEB_PUSH_PUBLIC_KEY", "").strip()
+    private_key = os.getenv("WEB_PUSH_PRIVATE_KEY", "").strip()
+    subject = os.getenv("WEB_PUSH_SUBJECT", "mailto:admin@example.com").strip()
+
+    if not public_key or not private_key:
+        raise HTTPException(
+            status_code=400,
+            detail="WEB_PUSH_PUBLIC_KEY 또는 WEB_PUSH_PRIVATE_KEY 환경변수가 없습니다.",
+        )
+
+    return public_key, private_key, subject
+
+
+def _send_web_push(subscription: Dict[str, Any], payload: Dict[str, Any]) -> None:
+    _, private_key, subject = _get_vapid_settings()
+
+    webpush(
+        subscription_info=subscription,
+        data=json.dumps(payload, ensure_ascii=False),
+        vapid_private_key=private_key,
+        vapid_claims={"sub": subject},
+    )
+
+
+@router.get("/push-public-key")
+async def get_push_public_key() -> Dict[str, Any]:
+    public_key = os.getenv("WEB_PUSH_PUBLIC_KEY", "").strip()
+    return {
+        "success": True,
+        "configured": bool(public_key),
+        "publicKey": public_key,
+    }
+
+
+@router.post("/push-subscriptions")
+async def save_push_subscription(payload: PushSubscriptionRequest) -> Dict[str, Any]:
+    subscription = dict(payload.subscription or {})
+    endpoint = str(subscription.get("endpoint") or "")
+
+    if not endpoint:
+        raise HTTPException(status_code=400, detail="Push subscription endpoint가 없습니다.")
+
+    items = _read_push_subscriptions()
+    next_item = {
+        "subscription": subscription,
+        "userAgent": payload.userAgent or "",
+        "deviceName": payload.deviceName or "",
+        "savedAt": datetime.now().isoformat(timespec="seconds"),
+    }
+
+    filtered = [
+        item
+        for item in items
+        if str((item.get("subscription") or {}).get("endpoint") or "") != endpoint
+    ]
+
+    filtered.insert(0, next_item)
+    _write_push_subscriptions(filtered[:20])
+
+    return {
+        "success": True,
+        "count": len(filtered[:20]),
+    }
+
+
+@router.get("/push-subscriptions/count")
+async def get_push_subscription_count() -> Dict[str, Any]:
+    return {
+        "success": True,
+        "count": len(_read_push_subscriptions()),
+    }
+
+
+@router.post("/push-test")
+async def send_test_push(payload: TestPushRequest) -> Dict[str, Any]:
+    items = _read_push_subscriptions()
+
+    if not items:
+        raise HTTPException(status_code=400, detail="저장된 Push 구독 정보가 없습니다.")
+
+    message = {
+        "title": payload.title,
+        "body": payload.body,
+        "url": payload.url,
+    }
+
+    sent = 0
+    failed = 0
+    errors: List[str] = []
+
+    for item in items:
+        subscription = item.get("subscription") or {}
+
+        try:
+            _send_web_push(subscription, message)
+            sent += 1
+        except WebPushException as exc:
+            failed += 1
+            errors.append(str(exc))
+        except Exception as exc:
+            failed += 1
+            errors.append(str(exc))
+
+    return {
+        "success": sent > 0,
+        "sent": sent,
+        "failed": failed,
+        "errors": errors[:3],
+    }
 
 
 @router.get("/latest-schedule")

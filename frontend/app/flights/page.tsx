@@ -619,7 +619,7 @@ export default function FlightsPage() {
   };
 
   const switchToManualMode = () => {
-    setQueryMode(room.fixed ? "kj-all" : "manual");
+    setQueryMode("manual");
     if (input === "KJ 전체") setInput("");
     resetLookupView();
   };

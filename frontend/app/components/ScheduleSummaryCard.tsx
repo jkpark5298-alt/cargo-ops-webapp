@@ -5,12 +5,14 @@ import type { FlightRow, MonitorRoom } from "../page";
 
 type ScheduleSummaryCardProps = {
   latestRoom: MonitorRoom | null;
+  syncCheckedAt: string;
   onOpenScheduleFlight: () => void;
   onRefreshLatestSchedule: () => void;
 };
 
 export function ScheduleSummaryCard({
   latestRoom,
+  syncCheckedAt,
   onOpenScheduleFlight,
   onRefreshLatestSchedule,
 }: ScheduleSummaryCardProps) {
@@ -31,6 +33,7 @@ export function ScheduleSummaryCard({
         <InfoRow label="마지막 조회" value={latestRoom?.lastFetchedAt || "-"} />
         <InfoRow label="결과 수" value={`${getRoomRowsCount(latestRoom)}건`} />
       </div>
+      {syncCheckedAt ? <div style={syncStatusStyle}>동기화 확인 · {syncCheckedAt}</div> : null}
       <div style={buttonStackStyle}>
         <button onClick={onRefreshLatestSchedule} style={refreshButtonStyle}>
           Schedule Flight 동기화
@@ -53,8 +56,11 @@ function FlightRouteRows({ room }: { room: MonitorRoom | null }) {
           <div key={`${item.flight}-${item.route}`} style={flightRouteRowStyle}>
             <span style={flightRouteNoStyle}>{item.flight}</span>
             <span style={flightRouteValueStyle}>{item.route}</span>
+            <span style={flightRouteStatusStyle}>
+              {item.status}
+            </span>
             <span style={flightRouteMetaStyle}>
-              {item.direction} · {item.time}
+              {item.time}
             </span>
           </div>
         ))
@@ -87,7 +93,8 @@ function getFlightRouteItems(room: MonitorRoom | null) {
       return {
         flight,
         route: getRouteDisplay(row) || "구간 확인 중",
-        direction: getDirectionLabel(row),
+        direction: "기준",
+        status: getComputedStatus(row),
         time: getFlightTimeDisplay(row),
         hasResult: true,
       };
@@ -118,7 +125,8 @@ function getFlightRouteItems(room: MonitorRoom | null) {
     .map((flight) => ({
       flight,
       route: "조회 결과 없음",
-      direction: "확인",
+      direction: "기준",
+      status: "-",
       time: "-",
       hasResult: false,
     }));
@@ -150,6 +158,25 @@ function getDirectionLabel(row?: FlightRow) {
   return "운항";
 }
 
+function getComputedStatus(row?: FlightRow) {
+  if (!row) return "-";
+  const remarkStatus = `${row.status || ""} ${row.remark || ""}`.trim().toUpperCase();
+
+  if (row.canceled || remarkStatus.includes("CANCEL")) return "결항";
+  if (row.gateChanged) return "게이트 변경";
+
+  if (remarkStatus.includes("DELAY") || remarkStatus.includes("지연") || row.delay) {
+    if (remarkStatus.includes("ARRIV") || remarkStatus.includes("도착") || row.status === "도착") return "도착(지연)";
+    if (remarkStatus.includes("DEPAR") || remarkStatus.includes("출발") || row.status === "출발") return "출발(지연)";
+    return "지연";
+  }
+
+  if (row.status === "출발" || remarkStatus.includes("DEPART") || remarkStatus.includes("DEP") || remarkStatus.includes("출발")) return "출발";
+  if (row.status === "도착" || remarkStatus.includes("ARRIV") || remarkStatus.includes("ARR") || remarkStatus.includes("도착")) return "도착";
+
+  return "-";
+}
+
 function getFlightTimeDisplay(row?: FlightRow) {
   if (!row) return "-";
   return row.formattedEstimatedTime || row.estimatedDateTime || row.formattedScheduleTime || row.scheduleDateTime || "-";
@@ -163,6 +190,21 @@ function formatDateTime(value?: string) {
   if (!value) return "-";
   return value.replace("T", " ").slice(0, 16);
 }
+
+const syncStatusStyle: CSSProperties = {
+  marginTop: 12,
+  color: "#bfdbfe",
+  fontSize: 12,
+  fontWeight: 850,
+  textAlign: "right",
+};
+
+const flightRouteStatusStyle: CSSProperties = {
+  color: "#fbbf24",
+  fontSize: 13,
+  fontWeight: 950,
+  textAlign: "center",
+};
 
 const cardStyle: CSSProperties = {
   background: "#111827",

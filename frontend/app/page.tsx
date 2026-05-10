@@ -215,6 +215,38 @@ function mergeLatestScheduleRoom(rooms: MonitorRoom[], latestRoom: MonitorRoom) 
   return [latestRoom, ...rooms.filter((room) => !room.fixed)];
 }
 
+function getLocalLatestScheduleRoom() {
+  return loadRooms().find((room) => room.fixed) || null;
+}
+
+function getCurrentSyncLabel() {
+  return new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+  }).format(new Date());
+}
+
+async function saveLatestScheduleToServer(room: MonitorRoom) {
+  const res = await fetch(`${BACKEND_URL}/flights/latest-schedule`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ room }),
+  });
+  const json = await res.json();
+
+  if (!res.ok || json.success === false) {
+    throw new Error(json.detail || json.message || "Schedule Flight 서버 저장 실패");
+  }
+
+  return json.room as MonitorRoom;
+}
+
 function getImageBySlot(images: SavedImage[], slotKey: ImageSlotKey) {
   return images.find((image) => image.type === slotKey) || null;
 }
@@ -395,6 +427,7 @@ export default function HomePage() {
   const [autoPushEnabled, setAutoPushEnabled] = useState(false);
   const [autoPushLoading, setAutoPushLoading] = useState(false);
   const [autoPushStatusMessage, setAutoPushStatusMessage] = useState("");
+  const [scheduleSyncCheckedAt, setScheduleSyncCheckedAt] = useState("");
   const [isDailySaving, setIsDailySaving] = useState(false);
   const [isIssueSaving, setIsIssueSaving] = useState(false);
   const [weather, setWeather] = useState<WeatherInfo>(DEFAULT_WEATHER);
@@ -544,36 +577,54 @@ export default function HomePage() {
         throw new Error(json.detail || json.message || "Schedule Flight 동기화 실패");
       }
 
-      const serverRoom = json.room as MonitorRoom | null;
+      let serverRoom = json.room as MonitorRoom | null;
 
       if (!serverRoom) {
-        if (showNotice) setNotice("서버에 동기화된 Schedule Flight가 없습니다.");
-        return;
-      }
+        const localRoom = getLocalLatestScheduleRoom();
 
-      const nextRooms = mergeLatestScheduleRoom(loadRooms(), serverRoom);
-      setRooms(nextRooms);
-      saveRooms(nextRooms);
+        if (!localRoom) {
+          const checkedAt = getCurrentSyncLabel();
+          setScheduleSyncCheckedAt(checkedAt);
+          if (showNotice) setNotice(`Schedule Flight 없음 · 확인 ${checkedAt}`);
+          await fetchAutoPushStatus();
+          return;
+        }
 
-      const nextSnapshot = buildFlightAlertSnapshot(serverRoom);
-      if (nextSnapshot) {
-        setFlightAlertSnapshot(nextSnapshot);
-        saveFlightAlertSnapshot(nextSnapshot);
-        setAlertCheckedAt(nextSnapshot.savedAt);
+        serverRoom = await saveLatestScheduleToServer(localRoom);
+        if (showNotice) {
+          const checkedAt = getCurrentSyncLabel();
+          setScheduleSyncCheckedAt(checkedAt);
+          setNotice(`이 기기의 Schedule Flight를 서버에 동기화했습니다. 확인 ${checkedAt}`);
+        }
+      } else {
+        const nextRooms = mergeLatestScheduleRoom(loadRooms(), serverRoom);
+        setRooms(nextRooms);
+        saveRooms(nextRooms);
+
+        const nextSnapshot = buildFlightAlertSnapshot(serverRoom);
+        if (nextSnapshot) {
+          setFlightAlertSnapshot(nextSnapshot);
+          saveFlightAlertSnapshot(nextSnapshot);
+          setAlertCheckedAt(nextSnapshot.savedAt);
+        }
+
+        if (showNotice) {
+          const checkedAt = getCurrentSyncLabel();
+          setScheduleSyncCheckedAt(checkedAt);
+          setNotice(`Schedule Flight 동기화 확인 · ${checkedAt}`);
+        }
       }
 
       setFlightAlertHistory([]);
       clearFlightAlertHistory();
-
-      if (showNotice) {
-        setNotice("서버의 최신 Schedule Flight를 이 기기에 동기화했습니다.");
-      }
+      await fetchAutoPushStatus();
     } catch (error) {
       if (showNotice) {
         setNotice(error instanceof Error ? error.message : "Schedule Flight 동기화 중 오류가 발생했습니다.");
       }
     }
   };
+
 
   const handleRefreshLatestSchedule = () => {
     void syncLatestScheduleFromServer(true);
@@ -589,7 +640,8 @@ export default function HomePage() {
       if (!res.ok || json.success === false) return;
 
       setAutoPushEnabled(Boolean(json.enabled));
-      setAutoPushStatusMessage(json.lastMessage || "");
+      const modeText = json.mode === "focus" ? "집중 5분 확인" : "일반 30분 확인";
+      setAutoPushStatusMessage(`${modeText} · ${json.lastMessage || ""}`);
     } catch {
       // 자동 확인 상태 조회 실패 시 화면만 조용히 유지합니다.
     }
@@ -740,32 +792,15 @@ export default function HomePage() {
     setAutoPushLoading(true);
 
     try {
-      const nextEnabled = !autoPushEnabled;
-      const res = await fetch(`${BACKEND_URL}/flights/auto-push/config`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          enabled: nextEnabled,
-          intervalMinutes: 30,
-        }),
-      });
-      const json = await res.json();
-
-      if (!res.ok || json.success === false) {
-        throw new Error(json.detail || json.message || "자동 변경 확인 설정 실패");
-      }
-
-      setAutoPushEnabled(Boolean(json.enabled));
-      setAutoPushStatusMessage(json.lastMessage || (nextEnabled ? "자동 변경 확인이 켜졌습니다." : "자동 변경 확인이 꺼졌습니다."));
-      setPwaStatusMessage(nextEnabled ? "자동 변경 확인을 켰습니다. 기본 30분 간격으로 확인합니다." : "자동 변경 확인을 껐습니다.");
+      await fetchAutoPushStatus();
+      setPwaStatusMessage("자동 변경 확인 상태를 새로고침했습니다. Schedule Flight 기준으로 자동 적용됩니다.");
     } catch (error) {
-      setPwaStatusMessage(error instanceof Error ? error.message : "자동 변경 확인 설정 중 오류가 발생했습니다.");
+      setPwaStatusMessage(error instanceof Error ? error.message : "자동 변경 확인 상태 조회 중 오류가 발생했습니다.");
     } finally {
       setAutoPushLoading(false);
     }
   };
+
 
   async function fetchWeather() {
     setWeatherLoading(true);
@@ -1258,6 +1293,7 @@ export default function HomePage() {
       <section style={stackStyle}>
         <ScheduleSummaryCard
           latestRoom={latestRoom}
+          syncCheckedAt={scheduleSyncCheckedAt}
           onOpenScheduleFlight={openScheduleFlight}
           onRefreshLatestSchedule={handleRefreshLatestSchedule}
         />

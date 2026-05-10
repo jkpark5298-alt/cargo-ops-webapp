@@ -109,12 +109,12 @@ def _write_push_subscriptions(items: List[Dict[str, Any]]) -> None:
 
 
 def _read_auto_push_status() -> Dict[str, Any]:
-    default_enabled = os.getenv("AUTO_PUSH_ENABLED", "false").lower() == "true"
+    default_enabled = os.getenv("AUTO_PUSH_ENABLED", "true").lower() != "false"
     default_status: Dict[str, Any] = {
         "enabled": default_enabled,
         "intervalMinutes": AUTO_PUSH_DEFAULT_INTERVAL_MINUTES,
         "lastRunAt": "",
-        "lastMessage": "자동 변경 확인 대기 중",
+        "lastMessage": "Schedule Flight 기준 자동 변경 확인 대기 중",
         "lastResult": None,
     }
 
@@ -651,28 +651,86 @@ async def _run_schedule_change_check(push_on_change: bool = True) -> Dict[str, A
     }
 
 
+def _is_departure_row(row: Dict[str, Any]) -> bool:
+    return str(row.get("departureCode") or "").strip().upper() == "ICN"
+
+
+def _is_arrival_row(row: Dict[str, Any]) -> bool:
+    return str(row.get("arrivalCode") or "").strip().upper() == "ICN"
+
+
+def _is_row_in_focus_window(row: Dict[str, Any], now: Optional[datetime] = None) -> bool:
+    target_dt = _get_row_datetime(row)
+    if target_dt is None:
+        return False
+
+    now = now or datetime.now()
+
+    if _is_departure_row(row):
+        return target_dt - timedelta(minutes=10) <= now <= target_dt + timedelta(hours=1)
+
+    if _is_arrival_row(row):
+        return target_dt - timedelta(minutes=30) <= now <= target_dt + timedelta(minutes=30)
+
+    return False
+
+
+def _get_auto_interval_minutes_for_room(room: Optional[Dict[str, Any]]) -> int:
+    if not room:
+        return 30
+
+    rows = room.get("rows") or []
+    if not isinstance(rows, list):
+        rows = []
+
+    latest = _latest_rows_by_flight(rows)
+    requested_flights = _normalize_flights([str(room.get("flightsInput") or "")])
+    now = datetime.now()
+
+    for flight in requested_flights:
+        row = latest.get(flight)
+        if not row:
+            continue
+        if _is_refresh_excluded(row):
+            continue
+        if _is_row_in_focus_window(row, now):
+            return 5
+
+    return 30
+
+
+def _get_current_auto_interval_minutes() -> int:
+    return _get_auto_interval_minutes_for_room(_read_latest_schedule())
+
+
 async def _auto_push_loop() -> None:
     while True:
         status = _read_auto_push_status()
-        interval_minutes = max(5, int(status.get("intervalMinutes") or AUTO_PUSH_DEFAULT_INTERVAL_MINUTES))
+        interval_minutes = _get_current_auto_interval_minutes()
+        enabled = bool(status.get("enabled", True))
 
-        if status.get("enabled"):
+        if enabled:
             try:
                 result = await _run_schedule_change_check(push_on_change=True)
                 changed = result.get("changed", 0)
                 sent = result.get("sent", 0)
+                mode = "집중 5분" if interval_minutes == 5 else "일반 30분"
                 message = (
-                    f"자동 확인 완료: 변경 {changed}건, 푸시 {sent}건"
+                    f"자동 확인 완료({mode}): 변경 {changed}건, 푸시 {sent}건"
                     if changed
-                    else f"자동 확인 완료: 변경 없음, 재조회 {result.get('checked', 0)}건"
+                    else f"자동 확인 완료({mode}): 변경 없음, 재조회 {result.get('checked', 0)}건"
                 )
                 _update_auto_push_status(
+                    enabled=True,
+                    intervalMinutes=interval_minutes,
                     lastRunAt=datetime.now().isoformat(timespec="seconds"),
                     lastMessage=message,
                     lastResult=result,
                 )
             except Exception as exc:
                 _update_auto_push_status(
+                    enabled=True,
+                    intervalMinutes=interval_minutes,
                     lastRunAt=datetime.now().isoformat(timespec="seconds"),
                     lastMessage=f"자동 확인 오류: {exc}",
                 )
@@ -698,9 +756,14 @@ async def check_schedule_and_push() -> Dict[str, Any]:
 
 @router.get("/auto-push/status")
 async def get_auto_push_status() -> Dict[str, Any]:
+    status = _read_auto_push_status()
+    interval = _get_current_auto_interval_minutes()
     return {
         "success": True,
-        **_read_auto_push_status(),
+        **status,
+        "enabled": bool(status.get("enabled", True)),
+        "intervalMinutes": interval,
+        "mode": "focus" if interval == 5 else "normal",
     }
 
 
@@ -710,7 +773,7 @@ async def update_auto_push_config(payload: AutoPushConfigRequest) -> Dict[str, A
     status = _update_auto_push_status(
         enabled=payload.enabled,
         intervalMinutes=interval,
-        lastMessage="자동 변경 확인이 켜졌습니다." if payload.enabled else "자동 변경 확인이 꺼졌습니다.",
+        lastMessage="자동 변경 확인이 자동 적용 상태입니다." if payload.enabled else "자동 변경 확인이 일시 중지되었습니다.",
     )
 
     return {
@@ -742,6 +805,11 @@ async def save_latest_schedule(payload: LatestScheduleRequest) -> Dict[str, Any]
         room["name"] = "Schedule_Synced"
 
     saved = _write_latest_schedule(room)
+    _update_auto_push_status(
+        enabled=True,
+        intervalMinutes=_get_auto_interval_minutes_for_room(room),
+        lastMessage="Schedule Flight 저장 완료. 자동 변경 확인이 자동 적용됩니다.",
+    )
     return {
         "success": True,
         "room": saved["room"],

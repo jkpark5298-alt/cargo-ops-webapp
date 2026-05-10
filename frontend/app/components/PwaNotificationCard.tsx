@@ -70,20 +70,20 @@ export function PwaNotificationCard({
         <button
           onClick={onToggleAuto}
           disabled={autoLoading || permissionLabel !== "허용됨"}
-          style={autoLoading || permissionLabel !== "허용됨" ? disabledButtonStyle : autoEnabled ? dangerButtonStyle : successButtonStyle}
+          style={autoLoading || permissionLabel !== "허용됨" ? disabledButtonStyle : successButtonStyle}
         >
-          {autoLoading ? "자동 확인 설정 중..." : autoEnabled ? "자동 변경 확인 끄기" : "자동 변경 확인 켜기"}
+          {autoLoading ? "자동 상태 확인 중..." : "자동 변경 확인 상태 새로고침"}
         </button>
       </div>
 
       <div style={autoStatusStyle}>
-        자동 확인 상태: {autoEnabled ? "켜짐" : "꺼짐"}
+        자동 확인 상태: {autoEnabled ? "자동 적용 중" : "일시 중지"}
         <br />
         {autoStatusMessage || "기본 30분 간격으로 변경 여부를 확인합니다."}
       </div>
 
       <div style={helpTextStyle}>
-        자동 확인은 서버가 저부하 모드로 주기 확인하며, 변경이 있을 때만 실제 푸시를 발송합니다.
+        자동 확인은 Schedule Flight 기준으로 자동 적용됩니다. 평상시 30분, 출발/도착 집중 시간대는 5분 간격으로 변경을 확인합니다.
       </div>
     </section>
   );

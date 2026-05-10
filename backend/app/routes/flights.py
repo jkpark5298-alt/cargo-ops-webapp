@@ -3,6 +3,7 @@ from __future__ import annotations
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional
+import asyncio
 import json
 import os
 
@@ -24,6 +25,11 @@ LATEST_SCHEDULE_FILE = Path(
 PUSH_SUBSCRIPTIONS_FILE = Path(
     os.getenv("PUSH_SUBSCRIPTIONS_FILE", "/tmp/cargo_ops_push_subscriptions.json")
 )
+AUTO_PUSH_STATUS_FILE = Path(
+    os.getenv("AUTO_PUSH_STATUS_FILE", "/tmp/cargo_ops_auto_push_status.json")
+)
+AUTO_PUSH_DEFAULT_INTERVAL_MINUTES = int(os.getenv("AUTO_PUSH_INTERVAL_MINUTES", "30"))
+AUTO_PUSH_STARTED = False
 
 
 class PushSubscriptionRequest(BaseModel):
@@ -36,6 +42,11 @@ class TestPushRequest(BaseModel):
     title: str = "KJ Cargo Ops 테스트 알림"
     body: str = "PWA 푸시 알림 수신 준비가 완료되었습니다."
     url: str = "/"
+
+
+class AutoPushConfigRequest(BaseModel):
+    enabled: bool
+    intervalMinutes: int = AUTO_PUSH_DEFAULT_INTERVAL_MINUTES
 
 
 class LatestScheduleRequest(BaseModel):
@@ -95,6 +106,44 @@ def _write_push_subscriptions(items: List[Dict[str, Any]]) -> None:
         json.dumps(items, ensure_ascii=False),
         encoding="utf-8",
     )
+
+
+def _read_auto_push_status() -> Dict[str, Any]:
+    default_enabled = os.getenv("AUTO_PUSH_ENABLED", "false").lower() == "true"
+    default_status: Dict[str, Any] = {
+        "enabled": default_enabled,
+        "intervalMinutes": AUTO_PUSH_DEFAULT_INTERVAL_MINUTES,
+        "lastRunAt": "",
+        "lastMessage": "자동 변경 확인 대기 중",
+        "lastResult": None,
+    }
+
+    try:
+        if not AUTO_PUSH_STATUS_FILE.exists():
+            return default_status
+
+        data = json.loads(AUTO_PUSH_STATUS_FILE.read_text(encoding="utf-8"))
+        if not isinstance(data, dict):
+            return default_status
+
+        return {**default_status, **data}
+    except Exception:
+        return default_status
+
+
+def _write_auto_push_status(status: Dict[str, Any]) -> Dict[str, Any]:
+    AUTO_PUSH_STATUS_FILE.parent.mkdir(parents=True, exist_ok=True)
+    AUTO_PUSH_STATUS_FILE.write_text(
+        json.dumps(status, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    return status
+
+
+def _update_auto_push_status(**updates: Any) -> Dict[str, Any]:
+    status = _read_auto_push_status()
+    status.update(updates)
+    return _write_auto_push_status(status)
 
 
 def _normalize_flight_code(value: str) -> str:
@@ -471,8 +520,7 @@ async def send_test_push(payload: TestPushRequest) -> Dict[str, Any]:
     }
 
 
-@router.post("/check-schedule-and-push")
-async def check_schedule_and_push() -> Dict[str, Any]:
+async def _run_schedule_change_check(push_on_change: bool = True) -> Dict[str, Any]:
     room = _read_latest_schedule()
 
     if not room:
@@ -560,7 +608,7 @@ async def check_schedule_and_push() -> Dict[str, Any]:
     failed = 0
     errors: List[str] = []
 
-    if changed_items:
+    if changed_items and push_on_change:
         first = changed_items[0]
         extra_count = len(changed_items) - 1
         body_lines = [
@@ -600,6 +648,74 @@ async def check_schedule_and_push() -> Dict[str, Any]:
         "excludedFlights": excluded_flights,
         "errors": errors[:3],
         "message": "변경 확인이 완료되었습니다.",
+    }
+
+
+async def _auto_push_loop() -> None:
+    while True:
+        status = _read_auto_push_status()
+        interval_minutes = max(5, int(status.get("intervalMinutes") or AUTO_PUSH_DEFAULT_INTERVAL_MINUTES))
+
+        if status.get("enabled"):
+            try:
+                result = await _run_schedule_change_check(push_on_change=True)
+                changed = result.get("changed", 0)
+                sent = result.get("sent", 0)
+                message = (
+                    f"자동 확인 완료: 변경 {changed}건, 푸시 {sent}건"
+                    if changed
+                    else f"자동 확인 완료: 변경 없음, 재조회 {result.get('checked', 0)}건"
+                )
+                _update_auto_push_status(
+                    lastRunAt=datetime.now().isoformat(timespec="seconds"),
+                    lastMessage=message,
+                    lastResult=result,
+                )
+            except Exception as exc:
+                _update_auto_push_status(
+                    lastRunAt=datetime.now().isoformat(timespec="seconds"),
+                    lastMessage=f"자동 확인 오류: {exc}",
+                )
+
+        await asyncio.sleep(interval_minutes * 60)
+
+
+@router.on_event("startup")
+async def start_auto_push_worker() -> None:
+    global AUTO_PUSH_STARTED
+
+    if AUTO_PUSH_STARTED:
+        return
+
+    AUTO_PUSH_STARTED = True
+    asyncio.create_task(_auto_push_loop())
+
+
+@router.post("/check-schedule-and-push")
+async def check_schedule_and_push() -> Dict[str, Any]:
+    return await _run_schedule_change_check(push_on_change=True)
+
+
+@router.get("/auto-push/status")
+async def get_auto_push_status() -> Dict[str, Any]:
+    return {
+        "success": True,
+        **_read_auto_push_status(),
+    }
+
+
+@router.post("/auto-push/config")
+async def update_auto_push_config(payload: AutoPushConfigRequest) -> Dict[str, Any]:
+    interval = max(5, int(payload.intervalMinutes or AUTO_PUSH_DEFAULT_INTERVAL_MINUTES))
+    status = _update_auto_push_status(
+        enabled=payload.enabled,
+        intervalMinutes=interval,
+        lastMessage="자동 변경 확인이 켜졌습니다." if payload.enabled else "자동 변경 확인이 꺼졌습니다.",
+    )
+
+    return {
+        "success": True,
+        **status,
     }
 
 

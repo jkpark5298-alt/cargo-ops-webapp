@@ -382,6 +382,9 @@ export default function HomePage() {
   const [pwaLoading, setPwaLoading] = useState(false);
   const [pwaTestLoading, setPwaTestLoading] = useState(false);
   const [pwaCheckLoading, setPwaCheckLoading] = useState(false);
+  const [autoPushEnabled, setAutoPushEnabled] = useState(false);
+  const [autoPushLoading, setAutoPushLoading] = useState(false);
+  const [autoPushStatusMessage, setAutoPushStatusMessage] = useState("");
   const [isDailySaving, setIsDailySaving] = useState(false);
   const [isIssueSaving, setIsIssueSaving] = useState(false);
   const [weather, setWeather] = useState<WeatherInfo>(DEFAULT_WEATHER);
@@ -423,6 +426,7 @@ export default function HomePage() {
 
     void fetchWeather();
     void syncLatestScheduleFromServer(false);
+    void fetchAutoPushStatus();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -565,6 +569,22 @@ export default function HomePage() {
     void syncLatestScheduleFromServer(true);
   };
 
+  const fetchAutoPushStatus = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/flights/auto-push/status`, {
+        cache: "no-store",
+      });
+      const json = await res.json();
+
+      if (!res.ok || json.success === false) return;
+
+      setAutoPushEnabled(Boolean(json.enabled));
+      setAutoPushStatusMessage(json.lastMessage || "");
+    } catch {
+      // 자동 확인 상태 조회 실패 시 화면만 조용히 유지합니다.
+    }
+  };
+
   const handleEnablePwaPush = async () => {
     if (typeof window === "undefined") return;
 
@@ -703,6 +723,37 @@ export default function HomePage() {
       setPwaStatusMessage(error instanceof Error ? error.message : "Schedule Flight 변경 확인 중 오류가 발생했습니다.");
     } finally {
       setPwaCheckLoading(false);
+    }
+  };
+
+  const handleToggleAutoPush = async () => {
+    setAutoPushLoading(true);
+
+    try {
+      const nextEnabled = !autoPushEnabled;
+      const res = await fetch(`${BACKEND_URL}/flights/auto-push/config`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          enabled: nextEnabled,
+          intervalMinutes: 30,
+        }),
+      });
+      const json = await res.json();
+
+      if (!res.ok || json.success === false) {
+        throw new Error(json.detail || json.message || "자동 변경 확인 설정 실패");
+      }
+
+      setAutoPushEnabled(Boolean(json.enabled));
+      setAutoPushStatusMessage(json.lastMessage || (nextEnabled ? "자동 변경 확인이 켜졌습니다." : "자동 변경 확인이 꺼졌습니다."));
+      setPwaStatusMessage(nextEnabled ? "자동 변경 확인을 켰습니다. 기본 30분 간격으로 확인합니다." : "자동 변경 확인을 껐습니다.");
+    } catch (error) {
+      setPwaStatusMessage(error instanceof Error ? error.message : "자동 변경 확인 설정 중 오류가 발생했습니다.");
+    } finally {
+      setAutoPushLoading(false);
     }
   };
 
@@ -1216,9 +1267,13 @@ export default function HomePage() {
           loading={pwaLoading}
           testLoading={pwaTestLoading}
           checkLoading={pwaCheckLoading}
+          autoEnabled={autoPushEnabled}
+          autoLoading={autoPushLoading}
+          autoStatusMessage={autoPushStatusMessage}
           onEnable={handleEnablePwaPush}
           onSendTest={handleSendTestPush}
           onCheckSchedule={handleCheckScheduleAndPush}
+          onToggleAuto={handleToggleAutoPush}
         />
 
         <DailyRecordCard

@@ -8,9 +8,13 @@ type PwaNotificationCardProps = {
   loading: boolean;
   testLoading: boolean;
   checkLoading: boolean;
+  autoEnabled: boolean;
+  autoLoading: boolean;
+  autoStatusMessage: string;
   onEnable: () => void;
   onSendTest: () => void;
   onCheckSchedule: () => void;
+  onToggleAuto: () => void;
 };
 
 export function PwaNotificationCard({
@@ -19,9 +23,13 @@ export function PwaNotificationCard({
   loading,
   testLoading,
   checkLoading,
+  autoEnabled,
+  autoLoading,
+  autoStatusMessage,
   onEnable,
   onSendTest,
   onCheckSchedule,
+  onToggleAuto,
 }: PwaNotificationCardProps) {
   return (
     <section style={cardStyle}>
@@ -59,10 +67,23 @@ export function PwaNotificationCard({
         >
           {checkLoading ? "변경 확인 중..." : "Schedule Flight 변경 확인"}
         </button>
+        <button
+          onClick={onToggleAuto}
+          disabled={autoLoading || permissionLabel !== "허용됨"}
+          style={autoLoading || permissionLabel !== "허용됨" ? disabledButtonStyle : autoEnabled ? dangerButtonStyle : successButtonStyle}
+        >
+          {autoLoading ? "자동 확인 설정 중..." : autoEnabled ? "자동 변경 확인 끄기" : "자동 변경 확인 켜기"}
+        </button>
+      </div>
+
+      <div style={autoStatusStyle}>
+        자동 확인 상태: {autoEnabled ? "켜짐" : "꺼짐"}
+        <br />
+        {autoStatusMessage || "기본 30분 간격으로 변경 여부를 확인합니다."}
       </div>
 
       <div style={helpTextStyle}>
-        이번 단계는 버튼을 눌렀을 때만 Schedule Flight 변경을 확인하고, 변경이 있으면 실제 푸시를 발송합니다.
+        자동 확인은 서버가 저부하 모드로 주기 확인하며, 변경이 있을 때만 실제 푸시를 발송합니다.
       </div>
     </section>
   );
@@ -162,12 +183,33 @@ const accentButtonStyle: CSSProperties = {
   background: "#2563eb",
 };
 
+const successButtonStyle: CSSProperties = {
+  ...primaryButtonStyle,
+  background: "#16a34a",
+};
+
+const dangerButtonStyle: CSSProperties = {
+  ...primaryButtonStyle,
+  background: "#dc2626",
+};
+
 const disabledButtonStyle: CSSProperties = {
   ...primaryButtonStyle,
   background: "#334155",
   color: "#94a3b8",
   cursor: "not-allowed",
   opacity: 0.72,
+};
+
+const autoStatusStyle: CSSProperties = {
+  color: "#bfdbfe",
+  fontSize: 13,
+  lineHeight: 1.5,
+  marginTop: 12,
+  padding: 12,
+  border: "1px solid rgba(96, 165, 250, 0.24)",
+  borderRadius: 12,
+  background: "rgba(15, 23, 42, 0.44)",
 };
 
 const helpTextStyle: CSSProperties = {

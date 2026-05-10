@@ -56,11 +56,8 @@ function FlightRouteRows({ room }: { room: MonitorRoom | null }) {
           <div key={`${item.flight}-${item.route}`} style={flightRouteRowStyle}>
             <span style={flightRouteNoStyle}>{item.flight}</span>
             <span style={flightRouteValueStyle}>{item.route}</span>
-            <span style={flightRouteStatusStyle}>
-              {item.status}
-            </span>
             <span style={flightRouteMetaStyle}>
-              {item.time}
+              {item.status} · {item.time}
             </span>
           </div>
         ))
@@ -200,13 +197,6 @@ const syncStatusStyle: CSSProperties = {
   textAlign: "right",
 };
 
-const flightRouteStatusStyle: CSSProperties = {
-  color: "#fbbf24",
-  fontSize: 13,
-  fontWeight: 950,
-  textAlign: "center",
-};
-
 const cardStyle: CSSProperties = {
   background: "#111827",
   border: "1px solid #26374f",
@@ -269,7 +259,7 @@ const flightRouteOnlyBlockStyle: CSSProperties = {
 
 const flightRouteRowStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "76px 1fr auto",
+  gridTemplateColumns: "76px minmax(82px, 1fr) minmax(150px, auto)",
   gap: 10,
   alignItems: "center",
   color: "#f8fafc",
@@ -291,7 +281,7 @@ const flightRouteValueStyle: CSSProperties = {
 const flightRouteMetaStyle: CSSProperties = {
   color: "#93c5fd",
   fontSize: 12,
-  fontWeight: 850,
+  fontWeight: 900,
   textAlign: "right",
   whiteSpace: "nowrap",
 };

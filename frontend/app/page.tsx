@@ -461,6 +461,10 @@ export default function HomePage() {
     router.push("/flights");
   };
 
+  const handleRefreshLatestSchedule = () => {
+    setNotice("최신 정보 조회는 다음 단계에서 KJ 전체 조회 방식과 함께 연결합니다. 지금은 편명조회 열기에서 기존 조회를 사용하세요.");
+  };
+
   async function fetchWeather() {
     setWeatherLoading(true);
     try {
@@ -950,18 +954,19 @@ export default function HomePage() {
       </section>
 
       <section style={stackStyle}>
-        <ActionCard
-          label="오늘 KJ 화물기 조회"
-          title="오늘 KJ 화물기 조회"
-          description="편명, 출발·도착, 변경시간, 게이트 정보를 확인합니다."
-          buttonLabel="편명조회 열기"
-          onClick={openFlights}
-          accent="#2563eb"
-        />
-
         <ScheduleSummaryCard
           latestRoom={latestRoom}
           onOpenScheduleFlight={openScheduleFlight}
+          onRefreshLatestSchedule={handleRefreshLatestSchedule}
+        />
+
+        <ActionCard
+          label="오늘 KJ 화물기 조회"
+          title="오늘 KJ 화물기 조회"
+          description="편명 직접 조회는 유지하고, 다음 단계에서 KJ 전체 24시간 조회와 선택 저장을 추가합니다."
+          buttonLabel="편명조회 열기"
+          onClick={openFlights}
+          accent="#2563eb"
         />
 
         <DailyRecordCard

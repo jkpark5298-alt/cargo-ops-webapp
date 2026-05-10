@@ -6,11 +6,13 @@ import type { FlightRow, MonitorRoom } from "../page";
 type ScheduleSummaryCardProps = {
   latestRoom: MonitorRoom | null;
   onOpenScheduleFlight: () => void;
+  onRefreshLatestSchedule: () => void;
 };
 
 export function ScheduleSummaryCard({
   latestRoom,
   onOpenScheduleFlight,
+  onRefreshLatestSchedule,
 }: ScheduleSummaryCardProps) {
   return (
     <section style={cardStyle}>
@@ -29,9 +31,14 @@ export function ScheduleSummaryCard({
         <InfoRow label="마지막 조회" value={latestRoom?.lastFetchedAt || "-"} />
         <InfoRow label="결과 수" value={`${getRoomRowsCount(latestRoom)}건`} />
       </div>
-      <button onClick={onOpenScheduleFlight} style={secondaryButtonStyle}>
-        최근 Schedule Flight 열기
-      </button>
+      <div style={buttonStackStyle}>
+        <button onClick={onRefreshLatestSchedule} style={refreshButtonStyle}>
+          최신 정보 조회
+        </button>
+        <button onClick={onOpenScheduleFlight} style={secondaryButtonStyle}>
+          최근 Schedule Flight 열기
+        </button>
+      </div>
     </section>
   );
 }
@@ -246,6 +253,24 @@ const flightRouteMetaStyle: CSSProperties = {
   whiteSpace: "nowrap",
 };
 
+const buttonStackStyle: CSSProperties = {
+  display: "grid",
+  gap: 10,
+  marginTop: 14,
+};
+
+const refreshButtonStyle: CSSProperties = {
+  width: "100%",
+  minHeight: 58,
+  border: "1px solid rgba(147, 197, 253, 0.34)",
+  borderRadius: 16,
+  color: "#dbeafe",
+  background: "#0f172a",
+  fontSize: 17,
+  fontWeight: 950,
+  cursor: "pointer",
+};
+
 const secondaryButtonStyle: CSSProperties = {
   width: "100%",
   minHeight: 58,
@@ -256,5 +281,4 @@ const secondaryButtonStyle: CSSProperties = {
   fontSize: 17,
   fontWeight: 950,
   cursor: "pointer",
-  marginTop: 14,
 };

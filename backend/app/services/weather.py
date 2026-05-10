@@ -8,9 +8,9 @@ import httpx
 
 KST = timezone(timedelta(hours=9))
 
-# Incheon International Airport approximate coordinates.
-INCHEON_AIRPORT_LAT = 37.4602
-INCHEON_AIRPORT_LON = 126.4407
+# Incheon Jung-gu Unseo-dong approximate coordinates.
+UNSEO_DONG_LAT = 37.4923
+UNSEO_DONG_LON = 126.4930
 AIRKOREA_STATIONS = [
     os.getenv("AIRKOREA_STATION_NAME", "운서"),
     "영종",
@@ -20,7 +20,7 @@ AIRKOREA_STATIONS = [
 MOCK_WEATHER = {
     "success": False,
     "source": "fallback",
-    "location": "인천국제공항",
+    "location": "인천시 중구 운서동",
     "temperature": "19.6",
     "condition": "맑음",
     "feelsLike": "18.0",
@@ -147,7 +147,7 @@ async def _fetch_kma_weather(client: httpx.AsyncClient) -> dict[str, Any]:
     nx = int(os.getenv("WEATHER_NX") or 0)
     ny = int(os.getenv("WEATHER_NY") or 0)
     if nx <= 0 or ny <= 0:
-        nx, ny = _to_kma_grid(INCHEON_AIRPORT_LAT, INCHEON_AIRPORT_LON)
+        nx, ny = _to_kma_grid(UNSEO_DONG_LAT, UNSEO_DONG_LON)
 
     base_date, base_time = _latest_ultra_base()
     common_params = {
@@ -277,7 +277,7 @@ async def get_current_weather() -> dict[str, Any]:
         except Exception as exc:
             errors.append(f"air: {exc}")
 
-    result["location"] = "인천국제공항"
+    result["location"] = "인천시 중구 운서동"
     result["uvGrade"] = _uv_grade()
     result["sunset"] = _sunset_text()
     if errors:

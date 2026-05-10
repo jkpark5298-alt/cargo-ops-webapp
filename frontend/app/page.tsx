@@ -37,6 +37,15 @@ import {
   saveIssueNotionRecord,
   saveNote,
 } from "./lib/local-storage";
+import {
+  deleteDailyRecord,
+  deleteIssueRecord,
+  getNotionLinks,
+  saveDailyRecord,
+  saveIssueRecord,
+  updateDailyRecord,
+  updateIssueRecord,
+} from "./lib/notion-api";
 
 const STORAGE_KEY = "cargo_ops_monitor_rooms_v6";
 
@@ -620,17 +629,7 @@ export default function HomePage() {
 
   const handleSaveDailyToNotion = async () => {
     try {
-      const response = await fetch(`${BACKEND_URL}/notion/daily-records`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildDailyPayload()),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok || result?.success === false) {
-        throw new Error(result?.detail || result?.message || "Notion 저장 실패");
-      }
+      const result = await saveDailyRecord(buildDailyPayload());
 
       const record = {
         pageId: result.pageId,
@@ -653,20 +652,7 @@ export default function HomePage() {
     }
 
     try {
-      const response = await fetch(
-        `${BACKEND_URL}/notion/daily-records/${encodeURIComponent(dailyNotionRecord.pageId)}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(buildDailyPayload()),
-        },
-      );
-
-      const result = await response.json();
-
-      if (!response.ok || result?.success === false) {
-        throw new Error(result?.detail || result?.message || "Notion 수정 실패");
-      }
+      const result = await updateDailyRecord(dailyNotionRecord.pageId, buildDailyPayload());
 
       const nextRecord = {
         ...dailyNotionRecord,
@@ -692,18 +678,7 @@ export default function HomePage() {
     if (!confirmed) return;
 
     try {
-      const response = await fetch(
-        `${BACKEND_URL}/notion/daily-records/${encodeURIComponent(dailyNotionRecord.pageId)}`,
-        {
-          method: "DELETE",
-        },
-      );
-
-      const result = await response.json();
-
-      if (!response.ok || result?.success === false) {
-        throw new Error(result?.detail || result?.message || "Notion 삭제 실패");
-      }
+      await deleteDailyRecord(dailyNotionRecord.pageId);
 
       clearDailyNotionRecord();
       setDailyNotionRecord(null);
@@ -791,17 +766,7 @@ export default function HomePage() {
     if (!validateIssueForm()) return;
 
     try {
-      const response = await fetch(`${BACKEND_URL}/notion/issue-records`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(buildIssuePayload()),
-      });
-
-      const result = await response.json();
-
-      if (!response.ok || result?.success === false) {
-        throw new Error(result?.detail || result?.message || "Notion 저장 실패");
-      }
+      const result = await saveIssueRecord(buildIssuePayload());
 
       const record = {
         pageId: result.pageId,
@@ -826,20 +791,7 @@ export default function HomePage() {
     if (!validateIssueForm()) return;
 
     try {
-      const response = await fetch(
-        `${BACKEND_URL}/notion/issue-records/${encodeURIComponent(issueNotionRecord.pageId)}`,
-        {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(buildIssuePayload()),
-        },
-      );
-
-      const result = await response.json();
-
-      if (!response.ok || result?.success === false) {
-        throw new Error(result?.detail || result?.message || "Notion 수정 실패");
-      }
+      const result = await updateIssueRecord(issueNotionRecord.pageId, buildIssuePayload());
 
       const nextRecord = {
         ...issueNotionRecord,
@@ -865,18 +817,7 @@ export default function HomePage() {
     if (!confirmed) return;
 
     try {
-      const response = await fetch(
-        `${BACKEND_URL}/notion/issue-records/${encodeURIComponent(issueNotionRecord.pageId)}`,
-        {
-          method: "DELETE",
-        },
-      );
-
-      const result = await response.json();
-
-      if (!response.ok || result?.success === false) {
-        throw new Error(result?.detail || result?.message || "Notion 삭제 실패");
-      }
+      await deleteIssueRecord(issueNotionRecord.pageId);
 
       clearIssueNotionRecord();
       setIssueNotionRecord(null);
@@ -897,15 +838,7 @@ export default function HomePage() {
 
   const openNotionDatabase = async (target: "daily" | "issue") => {
     try {
-      const response = await fetch(`${BACKEND_URL}/notion/links`, {
-        cache: "no-store",
-      });
-      const result = await response.json();
-
-      if (!response.ok || result?.success === false) {
-        throw new Error(result?.detail || result?.message || "Notion DB 링크를 불러오지 못했습니다.");
-      }
-
+      const result = await getNotionLinks();
       const url = target === "daily" ? result.dailyDbUrl : result.issueDbUrl;
 
       if (!url) {

@@ -234,8 +234,7 @@ function formatDateTime(value?: string) {
 
 function getLatestScheduleRoom(rooms: MonitorRoom[]) {
   const fixedRooms = rooms.filter((room) => room.fixed);
-  if (fixedRooms.length > 0) return fixedRooms[0];
-  return rooms[0] || null;
+  return fixedRooms[0] || null;
 }
 
 function getFlightSummary(room: MonitorRoom | null) {

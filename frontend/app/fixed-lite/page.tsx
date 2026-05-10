@@ -497,36 +497,56 @@ export default function FixedLitePage() {
       return;
     }
 
+    const completedSet = getCompletedFlightSetFromRows(room.rows || []);
+    const activeFlights = requestedFlights.filter((flight) => !completedSet.has(flight));
+
     setLoading(true);
     setError("");
 
     try {
-      const res = await fetch(`${BACKEND_URL}/flights/`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        cache: "no-store",
-        body: JSON.stringify({
-          flights: requestedFlights,
-          start: room.startDateTime,
-          end: room.endDateTime,
-        }),
-      });
+      let nextRows: FlightRow[] = room.rows || [];
+      let refreshIntervalMinutes = DEFAULT_REFRESH_MINUTES;
 
-      const json = (await res.json()) as {
-        success?: boolean;
-        data?: FlightRow[];
-        message?: string;
-        detail?: string;
-        refreshIntervalMinutes?: number;
-      };
+      if (activeFlights.length > 0) {
+        const res = await fetch(`${BACKEND_URL}/flights/`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          cache: "no-store",
+          body: JSON.stringify({
+            flights: activeFlights,
+            start: room.startDateTime,
+            end: room.endDateTime,
+          }),
+        });
 
-      if (!res.ok || json.success === false) {
-        throw new Error(json.message || json.detail || `요약 조회에 실패했습니다. (${res.status})`);
+        const json = (await res.json()) as {
+          success?: boolean;
+          data?: FlightRow[];
+          message?: string;
+          detail?: string;
+          refreshIntervalMinutes?: number;
+        };
+
+        if (!res.ok || json.success === false) {
+          throw new Error(json.message || json.detail || `요약 조회에 실패했습니다. (${res.status})`);
+        }
+
+        refreshIntervalMinutes = json.refreshIntervalMinutes || DEFAULT_REFRESH_MINUTES;
+        const refreshedRows = Array.isArray(json.data) ? json.data : [];
+        const refreshedFlightSet = new Set(
+          refreshedRows
+            .map((row) => row.flightId || row.flightNo || "")
+            .filter(Boolean)
+        );
+        const rowsToKeep = (room.rows || []).filter((row) => {
+          const flight = row.flightId || row.flightNo || "";
+          return isFinalCompletedStatus(getComputedStatus(row)) && !refreshedFlightSet.has(flight);
+        });
+        nextRows = [...rowsToKeep, ...refreshedRows];
       }
 
-      const nextRows = Array.isArray(json.data) ? json.data : [];
       const latestRowMap = getLatestRowsByFlight(nextRows);
       const nextItems = requestedFlights.map((flight) => {
         const latestRow = latestRowMap.get(flight)?.row;
@@ -568,7 +588,7 @@ export default function FixedLitePage() {
         roomId: room.id,
         roomName: room.name,
         updatedAt: new Date().toISOString(),
-        refreshIntervalMinutes: json.refreshIntervalMinutes || DEFAULT_REFRESH_MINUTES,
+        refreshIntervalMinutes,
         items: nextItems,
       };
 
@@ -629,7 +649,26 @@ export default function FixedLitePage() {
               letterSpacing: -0.3,
             }}
           >
-            FIXED Lite
+            Schedule Lite
+          </div>
+
+          <div style={{ display: "flex", gap: 8, flexWrap: "wrap", marginBottom: 10 }}>
+            <button
+              onClick={() => {
+                window.location.href = "/";
+              }}
+              style={homeButtonStyle}
+            >
+              초기화면으로
+            </button>
+            <button
+              onClick={() => {
+                window.location.href = backToFlightsHref;
+              }}
+              style={homeButtonStyle}
+            >
+              편명조회로
+            </button>
           </div>
 
           <div style={{ color: "#b8c7db", fontSize: 13, lineHeight: 1.5 }}>
@@ -641,14 +680,14 @@ export default function FixedLitePage() {
 
         <section style={sectionStyle}>
           <div style={{ fontSize: 15, fontWeight: 800, marginBottom: 12 }}>
-            FIXED ROOM 선택
+            Schedule Flight 선택
           </div>
 
           {fixedRooms.length === 0 ? (
             <div style={{ color: "#b8c7db", fontSize: 14 }}>
-              저장된 FIXED ROOM이 없습니다.
+              저장된 Schedule Flight가 없습니다.
               <br />
-              먼저 편명 조회 화면에서 FIXED ROOM을 저장해 주세요.
+              먼저 편명 조회 화면에서 Schedule Flight를 선택 저장해 주세요.
             </div>
           ) : (
             <div
@@ -738,7 +777,7 @@ export default function FixedLitePage() {
                     }}
                     style={backBtnStyle}
                   >
-                    FIXED ROOM으로 돌아가기
+                    편명조회로 돌아가기
                   </button>
                 </div>
               </div>
@@ -931,6 +970,17 @@ export default function FixedLitePage() {
     </div>
   );
 }
+
+const homeButtonStyle: CSSProperties = {
+  padding: "9px 12px",
+  borderRadius: 10,
+  border: "1px solid rgba(147, 197, 253, 0.34)",
+  background: "#0f172a",
+  color: "#dbeafe",
+  fontSize: 13,
+  fontWeight: 800,
+  cursor: "pointer",
+};
 
 const sectionStyle: CSSProperties = {
   background: "#0a1528",

@@ -285,6 +285,35 @@ function getUniqueFlightInputs(rows: FlightRow[]) {
   return flights;
 }
 
+function getActiveRefreshFlights(room: MonitorRoom) {
+  const requestedFlights = normalizeFlightsInput(room.flightsInput);
+  if (!Array.isArray(room.rows) || room.rows.length === 0) return requestedFlights;
+
+  const finalFlightSet = new Set(
+    room.rows
+      .filter(isFinalCompletedRow)
+      .map((row) => getFlightDisplay(row).replace(/\s+/g, "").toUpperCase())
+      .filter(Boolean),
+  );
+
+  return requestedFlights.filter((flight) => !finalFlightSet.has(flight));
+}
+
+function mergeRowsKeepFinal(previousRows: FlightRow[], refreshedRows: FlightRow[]) {
+  const refreshedFlightSet = new Set(
+    refreshedRows
+      .map((row) => getFlightDisplay(row).replace(/\s+/g, "").toUpperCase())
+      .filter(Boolean),
+  );
+
+  const finalRowsToKeep = previousRows.filter((row) => {
+    const flight = getFlightDisplay(row).replace(/\s+/g, "").toUpperCase();
+    return isFinalCompletedRow(row) && !refreshedFlightSet.has(flight);
+  });
+
+  return [...finalRowsToKeep, ...refreshedRows];
+}
+
 function normalizeFlightsInput(rawInput: string) {
   return rawInput
     .split(/[\s,\n,]+/)
@@ -590,7 +619,7 @@ export default function FlightsPage() {
   };
 
   const switchToManualMode = () => {
-    setQueryMode("manual");
+    setQueryMode(room.fixed ? "kj-all" : "manual");
     if (input === "KJ 전체") setInput("");
     resetLookupView();
   };
@@ -635,27 +664,33 @@ export default function FlightsPage() {
     setError("");
 
     try {
-      const flights = normalizeFlightsInput(room.flightsInput);
+      const activeFlights = getActiveRefreshFlights(room);
+      let nextRows: FlightRow[];
 
-      const res = await fetch(`${BACKEND_URL}/flights/`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          flights,
-          start: room.startDateTime,
-          end: room.endDateTime,
-        }),
-      });
+      if (activeFlights.length === 0) {
+        nextRows = room.rows || [];
+      } else {
+        const res = await fetch(`${BACKEND_URL}/flights/`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            flights: activeFlights,
+            start: room.startDateTime,
+            end: room.endDateTime,
+          }),
+        });
 
-      const json = await res.json();
+        const json = await res.json();
 
-      if (!res.ok || json.success === false) {
-        throw new Error(json.message || json.detail || `서버 오류 (${res.status})`);
+        if (!res.ok || json.success === false) {
+          throw new Error(json.message || json.detail || `서버 오류 (${res.status})`);
+        }
+
+        nextRows = mergeRowsKeepFinal(room.rows || [], json.data || []);
       }
 
-      const nextRows = json.data || [];
       const fetchedAt = new Date().toLocaleString("ko-KR");
       const updatedRoom: MonitorRoom = {
         ...room,
@@ -906,11 +941,10 @@ export default function FlightsPage() {
     saveRooms(nextRooms);
     setSelectedRoomId(newRoom.id);
     setInput(newRoom.flightsInput);
-    setFixed(true);
-    setRows(selectedScheduleRows);
+    setFixed(false);
     setSelectedScheduleKeys({});
     setExpandedDetailKeys({});
-    setError("");
+    setError("선택한 Schedule Flight를 저장했습니다. 현재 화면에는 조회 범위의 전체 KJ 결과를 계속 표시합니다.");
   };
 
   const refreshSelectedRoom = async () => {
@@ -992,9 +1026,9 @@ export default function FlightsPage() {
     }));
   };
 
-  const openFixedLite = () => {
+  const openScheduleLite = () => {
     if (!selectedRoom) {
-      setError("선택된 Monitor가 없습니다.");
+      setError("선택된 Schedule Flight가 없습니다.");
       return;
     }
 
@@ -1102,7 +1136,7 @@ export default function FlightsPage() {
                       marginTop: 4,
                     }}
                   >
-                    {room.fixed ? "FIXED" : "일반"}
+                    {room.fixed ? "Schedule Flight" : "일반"}
                   </div>
 
                   <div
@@ -1150,7 +1184,12 @@ export default function FlightsPage() {
       </aside>
 
       <main style={{ flex: 1, padding: 40 }}>
-        <h2 style={{ fontSize: 28, marginBottom: 20 }}>✈️ 편명 조회</h2>
+        <div style={{ display: "flex", justifyContent: "space-between", gap: 12, alignItems: "center", flexWrap: "wrap" }}>
+          <h2 style={{ fontSize: 28, marginBottom: 20 }}>✈️ 편명 조회</h2>
+          <button onClick={() => router.push("/")} style={homeButtonStyle}>
+            초기화면으로
+          </button>
+        </div>
 
         <div style={{ display: "flex", gap: 10, marginTop: 20, flexWrap: "wrap" }}>
           <button
@@ -1262,7 +1301,7 @@ export default function FlightsPage() {
 
         {isSelectedFixedRoom && (
           <div style={{ marginTop: 14, color: "#93c5fd", fontSize: 14 }}>
-            FIXED ROOM 선택 중입니다. 조회 기간은 아래 상세 영역에서 수정합니다.
+            Schedule Flight 선택 중입니다. 조회 기간은 아래 상세 영역에서 수정합니다.
           </div>
         )}
 
@@ -1281,7 +1320,7 @@ export default function FlightsPage() {
             onClick={handleToggleFixed}
             style={fixed ? fixedOnBtn : fixedOffBtn}
           >
-            FIXED
+            Schedule Flight
           </button>
 
           <button
@@ -1295,7 +1334,7 @@ export default function FlightsPage() {
 
         {fixed && (
           <div style={{ marginTop: 6, color: "#facc15", fontSize: 14 }}>
-            FIXED 상태: 기본 6개 정보만 표시되며, D를 눌러 상세 12개 정보를 확인합니다.
+            Schedule Flight 관리 상태: 기본 6개 정보만 표시되며, D를 눌러 상세 정보를 확인합니다.
           </div>
         )}
 
@@ -1366,7 +1405,7 @@ export default function FlightsPage() {
                   마지막 조회: {selectedRoom.lastFetchedAt || "-"}
                 </div>
                 <div style={{ color: selectedRoom.fixed ? "#facc15" : "#cbd5e1", marginBottom: 12 }}>
-                  상태: {selectedRoom.fixed ? "FIXED" : "일반"}
+                  상태: {selectedRoom.fixed ? "Schedule Flight" : "일반"}
                 </div>
 
                 {selectedRoom.fixed && (
@@ -1380,7 +1419,7 @@ export default function FlightsPage() {
                     }}
                   >
                     <div style={{ fontWeight: 800, marginBottom: 12, color: "#e5edf7" }}>
-                      FIXED ROOM 조회 기간 수정
+                      Schedule Flight 조회 기간 수정
                     </div>
 
                     <div
@@ -1434,7 +1473,7 @@ export default function FlightsPage() {
                       PC 화면은 자동조회하지 않습니다.
                     </div>
                     <div style={{ color: "#93c5fd", marginTop: 4, fontSize: 13 }}>
-                      자동조회는 FIXED Lite에서만 {REFRESH_INTERVAL_MINUTES}분마다 적용됩니다.
+                      자동조회는 Schedule Lite에서만 {REFRESH_INTERVAL_MINUTES}분마다 적용됩니다.
                     </div>
                   </div>
                 )}
@@ -1467,11 +1506,11 @@ export default function FlightsPage() {
                   </button>
 
                   <button
-                    onClick={openFixedLite}
-                    style={fixedLiteLinkBtn}
-                    title="아이폰용 FIXED Lite 화면 열기"
+                    onClick={openScheduleLite}
+                    style={scheduleLiteLinkBtn}
+                    title="아이폰용 Schedule Lite 화면 열기"
                   >
-                    FIXED Lite 열기
+                    Schedule Lite 열기
                   </button>
                 </div>
               </div>
@@ -1591,6 +1630,16 @@ export default function FlightsPage() {
     </div>
   );
 }
+
+const homeButtonStyle: CSSProperties = {
+  padding: "10px 14px",
+  background: "#0f172a",
+  color: "#dbeafe",
+  border: "1px solid rgba(147, 197, 253, 0.34)",
+  borderRadius: 8,
+  cursor: "pointer",
+  fontWeight: 800,
+};
 
 const thStyle: CSSProperties = {
   borderBottom: "1px solid #334155",
@@ -1741,7 +1790,7 @@ const refreshBtn: CSSProperties = {
   fontWeight: 700,
 };
 
-const fixedLiteLinkBtn: CSSProperties = {
+const scheduleLiteLinkBtn: CSSProperties = {
   flex: 1,
   minWidth: 160,
   display: "inline-flex",

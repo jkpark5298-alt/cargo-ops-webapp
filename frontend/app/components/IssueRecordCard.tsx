@@ -30,6 +30,7 @@ type IssueRecordCardProps = {
   issueText: string;
   setIssueText: Dispatch<SetStateAction<string>>;
   issueNotionRecord: IssueNotionRecord | null;
+  isIssueSaving: boolean;
   handleSaveIssueToNotion: () => void;
   handleUpdateIssueToNotion: () => void;
   handleDeleteIssueFromNotion: () => void;
@@ -59,6 +60,7 @@ export function IssueRecordCard({
   issueText,
   setIssueText,
   issueNotionRecord,
+  isIssueSaving,
   handleSaveIssueToNotion,
   handleUpdateIssueToNotion,
   handleDeleteIssueFromNotion,
@@ -172,8 +174,12 @@ export function IssueRecordCard({
         </div>
       ) : (
         <div style={buttonStackStyle}>
-          <button onClick={handleSaveIssueToNotion} style={orangeButtonStyle}>
-            Notion 특이사항 저장
+          <button
+            onClick={handleSaveIssueToNotion}
+            disabled={isIssueSaving}
+            style={isIssueSaving ? disabledButtonStyle : orangeButtonStyle}
+          >
+            {isIssueSaving ? "Notion 특이사항 저장 중..." : "Notion 특이사항 저장"}
           </button>
           <button onClick={() => openNotionDatabase("issue")} style={darkButtonStyle}>
             Notion 특이사항 DB 열기
@@ -292,6 +298,19 @@ const orangeButtonStyle: CSSProperties = {
   fontSize: 15,
   fontWeight: 900,
   cursor: "pointer",
+};
+
+const disabledButtonStyle: CSSProperties = {
+  width: "100%",
+  padding: "13px 14px",
+  borderRadius: 14,
+  border: "1px solid #475569",
+  background: "#334155",
+  color: "#94a3b8",
+  fontSize: 15,
+  fontWeight: 900,
+  cursor: "not-allowed",
+  opacity: 0.72,
 };
 
 const notionIssueSavedBoxStyle: CSSProperties = {

@@ -36,6 +36,10 @@ import {
   saveImages,
   saveIssueNotionRecord,
   saveNote,
+  getLastDailySaveSignature,
+  getLastIssueSaveSignature,
+  saveLastDailySaveSignature,
+  saveLastIssueSaveSignature,
 } from "./lib/local-storage";
 import {
   deleteDailyRecord,
@@ -344,8 +348,6 @@ export default function HomePage() {
   const router = useRouter();
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
   const libraryInputRef = useRef<HTMLInputElement | null>(null);
-  const dailySavingRef = useRef(false);
-  const issueSavingRef = useRef(false);
   const pendingImageSlotRef = useRef<ImageSlotKey>("daily-schedule");
   const [rooms, setRooms] = useState<MonitorRoom[]>([]);
   const [images, setImages] = useState<SavedImage[]>([]);
@@ -605,6 +607,18 @@ export default function HomePage() {
     );
   };
 
+  const makeSaveSignature = (payload: unknown) => JSON.stringify(payload);
+
+  const isRecentSameSave = (
+    previous: { signature: string; savedAt: number } | null,
+    signature: string,
+  ) => {
+    if (!previous) return false;
+    const elapsedMs = Date.now() - previous.savedAt;
+    return previous.signature === signature && elapsedMs < 10 * 60 * 1000;
+  };
+
+
   const buildDailyPayload = () => {
     const dailyImages = IMAGE_SLOTS.map((slot) => {
       const image = getImageBySlot(images, slot.key);
@@ -640,10 +654,19 @@ export default function HomePage() {
       return;
     }
 
+    const payload = buildDailyPayload();
+    const signature = makeSaveSignature(payload);
+
+    if (isRecentSameSave(getLastDailySaveSignature(), signature)) {
+      setNotice("방금 같은 일일 업무 기록을 저장했습니다. 중복 저장을 막았습니다.");
+      return;
+    }
+
     dailySavingRef.current = true;
+    setIsDailySaving(true);
 
     try {
-      const result = await saveDailyRecord(buildDailyPayload());
+      const result = await saveDailyRecord(payload);
 
       const record = {
         pageId: result.pageId,
@@ -653,11 +676,13 @@ export default function HomePage() {
 
       setDailyNotionRecord(record);
       saveDailyNotionRecord(record);
+      saveLastDailySaveSignature({ signature, savedAt: Date.now() });
       setNotice("Notion에 일일 업무 기록을 저장했습니다.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Notion 저장 중 오류가 발생했습니다.");
     } finally {
       dailySavingRef.current = false;
+      setIsDailySaving(false);
     }
   };
 
@@ -791,10 +816,19 @@ export default function HomePage() {
 
     if (!validateIssueForm()) return;
 
+    const payload = buildIssuePayload();
+    const signature = makeSaveSignature(payload);
+
+    if (isRecentSameSave(getLastIssueSaveSignature(), signature)) {
+      setNotice("방금 같은 특이사항 기록을 저장했습니다. 중복 저장을 막았습니다.");
+      return;
+    }
+
     issueSavingRef.current = true;
+    setIsIssueSaving(true);
 
     try {
-      const result = await saveIssueRecord(buildIssuePayload());
+      const result = await saveIssueRecord(payload);
 
       const record = {
         pageId: result.pageId,
@@ -804,11 +838,13 @@ export default function HomePage() {
 
       setIssueNotionRecord(record);
       saveIssueNotionRecord(record);
+      saveLastIssueSaveSignature({ signature, savedAt: Date.now() });
       setNotice("Notion에 특이사항 기록을 저장했습니다.");
     } catch (error) {
       setNotice(error instanceof Error ? error.message : "Notion 저장 중 오류가 발생했습니다.");
     } finally {
       issueSavingRef.current = false;
+      setIsIssueSaving(false);
     }
   };
 
@@ -942,6 +978,7 @@ export default function HomePage() {
           note={note}
           setNote={setNote}
           dailyNotionRecord={dailyNotionRecord}
+          isDailySaving={isDailySaving}
           handleSaveDailyDraft={handleSaveDailyDraft}
           handleSaveDailyToNotion={handleSaveDailyToNotion}
           handleUpdateDailyToNotion={handleUpdateDailyToNotion}
@@ -973,6 +1010,7 @@ export default function HomePage() {
             issueText={issueText}
             setIssueText={setIssueText}
             issueNotionRecord={issueNotionRecord}
+            isIssueSaving={isIssueSaving}
             handleSaveIssueToNotion={handleSaveIssueToNotion}
             handleUpdateIssueToNotion={handleUpdateIssueToNotion}
             handleDeleteIssueFromNotion={handleDeleteIssueFromNotion}

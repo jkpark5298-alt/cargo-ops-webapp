@@ -12,6 +12,8 @@ const IMAGE_STORAGE_KEY = "cargo_ops_home_images_v1";
 const NOTE_STORAGE_KEY = "cargo_ops_home_note_v1";
 const DAILY_NOTION_RECORD_KEY = "cargo_ops_daily_notion_record_v1";
 const ISSUE_NOTION_RECORD_KEY = "cargo_ops_issue_notion_record_v1";
+const DAILY_SAVE_SIGNATURE_KEY = "cargo_ops_daily_save_signature_v1";
+const ISSUE_SAVE_SIGNATURE_KEY = "cargo_ops_issue_save_signature_v1";
 
 export function loadImages(): SavedImage[] {
   if (typeof window === "undefined") return [];
@@ -87,4 +89,46 @@ function saveNotionRecord(key: string, record: NotionRecord) {
 function clearNotionRecord(key: string) {
   if (typeof window === "undefined") return;
   localStorage.removeItem(key);
+}
+
+type SaveSignature = {
+  signature: string;
+  savedAt: number;
+};
+
+export function getLastDailySaveSignature(): SaveSignature | null {
+  return loadSaveSignature(DAILY_SAVE_SIGNATURE_KEY);
+}
+
+export function saveLastDailySaveSignature(signature: SaveSignature) {
+  saveSaveSignature(DAILY_SAVE_SIGNATURE_KEY, signature);
+}
+
+export function getLastIssueSaveSignature(): SaveSignature | null {
+  return loadSaveSignature(ISSUE_SAVE_SIGNATURE_KEY);
+}
+
+export function saveLastIssueSaveSignature(signature: SaveSignature) {
+  saveSaveSignature(ISSUE_SAVE_SIGNATURE_KEY, signature);
+}
+
+function loadSaveSignature(key: string): SaveSignature | null {
+  if (typeof window === "undefined") return null;
+
+  try {
+    const raw = localStorage.getItem(key);
+    if (!raw) return null;
+
+    const parsed = JSON.parse(raw);
+    return typeof parsed?.signature === "string" && typeof parsed?.savedAt === "number"
+      ? parsed
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+function saveSaveSignature(key: string, signature: SaveSignature) {
+  if (typeof window === "undefined") return;
+  localStorage.setItem(key, JSON.stringify(signature));
 }

@@ -39,6 +39,7 @@ type DailyRecordCardProps = {
   note: string;
   setNote: Dispatch<SetStateAction<string>>;
   dailyNotionRecord: DailyNotionRecord | null;
+  isDailySaving: boolean;
   handleSaveDailyDraft: () => void;
   handleSaveDailyToNotion: () => void;
   handleUpdateDailyToNotion: () => void;
@@ -66,6 +67,7 @@ export function DailyRecordCard({
   note,
   setNote,
   dailyNotionRecord,
+  isDailySaving,
   handleSaveDailyDraft,
   handleSaveDailyToNotion,
   handleUpdateDailyToNotion,
@@ -172,8 +174,12 @@ export function DailyRecordCard({
           <button onClick={handleSaveDailyDraft} style={greenButtonStyle}>
             일일 업무 임시 저장
           </button>
-          <button onClick={handleSaveDailyToNotion} style={darkButtonStyle}>
-            Notion 일일 기록 저장
+          <button
+            onClick={handleSaveDailyToNotion}
+            disabled={isDailySaving}
+            style={isDailySaving ? disabledButtonStyle : darkButtonStyle}
+          >
+            {isDailySaving ? "Notion 일일 기록 저장 중..." : "Notion 일일 기록 저장"}
           </button>
           <button onClick={() => openNotionDatabase("daily")} style={darkButtonStyle}>
             Notion 일일 업무 DB 열기
@@ -319,6 +325,14 @@ const darkButtonStyle: CSSProperties = {
   fontSize: 17,
   fontWeight: 950,
   cursor: "pointer",
+};
+
+const disabledButtonStyle: CSSProperties = {
+  ...darkButtonStyle,
+  background: "#334155",
+  color: "#94a3b8",
+  cursor: "not-allowed",
+  opacity: 0.72,
 };
 
 const grayButtonStyle: CSSProperties = {

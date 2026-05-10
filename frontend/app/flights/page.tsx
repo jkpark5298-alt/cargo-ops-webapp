@@ -936,7 +936,7 @@ export default function FlightsPage() {
       rows: selectedScheduleRows,
     };
 
-    const nextRooms = [newRoom, ...rooms];
+    const nextRooms = [newRoom, ...rooms.filter((room) => !room.fixed)];
     setRooms(nextRooms);
     saveRooms(nextRooms);
     setSelectedRoomId(newRoom.id);
@@ -944,7 +944,7 @@ export default function FlightsPage() {
     setFixed(false);
     setSelectedScheduleKeys({});
     setExpandedDetailKeys({});
-    setError("선택한 Schedule Flight를 저장했습니다. 현재 화면에는 조회 범위의 전체 KJ 결과를 계속 표시합니다.");
+    setError("선택한 Schedule Flight를 저장했습니다. 기존 Schedule Flight 방은 새 선택값으로 교체했습니다.");
   };
 
   const refreshSelectedRoom = async () => {

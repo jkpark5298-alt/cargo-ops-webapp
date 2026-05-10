@@ -129,7 +129,7 @@ type WeatherInfo = {
 
 const DEFAULT_WEATHER: WeatherInfo = {
   success: false,
-  location: "인천국제공항",
+  location: "인천시 중구 운서동",
   temperature: "19.6",
   condition: "맑음",
   feelsLike: "18.0",
@@ -233,8 +233,8 @@ function formatDateTime(value?: string) {
 }
 
 function getLatestScheduleRoom(rooms: MonitorRoom[]) {
-  const fixedRooms = rooms.filter((room) => room.fixed);
-  return fixedRooms[0] || null;
+  const scheduleRooms = rooms.filter((room) => room.fixed);
+  return scheduleRooms[0] || null;
 }
 
 function getFlightSummary(room: MonitorRoom | null) {
@@ -398,6 +398,18 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
+    if (!latestRoom) return;
+    if (flightAlertSnapshot?.roomId === latestRoom.id) return;
+
+    const nextSnapshot = buildFlightAlertSnapshot(latestRoom);
+    if (!nextSnapshot) return;
+
+    setFlightAlertSnapshot(nextSnapshot);
+    saveFlightAlertSnapshot(nextSnapshot);
+    setAlertCheckedAt(nextSnapshot.savedAt);
+  }, [latestRoom?.id, flightAlertSnapshot?.roomId]);
+
+  useEffect(() => {
     const route = getRouteByFlight(latestRoom, issueFlight);
     const hlnbr = getHlnbrByFlight(latestRoom, issueFlight);
 
@@ -495,7 +507,7 @@ export default function HomePage() {
 
   const openNaverWeather = () => {
     window.open(
-      "https://search.naver.com/search.naver?query=%EC%9D%B8%EC%B2%9C%EA%B3%B5%ED%95%AD%20%EB%82%A0%EC%94%A8%20%EB%AF%B8%EC%84%B8%EB%A8%BC%EC%A7%80",
+      "https://search.naver.com/search.naver?query=%EC%9D%B8%EC%B2%9C%EC%8B%9C%20%EC%A4%91%EA%B5%AC%20%EC%9A%B4%EC%84%9C%EB%8F%99%20%EB%82%A0%EC%94%A8%20%EB%AF%B8%EC%84%B8%EB%A8%BC%EC%A7%80",
       "_blank",
       "noopener,noreferrer",
     );

@@ -36,8 +36,8 @@ export function WeatherCard({
     <section style={weatherCardStyle}>
       <div style={weatherTopRowStyle}>
         <div>
-          <div style={weatherLabelStyle}>인천공항 날씨</div>
-          <div style={weatherLocationStyle}>{weather.location || "인천국제공항"} 기준</div>
+          <div style={weatherLabelStyle}>운서동 날씨</div>
+          <div style={weatherLocationStyle}>{weather.location || "인천시 중구 운서동"} 기준</div>
         </div>
         <div style={weatherButtonGroupStyle}>
           <button onClick={onRefresh} style={weatherButtonStyle}>
@@ -70,7 +70,7 @@ export function WeatherCard({
 
       <div style={weatherNoteStyle}>
         날씨 기준 {weather.baseTime || "-"}
-        {weather.source === "fallback" ? ` · ${weather.message || "예시값 표시 중"}` : " · 실시간 자동 표시"}
+        {weather.source === "fallback" ? ` · ${weather.message || "예시값 표시 중"}` : " · 백엔드 날씨 API"}
       </div>
     </section>
   );

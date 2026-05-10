@@ -93,6 +93,7 @@ export function createFlightAlertItems(
   snapshot: FlightAlertSnapshot | null,
 ): FlightAlertItem[] {
   if (!room || !snapshot) return [];
+  if (snapshot.roomId !== room.id) return [];
 
   const currentRows = getFlightAlertRows(room);
   const previousRows = snapshot.rows || [];

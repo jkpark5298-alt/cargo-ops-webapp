@@ -7,8 +7,10 @@ type PwaNotificationCardProps = {
   statusMessage: string;
   loading: boolean;
   testLoading: boolean;
+  checkLoading: boolean;
   onEnable: () => void;
   onSendTest: () => void;
+  onCheckSchedule: () => void;
 };
 
 export function PwaNotificationCard({
@@ -16,8 +18,10 @@ export function PwaNotificationCard({
   statusMessage,
   loading,
   testLoading,
+  checkLoading,
   onEnable,
   onSendTest,
+  onCheckSchedule,
 }: PwaNotificationCardProps) {
   return (
     <section style={cardStyle}>
@@ -48,10 +52,17 @@ export function PwaNotificationCard({
         >
           {testLoading ? "테스트 발송 중..." : "테스트 알림 보내기"}
         </button>
+        <button
+          onClick={onCheckSchedule}
+          disabled={checkLoading || permissionLabel !== "허용됨"}
+          style={checkLoading || permissionLabel !== "허용됨" ? disabledButtonStyle : accentButtonStyle}
+        >
+          {checkLoading ? "변경 확인 중..." : "Schedule Flight 변경 확인"}
+        </button>
       </div>
 
       <div style={helpTextStyle}>
-        실제 푸시 발송은 다음 단계에서 Schedule Flight 변경 감지와 연결합니다.
+        이번 단계는 버튼을 눌렀을 때만 Schedule Flight 변경을 확인하고, 변경이 있으면 실제 푸시를 발송합니다.
       </div>
     </section>
   );
@@ -144,6 +155,11 @@ const secondaryButtonStyle: CSSProperties = {
   border: "1px solid rgba(125, 211, 252, 0.34)",
   background: "#0f172a",
   color: "#e0f2fe",
+};
+
+const accentButtonStyle: CSSProperties = {
+  ...primaryButtonStyle,
+  background: "#2563eb",
 };
 
 const disabledButtonStyle: CSSProperties = {

@@ -381,6 +381,7 @@ export default function HomePage() {
   const [pwaStatusMessage, setPwaStatusMessage] = useState("");
   const [pwaLoading, setPwaLoading] = useState(false);
   const [pwaTestLoading, setPwaTestLoading] = useState(false);
+  const [pwaCheckLoading, setPwaCheckLoading] = useState(false);
   const [isDailySaving, setIsDailySaving] = useState(false);
   const [isIssueSaving, setIsIssueSaving] = useState(false);
   const [weather, setWeather] = useState<WeatherInfo>(DEFAULT_WEATHER);
@@ -659,6 +660,43 @@ export default function HomePage() {
       setPwaStatusMessage(error instanceof Error ? error.message : "테스트 알림 발송 중 오류가 발생했습니다.");
     } finally {
       setPwaTestLoading(false);
+    }
+  };
+
+  const handleCheckScheduleAndPush = async () => {
+    setPwaCheckLoading(true);
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/flights/check-schedule-and-push`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+      });
+      const json = await res.json();
+
+      if (!res.ok || json.success === false) {
+        throw new Error(json.detail || json.message || "Schedule Flight 변경 확인 실패");
+      }
+
+      const changed = json.changed ?? 0;
+      const sent = json.sent ?? 0;
+      const failed = json.failed ?? 0;
+      const checked = json.checked ?? 0;
+
+      if (changed > 0) {
+        setPwaStatusMessage(
+          `Schedule Flight 변경 ${changed}건 감지. 푸시 발송 성공 ${sent}건 / 실패 ${failed}건`,
+        );
+        await syncLatestScheduleFromServer(false);
+      } else {
+        setPwaStatusMessage(`Schedule Flight 변경 없음. 재조회 대상 ${checked}건 확인 완료`);
+        await syncLatestScheduleFromServer(false);
+      }
+    } catch (error) {
+      setPwaStatusMessage(error instanceof Error ? error.message : "Schedule Flight 변경 확인 중 오류가 발생했습니다.");
+    } finally {
+      setPwaCheckLoading(false);
     }
   };
 
@@ -1171,8 +1209,10 @@ export default function HomePage() {
           statusMessage={pwaStatusMessage}
           loading={pwaLoading}
           testLoading={pwaTestLoading}
+          checkLoading={pwaCheckLoading}
           onEnable={handleEnablePwaPush}
           onSendTest={handleSendTestPush}
+          onCheckSchedule={handleCheckScheduleAndPush}
         />
 
         <DailyRecordCard

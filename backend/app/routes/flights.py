@@ -256,6 +256,109 @@ def _validate_range(start: str, end: str):
     return start_dt, end_dt, start_date, end_date
 
 
+def _get_flight_key(row: Dict[str, Any]) -> str:
+    return str(row.get("flightId") or row.get("flightNo") or "").strip().upper()
+
+
+def _get_status_text(row: Dict[str, Any]) -> str:
+    values = [
+        row.get("remark"),
+        row.get("status"),
+    ]
+    return " ".join(str(value or "").strip().upper() for value in values)
+
+
+def _get_refresh_exclude_reason(row: Dict[str, Any]) -> str:
+    status_text = _get_status_text(row)
+
+    if "도착" in status_text or "ARRIVED" in status_text:
+        return "도착 확정"
+
+    if "출발" in status_text or "DEPARTED" in status_text:
+        return "출발 확정"
+
+    return ""
+
+
+def _is_refresh_excluded(row: Dict[str, Any]) -> bool:
+    return bool(_get_refresh_exclude_reason(row))
+
+
+def _latest_rows_by_flight(rows: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]]:
+    latest: Dict[str, Dict[str, Any]] = {}
+
+    for row in rows:
+        flight = _get_flight_key(row)
+        if not flight:
+            continue
+
+        current = latest.get(flight)
+        if current is None:
+            latest[flight] = row
+            continue
+
+        current_dt = _get_row_datetime(current)
+        next_dt = _get_row_datetime(row)
+
+        if current_dt is None and next_dt is not None:
+            latest[flight] = row
+        elif current_dt is not None and next_dt is not None and next_dt >= current_dt:
+            latest[flight] = row
+
+    return latest
+
+
+def _display_value(value: Any) -> str:
+    raw = str(value or "").strip()
+    return raw if raw else "-"
+
+
+def _row_changed_fields(previous: Optional[Dict[str, Any]], current: Dict[str, Any]) -> List[str]:
+    if previous is None:
+        return ["신규 조회"]
+
+    checks = [
+        ("예정시각", "formattedScheduleTime"),
+        ("변경시각", "formattedEstimatedTime"),
+        ("상태", "remark"),
+        ("게이트", "gatenumber"),
+        ("터미널", "terminalid"),
+    ]
+
+    changes: List[str] = []
+
+    for label, key in checks:
+        before = _display_value(previous.get(key))
+        after = _display_value(current.get(key))
+
+        if before != after:
+            changes.append(f"{label} {before} → {after}")
+
+    return changes
+
+
+def _format_route(row: Dict[str, Any]) -> str:
+    departure = _display_value(row.get("departureCode"))
+    arrival = _display_value(row.get("arrivalCode"))
+    return f"{departure}→{arrival}"
+
+
+def _merge_latest_rows(
+    existing_rows: List[Dict[str, Any]],
+    updated_rows: List[Dict[str, Any]],
+) -> List[Dict[str, Any]]:
+    merged_by_flight = _latest_rows_by_flight(existing_rows)
+
+    for row in updated_rows:
+        flight = _get_flight_key(row)
+        if flight:
+            merged_by_flight[flight] = row
+
+    merged = list(merged_by_flight.values())
+    merged.sort(key=_get_row_sort_key)
+    return merged
+
+
 def _get_vapid_settings() -> tuple[str, str, str]:
     public_key = os.getenv("WEB_PUSH_PUBLIC_KEY", "").strip()
     private_key = os.getenv("WEB_PUSH_PRIVATE_KEY", "").strip()
@@ -365,6 +468,138 @@ async def send_test_push(payload: TestPushRequest) -> Dict[str, Any]:
         "sent": sent,
         "failed": failed,
         "errors": errors[:3],
+    }
+
+
+@router.post("/check-schedule-and-push")
+async def check_schedule_and_push() -> Dict[str, Any]:
+    room = _read_latest_schedule()
+
+    if not room:
+        raise HTTPException(status_code=400, detail="서버에 저장된 Schedule Flight가 없습니다.")
+
+    existing_rows = room.get("rows") or []
+    if not isinstance(existing_rows, list):
+        existing_rows = []
+
+    start = str(room.get("startDateTime") or "")
+    end = str(room.get("endDateTime") or "")
+    start_dt, end_dt, start_date, end_date = _validate_range(start, end)
+
+    previous_latest = _latest_rows_by_flight(existing_rows)
+    requested_flights = _normalize_flights([str(room.get("flightsInput") or "")])
+
+    active_flights: List[str] = []
+    excluded_flights: List[str] = []
+
+    for flight in requested_flights:
+        previous = previous_latest.get(flight)
+        if previous and _is_refresh_excluded(previous):
+            excluded_flights.append(flight)
+        else:
+            active_flights.append(flight)
+
+    if not active_flights:
+        return {
+            "success": True,
+            "checked": 0,
+            "changed": 0,
+            "sent": 0,
+            "failed": 0,
+            "message": "모든 Schedule Flight가 출발/도착 확정되어 재조회 대상이 없습니다.",
+            "excludedFlights": excluded_flights,
+        }
+
+    fresh_rows: List[Dict[str, Any]] = []
+
+    try:
+        for flight in active_flights:
+            rows = await get_flight_data(
+                flight_no=flight,
+                start_date=start_date,
+                end_date=end_date,
+            )
+
+            filtered_rows = [
+                row
+                for row in rows
+                if _row_matches_time_range(row, start_dt, end_dt)
+            ]
+
+            fresh_rows.extend(filtered_rows)
+
+    except IncheonApiQuotaExceededError:
+        raise HTTPException(status_code=429, detail="한도 초과로 조회 불가")
+
+    fresh_latest = _latest_rows_by_flight(fresh_rows)
+    changed_items: List[Dict[str, Any]] = []
+
+    for flight in active_flights:
+        current = fresh_latest.get(flight)
+        if not current:
+            continue
+
+        previous = previous_latest.get(flight)
+        changes = _row_changed_fields(previous, current)
+
+        if changes:
+            changed_items.append(
+                {
+                    "flight": flight,
+                    "route": _format_route(current),
+                    "changes": changes,
+                }
+            )
+
+    merged_rows = _merge_latest_rows(existing_rows, list(fresh_latest.values()))
+    room["rows"] = merged_rows
+    room["lastFetchedAt"] = datetime.now().isoformat(timespec="seconds")
+    _write_latest_schedule(room)
+
+    sent = 0
+    failed = 0
+    errors: List[str] = []
+
+    if changed_items:
+        first = changed_items[0]
+        extra_count = len(changed_items) - 1
+        body_lines = [
+            f"{first['flight']} {first['route']}",
+            *first["changes"][:2],
+        ]
+
+        if extra_count > 0:
+            body_lines.append(f"외 {extra_count}건 변경")
+
+        payload = {
+            "title": "Schedule Flight 변경 감지",
+            "body": "\n".join(body_lines),
+            "url": "/",
+        }
+
+        for item in _read_push_subscriptions():
+            subscription = item.get("subscription") or {}
+
+            try:
+                _send_web_push(subscription, payload)
+                sent += 1
+            except WebPushException as exc:
+                failed += 1
+                errors.append(str(exc))
+            except Exception as exc:
+                failed += 1
+                errors.append(str(exc))
+
+    return {
+        "success": True,
+        "checked": len(active_flights),
+        "changed": len(changed_items),
+        "sent": sent,
+        "failed": failed,
+        "changes": changed_items,
+        "excludedFlights": excluded_flights,
+        "errors": errors[:3],
+        "message": "변경 확인이 완료되었습니다.",
     }
 
 

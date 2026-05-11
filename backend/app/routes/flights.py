@@ -444,6 +444,56 @@ def _row_changed_fields(previous: Optional[Dict[str, Any]], current: Dict[str, A
 
     return changes
 
+
+def _arrival_prealert_key(flight: str, row: Dict[str, Any]) -> str:
+    return f"{flight}:{_row_alert_time(row)}"
+
+
+def _get_arrival_prealert_changes(
+    flight: str,
+    row: Dict[str, Any],
+    status: Dict[str, Any],
+) -> Optional[Dict[str, Any]]:
+    if not _is_arrival_row(row):
+        return None
+
+    target_dt = _get_row_datetime(row)
+    if target_dt is None:
+        return None
+
+    now = datetime.now()
+    alert_start = target_dt - timedelta(minutes=10)
+    alert_end = target_dt + timedelta(minutes=30)
+
+    if now < alert_start or now > alert_end:
+        return None
+
+    key = _arrival_prealert_key(flight, row)
+    sent_keys = set(status.get("arrivalPreAlertKeys") or [])
+
+    if key in sent_keys:
+        return None
+
+    return {
+        "key": key,
+        "changes": [
+            f"도착 예정 10분 전 {_row_alert_time(row)}",
+            f"운항상태 {_row_operational_status(row)}",
+        ],
+    }
+
+
+def _append_arrival_prealert_keys(keys: List[str]) -> Dict[str, Any]:
+    if not keys:
+        return _read_auto_push_status()
+
+    status = _read_auto_push_status()
+    existing = [str(key) for key in (status.get("arrivalPreAlertKeys") or [])]
+    merged = list(dict.fromkeys([*existing, *keys]))[-200:]
+    status["arrivalPreAlertKeys"] = merged
+    return _write_auto_push_status(status)
+
+
 def _format_route(row: Dict[str, Any]) -> str:
     departure = _display_value(row.get("departureCode"))
     arrival = _display_value(row.get("arrivalCode"))
@@ -639,6 +689,8 @@ async def _run_schedule_change_check(push_on_change: bool = True) -> Dict[str, A
 
     fresh_latest = _latest_rows_by_flight(fresh_rows)
     changed_items: List[Dict[str, Any]] = []
+    prealert_keys_to_save: List[str] = []
+    auto_status = _read_auto_push_status()
 
     for flight in active_flights:
         current = fresh_latest.get(flight)
@@ -654,6 +706,17 @@ async def _run_schedule_change_check(push_on_change: bool = True) -> Dict[str, A
                     "flight": flight,
                     "route": _format_route(current),
                     "changes": changes,
+                }
+            )
+
+        prealert = _get_arrival_prealert_changes(flight, current, auto_status)
+        if prealert:
+            prealert_keys_to_save.append(str(prealert["key"]))
+            changed_items.append(
+                {
+                    "flight": flight,
+                    "route": _format_route(current),
+                    "changes": prealert["changes"],
                 }
             )
 
@@ -695,6 +758,9 @@ async def _run_schedule_change_check(push_on_change: bool = True) -> Dict[str, A
             except Exception as exc:
                 failed += 1
                 errors.append(str(exc))
+
+    if prealert_keys_to_save:
+        _append_arrival_prealert_keys(prealert_keys_to_save)
 
     return {
         "success": True,
@@ -868,6 +934,8 @@ async def check_push_and_save_latest_schedule(payload: LatestScheduleRequest) ->
     requested_flights = _normalize_flights([str(current_room.get("flightsInput") or "")])
 
     changed_items: List[Dict[str, Any]] = []
+    prealert_keys_to_save: List[str] = []
+    auto_status = _read_auto_push_status()
 
     for flight in requested_flights:
         current = current_latest.get(flight)
@@ -885,6 +953,17 @@ async def check_push_and_save_latest_schedule(payload: LatestScheduleRequest) ->
                     "flight": flight,
                     "route": _format_route(current),
                     "changes": changes,
+                }
+            )
+
+        prealert = _get_arrival_prealert_changes(flight, current, auto_status)
+        if prealert:
+            prealert_keys_to_save.append(str(prealert["key"]))
+            changed_items.append(
+                {
+                    "flight": flight,
+                    "route": _format_route(current),
+                    "changes": prealert["changes"],
                 }
             )
 
@@ -923,6 +1002,9 @@ async def check_push_and_save_latest_schedule(payload: LatestScheduleRequest) ->
                 errors.append(str(exc))
 
     saved = _write_latest_schedule(current_room)
+    if prealert_keys_to_save:
+        _append_arrival_prealert_keys(prealert_keys_to_save)
+
     _update_auto_push_status(
         enabled=True,
         intervalMinutes=_get_auto_interval_minutes_for_room(current_room),

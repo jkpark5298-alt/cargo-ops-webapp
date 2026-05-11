@@ -418,6 +418,7 @@ export default function HomePage() {
   const dailySavingRef = useRef(false);
   const issueSavingRef = useRef(false);
   const pendingImageSlotRef = useRef<ImageSlotKey>("daily-schedule");
+  const lastImmediateApiCheckRef = useRef(0);
   const [rooms, setRooms] = useState<MonitorRoom[]>([]);
   const [images, setImages] = useState<SavedImage[]>([]);
   const [note, setNote] = useState("");
@@ -471,11 +472,11 @@ export default function HomePage() {
     setAlertCheckedAt(savedSnapshot?.savedAt || getCurrentTimeLabel());
 
     void fetchWeather();
-    void syncLatestScheduleFromServer(false);
+    void checkScheduleApiAndSync(false, true);
     void fetchAutoPushStatus();
 
     const syncTimer = window.setTimeout(() => {
-      void syncLatestScheduleFromServer(false);
+      void checkScheduleApiAndSync(false);
       void syncPwaPermissionAndSubscription(false);
     }, 1200);
 
@@ -496,7 +497,7 @@ export default function HomePage() {
     if (typeof window === "undefined") return;
 
     const refreshFromResume = () => {
-      void syncLatestScheduleFromServer(false);
+      void checkScheduleApiAndSync(false);
       void syncPwaPermissionAndSubscription(false);
       void fetchAutoPushStatus();
     };
@@ -654,8 +655,54 @@ export default function HomePage() {
   };
 
 
+  const checkScheduleApiAndSync = async (showNotice = false, force = false) => {
+    const now = Date.now();
+
+    if (!force && now - lastImmediateApiCheckRef.current < 60_000) {
+      await syncLatestScheduleFromServer(false);
+      return;
+    }
+
+    lastImmediateApiCheckRef.current = now;
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/flights/check-schedule-and-push`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        cache: "no-store",
+      });
+      const json = await res.json();
+
+      if (!res.ok || json.success === false) {
+        throw new Error(json.detail || json.message || "Schedule Flight API 즉시 확인 실패");
+      }
+
+      await syncLatestScheduleFromServer(false);
+
+      if (showNotice) {
+        const changed = json.changed ?? 0;
+        const sent = json.sent ?? 0;
+        const checkedAt = getCurrentSyncLabel();
+        setScheduleSyncCheckedAt(checkedAt);
+        setNotice(
+          changed > 0
+            ? `API 즉시 확인 완료 · 변경 ${changed}건 · 푸시 ${sent}건 · ${checkedAt}`
+            : `API 즉시 확인 완료 · 변경 없음 · ${checkedAt}`,
+        );
+      }
+    } catch (error) {
+      await syncLatestScheduleFromServer(false);
+
+      if (showNotice) {
+        setNotice(error instanceof Error ? error.message : "Schedule Flight API 즉시 확인 중 오류가 발생했습니다.");
+      }
+    }
+  };
+
   const handleRefreshLatestSchedule = () => {
-    void syncLatestScheduleFromServer(true);
+    void checkScheduleApiAndSync(true, true);
   };
 
   const fetchAutoPushStatus = async () => {

@@ -473,25 +473,50 @@ export default function HomePage() {
     void fetchWeather();
     void syncLatestScheduleFromServer(false);
     void fetchAutoPushStatus();
+
+    const syncTimer = window.setTimeout(() => {
+      void syncLatestScheduleFromServer(false);
+      void syncPwaPermissionAndSubscription(false);
+    }, 1200);
+
+    return () => {
+      window.clearTimeout(syncTimer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
     if (typeof window === "undefined") return;
 
-    if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
-      setPwaPermissionLabel("미지원");
-      setPwaStatusMessage("이 브라우저에서는 PWA 푸시 알림을 지원하지 않습니다.");
-      return;
-    }
+    void syncPwaPermissionAndSubscription(false);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
-    setPwaPermissionLabel(
-      Notification.permission === "granted"
-        ? "허용됨"
-        : Notification.permission === "denied"
-          ? "차단됨"
-          : "미설정",
-    );
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const refreshFromResume = () => {
+      void syncLatestScheduleFromServer(false);
+      void syncPwaPermissionAndSubscription(false);
+      void fetchAutoPushStatus();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        refreshFromResume();
+      }
+    };
+
+    window.addEventListener("focus", refreshFromResume);
+    window.addEventListener("pageshow", refreshFromResume);
+    document.addEventListener("visibilitychange", handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener("focus", refreshFromResume);
+      window.removeEventListener("pageshow", refreshFromResume);
+      document.removeEventListener("visibilitychange", handleVisibilityChange);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -650,6 +675,101 @@ export default function HomePage() {
     }
   };
 
+  const savePushSubscription = async (subscription: PushSubscription) => {
+    const saveRes = await fetch(`${BACKEND_URL}/flights/push-subscriptions`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        subscription,
+        userAgent: navigator.userAgent,
+        deviceName: /iPhone|iPad|iPod/i.test(navigator.userAgent) ? "iPhone/iPad PWA" : "Web browser",
+      }),
+    });
+    const saveJson = await saveRes.json();
+
+    if (!saveRes.ok || saveJson.success === false) {
+      throw new Error(saveJson.detail || saveJson.message || "Push 구독 저장 실패");
+    }
+
+    return saveJson;
+  };
+
+  const getPushPublicKey = async () => {
+    const keyRes = await fetch(`${BACKEND_URL}/flights/push-public-key`, {
+      cache: "no-store",
+    });
+    const keyJson = await keyRes.json();
+
+    if (!keyRes.ok || keyJson.success === false) {
+      throw new Error(keyJson.detail || keyJson.message || "Push 공개키 확인 실패");
+    }
+
+    return keyJson as {
+      success?: boolean;
+      configured?: boolean;
+      publicKey?: string;
+      detail?: string;
+      message?: string;
+    };
+  };
+
+  const syncPwaPermissionAndSubscription = async (showMessage = false) => {
+    if (typeof window === "undefined") return;
+
+    if (!("Notification" in window) || !("serviceWorker" in navigator) || !("PushManager" in window)) {
+      setPwaPermissionLabel("미지원");
+      if (showMessage) setPwaStatusMessage("이 브라우저에서는 PWA 푸시 알림을 지원하지 않습니다.");
+      return;
+    }
+
+    const permission = Notification.permission;
+    setPwaPermissionLabel(permission === "granted" ? "허용됨" : permission === "denied" ? "차단됨" : "미설정");
+
+    if (permission !== "granted") {
+      if (showMessage) {
+        setPwaStatusMessage(
+          permission === "denied"
+            ? "알림 권한이 차단되어 있습니다. 아이폰 설정에서 알림 허용을 켜 주세요."
+            : "알림 권한이 아직 허용되지 않았습니다. 알림 허용 준비를 눌러 주세요.",
+        );
+      }
+      return;
+    }
+
+    try {
+      const keyJson = await getPushPublicKey();
+
+      if (!keyJson.configured || !keyJson.publicKey) {
+        if (showMessage) setPwaStatusMessage("알림 권한은 허용됐지만, 백엔드 WEB_PUSH_PUBLIC_KEY 설정이 없습니다.");
+        return;
+      }
+
+      await navigator.serviceWorker.register("/sw.js");
+      const registration = await navigator.serviceWorker.ready;
+      let subscription = await registration.pushManager.getSubscription();
+
+      if (!subscription) {
+        subscription = await registration.pushManager.subscribe({
+          userVisibleOnly: true,
+          applicationServerKey: urlBase64ToUint8Array(keyJson.publicKey),
+        });
+      }
+
+      await savePushSubscription(subscription);
+      setPwaPermissionLabel("허용됨");
+
+      if (showMessage) {
+        setPwaStatusMessage("알림 권한과 구독 정보가 정상 연결되어 있습니다.");
+      }
+    } catch (error) {
+      if (showMessage) {
+        setPwaStatusMessage(error instanceof Error ? error.message : "PWA 알림 상태 확인 중 오류가 발생했습니다.");
+      }
+    }
+  };
+
   const handleEnablePwaPush = async () => {
     if (typeof window === "undefined") return;
 
@@ -671,53 +791,7 @@ export default function HomePage() {
         return;
       }
 
-      const keyRes = await fetch(`${BACKEND_URL}/flights/push-public-key`, {
-        cache: "no-store",
-      });
-      const keyJson = await keyRes.json();
-
-      if (!keyRes.ok || keyJson.success === false) {
-        throw new Error(keyJson.detail || keyJson.message || "Push 공개키 확인 실패");
-      }
-
-      if (!keyJson.configured || !keyJson.publicKey) {
-        setPwaStatusMessage("알림 권한은 허용됐지만, 백엔드 WEB_PUSH_PUBLIC_KEY 설정이 아직 없습니다. 실제 푸시 발송 전 VAPID 키 설정이 필요합니다.");
-        return;
-      }
-
-      await navigator.serviceWorker.register("/sw.js");
-      const registration = await navigator.serviceWorker.ready;
-
-      if (!registration.active) {
-        throw new Error("Service Worker가 아직 활성화되지 않았습니다. 앱을 한 번 새로고침한 뒤 다시 시도하세요.");
-      }
-
-      const existingSubscription = await registration.pushManager.getSubscription();
-      const subscription =
-        existingSubscription ||
-        (await registration.pushManager.subscribe({
-          userVisibleOnly: true,
-          applicationServerKey: urlBase64ToUint8Array(keyJson.publicKey),
-        }));
-
-      const saveRes = await fetch(`${BACKEND_URL}/flights/push-subscriptions`, {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          subscription,
-          userAgent: navigator.userAgent,
-          deviceName: /iPhone|iPad|iPod/i.test(navigator.userAgent) ? "iPhone/iPad PWA" : "Web browser",
-        }),
-      });
-      const saveJson = await saveRes.json();
-
-      if (!saveRes.ok || saveJson.success === false) {
-        throw new Error(saveJson.detail || saveJson.message || "Push 구독 저장 실패");
-      }
-
-      setPwaStatusMessage("알림 권한과 구독 정보가 저장되었습니다. 실제 변경 푸시 발송은 다음 단계에서 연결합니다.");
+      await syncPwaPermissionAndSubscription(true);
     } catch (error) {
       setPwaStatusMessage(error instanceof Error ? error.message : "PWA 알림 준비 중 오류가 발생했습니다.");
     } finally {
@@ -729,6 +803,8 @@ export default function HomePage() {
     setPwaTestLoading(true);
 
     try {
+      await syncPwaPermissionAndSubscription(false);
+
       const res = await fetch(`${BACKEND_URL}/flights/push-test`, {
         method: "POST",
         headers: {
@@ -746,6 +822,7 @@ export default function HomePage() {
         throw new Error(json.detail || json.message || "테스트 알림 발송 실패");
       }
 
+      setPwaPermissionLabel("허용됨");
       setPwaStatusMessage(`테스트 알림을 발송했습니다. 성공 ${json.sent ?? 0}건 / 실패 ${json.failed ?? 0}건`);
     } catch (error) {
       setPwaStatusMessage(error instanceof Error ? error.message : "테스트 알림 발송 중 오류가 발생했습니다.");

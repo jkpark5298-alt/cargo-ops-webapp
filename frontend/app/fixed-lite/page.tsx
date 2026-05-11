@@ -90,7 +90,7 @@ function mergeLatestScheduleRoom(rooms: MonitorRoom[], latestRoom: MonitorRoom) 
 }
 
 async function loadLatestScheduleFromServer() {
-  const res = await fetch(`${BACKEND_URL}/flights/latest-schedule`, {
+  const res = await fetch(`${BACKEND_URL}/flights/latest-schedule/check-push-and-save`, {
     cache: "no-store",
   });
   const json = await res.json();
@@ -119,27 +119,6 @@ async function saveLatestScheduleToServer(room: MonitorRoom) {
   return (json.room || room) as MonitorRoom;
 }
 
-async function checkScheduleAndPushBeforePersist() {
-  const res = await fetch(`${BACKEND_URL}/flights/check-schedule-and-push`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-    },
-  });
-
-  const json = await res.json();
-
-  if (!res.ok || json.success === false) {
-    throw new Error(json.detail || json.message || "Schedule Flight 변경 확인 실패");
-  }
-
-  return json as {
-    changed?: number;
-    sent?: number;
-    failed?: number;
-    message?: string;
-  };
-}
 
 function normalizeFlightsInput(rawInput: string) {
   return rawInput
@@ -648,7 +627,7 @@ export default function FixedLitePage() {
         );
         const rowsToKeep = (room.rows || []).filter((row) => {
           const flight = row.flightId || row.flightNo || "";
-          return isFinalCompletedStatus(getComputedStatus(row)) && !refreshedFlightSet.has(flight);
+          return Boolean(flight) && !refreshedFlightSet.has(flight);
         });
         nextRows = [...rowsToKeep, ...refreshedRows];
       }
@@ -678,12 +657,9 @@ export default function FixedLitePage() {
       });
 
       try {
-        if (activeFlights.length > 0) {
-          await checkScheduleAndPushBeforePersist();
-        }
         await saveLatestScheduleToServer(updatedRoom);
       } catch (syncError) {
-        console.warn("Schedule Flight 변경 알림 또는 서버 기준 저장 실패", syncError);
+        console.warn("Schedule Flight 알림 비교 또는 서버 기준 저장 실패", syncError);
       }
 
       setLastKnownItemsByRoom((prev) => ({

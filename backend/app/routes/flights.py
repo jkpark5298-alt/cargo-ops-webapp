@@ -782,6 +782,119 @@ async def update_auto_push_config(payload: AutoPushConfigRequest) -> Dict[str, A
     }
 
 
+
+@router.post("/latest-schedule/check-push-and-save")
+async def check_push_and_save_latest_schedule(payload: LatestScheduleRequest) -> Dict[str, Any]:
+    current_room = dict(payload.room or {})
+
+    if not current_room.get("fixed"):
+        current_room["fixed"] = True
+
+    if not current_room.get("id"):
+        current_room["id"] = str(int(datetime.now().timestamp() * 1000))
+
+    if not current_room.get("name"):
+        current_room["name"] = "Schedule_Synced"
+
+    previous_room = _read_latest_schedule()
+    previous_rows = []
+    if previous_room and isinstance(previous_room.get("rows"), list):
+        previous_rows = previous_room.get("rows") or []
+
+    current_rows = current_room.get("rows") or []
+    if not isinstance(current_rows, list):
+        current_rows = []
+
+    previous_latest = _latest_rows_by_flight(previous_rows)
+    current_latest = _latest_rows_by_flight(current_rows)
+    requested_flights = _normalize_flights([str(current_room.get("flightsInput") or "")])
+
+    changed_items: List[Dict[str, Any]] = []
+
+    for flight in requested_flights:
+        current = current_latest.get(flight)
+        if not current:
+            continue
+
+        previous = previous_latest.get(flight)
+        changes = _row_changed_fields(previous, current)
+
+        # 정보 제공형 알림: 신규 REMARK/status, 출발/도착/지연/결항/회항,
+        # 시간/게이트/터미널 변경이 있으면 푸시 대상입니다.
+        if changes:
+            changed_items.append(
+                {
+                    "flight": flight,
+                    "route": _format_route(current),
+                    "changes": changes,
+                }
+            )
+
+    sent = 0
+    failed = 0
+    errors: List[str] = []
+
+    if changed_items:
+        first = changed_items[0]
+        extra_count = len(changed_items) - 1
+        body_lines = [
+            f"{first['flight']} {first['route']}",
+            *first["changes"][:3],
+        ]
+
+        if extra_count > 0:
+            body_lines.append(f"외 {extra_count}건 변경")
+
+        message = {
+            "title": "Schedule Flight 운항 정보 확인",
+            "body": "\n".join(body_lines),
+            "url": "/",
+        }
+
+        for item in _read_push_subscriptions():
+            subscription = item.get("subscription") or {}
+
+            try:
+                _send_web_push(subscription, message)
+                sent += 1
+            except WebPushException as exc:
+                failed += 1
+                errors.append(str(exc))
+            except Exception as exc:
+                failed += 1
+                errors.append(str(exc))
+
+    saved = _write_latest_schedule(current_room)
+    _update_auto_push_status(
+        enabled=True,
+        intervalMinutes=_get_auto_interval_minutes_for_room(current_room),
+        lastRunAt=datetime.now().isoformat(timespec="seconds"),
+        lastMessage=(
+            f"Schedule Lite 결과 저장 및 알림 확인 완료: 변경 {len(changed_items)}건, 푸시 {sent}건"
+            if changed_items
+            else "Schedule Lite 결과 저장 완료: 변경 없음"
+        ),
+        lastResult={
+            "changed": len(changed_items),
+            "sent": sent,
+            "failed": failed,
+            "changes": changed_items,
+            "errors": errors[:3],
+        },
+    )
+
+    return {
+        "success": True,
+        "room": saved["room"],
+        "savedAt": saved["savedAt"],
+        "changed": len(changed_items),
+        "sent": sent,
+        "failed": failed,
+        "changes": changed_items,
+        "errors": errors[:3],
+    }
+
+
 @router.get("/latest-schedule")
 async def get_latest_schedule() -> Dict[str, Any]:
     room = _read_latest_schedule()

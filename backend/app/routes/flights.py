@@ -362,29 +362,87 @@ def _display_value(value: Any) -> str:
     return raw if raw else "-"
 
 
+def _normalize_alert_value(value: Any) -> str:
+    return _display_value(value).strip()
+
+
+def _row_operational_status(row: Optional[Dict[str, Any]]) -> str:
+    if not row:
+        return "-"
+
+    pieces = [
+        row.get("status"),
+        row.get("remark"),
+        row.get("flightStatus"),
+        row.get("remarkStatus"),
+    ]
+
+    text = " ".join(str(piece or "") for piece in pieces).strip().upper()
+
+    if row.get("canceled") or "CANCEL" in text or "결항" in text:
+        return "결항"
+    if "RETURN" in text or "회항" in text:
+        return "회항"
+    if "ARRIV" in text or "도착" in text:
+        if "DELAY" in text or "지연" in text or row.get("delay"):
+            return "도착(지연)"
+        return "도착"
+    if "DEPART" in text or "출발" in text:
+        if "DELAY" in text or "지연" in text or row.get("delay"):
+            return "출발(지연)"
+        return "출발"
+    if "LAND" in text or "착륙" in text:
+        return "착륙"
+    if "DELAY" in text or "지연" in text or row.get("delay"):
+        return "지연"
+
+    return _display_value(row.get("remark") or row.get("status"))
+
+
+def _row_alert_time(row: Optional[Dict[str, Any]]) -> str:
+    if not row:
+        return "-"
+
+    return _display_value(
+        row.get("formattedEstimatedTime")
+        or row.get("estimatedDateTime")
+        or row.get("formattedScheduleTime")
+        or row.get("scheduleDateTime")
+    )
+
+
 def _row_changed_fields(previous: Optional[Dict[str, Any]], current: Dict[str, Any]) -> List[str]:
     if previous is None:
-        return ["신규 조회"]
+        current_status = _row_operational_status(current)
+        current_time = _row_alert_time(current)
+        return [f"신규 정보 {current_status} · {current_time}"]
 
     checks = [
-        ("예정시각", "formattedScheduleTime"),
-        ("변경시각", "formattedEstimatedTime"),
-        ("상태", "remark"),
-        ("게이트", "gatenumber"),
-        ("터미널", "terminalid"),
+        ("운항상태", _row_operational_status(previous), _row_operational_status(current)),
+        ("기준시각", _row_alert_time(previous), _row_alert_time(current)),
+        ("예정시각", previous.get("formattedScheduleTime") or previous.get("scheduleDateTime"), current.get("formattedScheduleTime") or current.get("scheduleDateTime")),
+        ("변경시각", previous.get("formattedEstimatedTime") or previous.get("estimatedDateTime"), current.get("formattedEstimatedTime") or current.get("estimatedDateTime")),
+        ("REMARK", previous.get("remark") or previous.get("status"), current.get("remark") or current.get("status")),
+        ("게이트", previous.get("gatenumber"), current.get("gatenumber")),
+        ("터미널", previous.get("terminalid"), current.get("terminalid")),
     ]
 
     changes: List[str] = []
+    seen: set[str] = set()
 
-    for label, key in checks:
-        before = _display_value(previous.get(key))
-        after = _display_value(current.get(key))
+    for label, before_raw, after_raw in checks:
+        before = _normalize_alert_value(before_raw)
+        after = _normalize_alert_value(after_raw)
 
-        if before != after:
-            changes.append(f"{label} {before} → {after}")
+        if before == after:
+            continue
+
+        text = f"{label} {before} → {after}"
+        if text not in seen:
+            seen.add(text)
+            changes.append(text)
 
     return changes
-
 
 def _format_route(row: Dict[str, Any]) -> str:
     departure = _display_value(row.get("departureCode"))
@@ -846,7 +904,7 @@ async def check_push_and_save_latest_schedule(payload: LatestScheduleRequest) ->
             body_lines.append(f"외 {extra_count}건 변경")
 
         message = {
-            "title": "Schedule Flight 운항 정보 확인",
+            "title": "Schedule Flight 운항 정보",
             "body": "\n".join(body_lines),
             "url": "/",
         }

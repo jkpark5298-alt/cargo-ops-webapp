@@ -62,6 +62,20 @@ type DailyNotionRecord = {
 
 type IssueNotionRecord = DailyNotionRecord;
 
+type BackendScheduleChange = {
+  flight?: string;
+  route?: string;
+  changes?: string[];
+};
+
+type BackendScheduleCheckResult = {
+  changed?: number;
+  sent?: number;
+  failed?: number;
+  checked?: number;
+  changes?: BackendScheduleChange[];
+};
+
 type ImageSlotKey =
   | "daily-schedule"
   | "aircraft-check"
@@ -585,6 +599,31 @@ export default function HomePage() {
     setNotice("출도착 알림 이력을 초기화했습니다.");
   };
 
+  const appendBackendFlightAlertHistory = (result: BackendScheduleCheckResult, sourceLabel = "API 확인") => {
+    const changes = Array.isArray(result.changes) ? result.changes : [];
+
+    if (!changes.length) return;
+
+    const checkedAt = getCurrentTimeLabel();
+    const historyItems: FlightAlertHistoryItem[] = changes.slice(0, 10).map((item, index) => {
+      const flight = item.flight || "Schedule Flight";
+      const route = item.route || "";
+      const descriptions = Array.isArray(item.changes) ? item.changes : [];
+
+      return {
+        key: `backend-${Date.now()}-${index}-${flight}`,
+        title: route ? `${flight} ${route}` : flight,
+        description: `${sourceLabel} · ${descriptions.slice(0, 3).join(" · ") || "운항 정보 변경"}`,
+        checkedAt,
+        roomName: latestRoom?.name || "Schedule Flight",
+      };
+    });
+
+    const nextHistory = [...historyItems, ...flightAlertHistory].slice(0, 20);
+    setFlightAlertHistory(nextHistory);
+    saveFlightAlertHistory(nextHistory);
+  };
+
   const openFlights = () => router.push("/flights");
 
   const openScheduleFlight = () => {
@@ -679,11 +718,13 @@ export default function HomePage() {
         throw new Error(json.detail || json.message || "Schedule Flight API 즉시 확인 실패");
       }
 
+      const result = json as BackendScheduleCheckResult;
+      appendBackendFlightAlertHistory(result, "API 즉시 확인");
       await syncLatestScheduleFromServer(false);
 
       if (showNotice) {
-        const changed = json.changed ?? 0;
-        const sent = json.sent ?? 0;
+        const changed = result.changed ?? 0;
+        const sent = result.sent ?? 0;
         const checkedAt = getCurrentSyncLabel();
         setScheduleSyncCheckedAt(checkedAt);
         setNotice(
@@ -894,10 +935,13 @@ export default function HomePage() {
         throw new Error(json.detail || json.message || "Schedule Flight 변경 확인 실패");
       }
 
-      const changed = json.changed ?? 0;
-      const sent = json.sent ?? 0;
-      const failed = json.failed ?? 0;
-      const checked = json.checked ?? 0;
+      const result = json as BackendScheduleCheckResult;
+      appendBackendFlightAlertHistory(result, "수동 변경 확인");
+
+      const changed = result.changed ?? 0;
+      const sent = result.sent ?? 0;
+      const failed = result.failed ?? 0;
+      const checked = result.checked ?? 0;
 
       if (changed > 0) {
         setPwaStatusMessage(

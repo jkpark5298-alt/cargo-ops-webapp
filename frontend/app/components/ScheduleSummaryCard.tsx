@@ -36,7 +36,7 @@ export function ScheduleSummaryCard({
       {syncCheckedAt ? <div style={syncStatusStyle}>동기화 확인 · {syncCheckedAt}</div> : null}
       <div style={buttonStackStyle}>
         <button onClick={onRefreshLatestSchedule} style={refreshButtonStyle}>
-          Schedule Flight 동기화
+          API 동기화
         </button>
         <button onClick={onOpenScheduleFlight} style={secondaryButtonStyle}>
           최근 Schedule Flight 열기
@@ -58,6 +58,7 @@ function FlightRouteRows({ room }: { room: MonitorRoom | null }) {
             <span style={flightRouteValueStyle}>{item.route}</span>
             <span style={flightRouteMetaStyle}>
               {item.status} · {item.time}
+              {item.gate ? ` · G ${item.gate}` : ""}
             </span>
           </div>
         ))
@@ -93,6 +94,7 @@ function getFlightRouteItems(room: MonitorRoom | null) {
         direction: "기준",
         status: getComputedStatus(row),
         time: getFlightTimeDisplay(row),
+        gate: getGateDisplay(row),
         hasResult: true,
       };
     })
@@ -103,6 +105,7 @@ function getFlightRouteItems(room: MonitorRoom | null) {
         direction: string;
         status: string;
         time: string;
+        gate: string;
         hasResult: boolean;
       } => Boolean(item),
     );
@@ -126,6 +129,7 @@ function getFlightRouteItems(room: MonitorRoom | null) {
       direction: "기준",
       status: "-",
       time: "-",
+      gate: "",
       hasResult: false,
     }));
 }
@@ -177,7 +181,25 @@ function getComputedStatus(row?: FlightRow) {
 
 function getFlightTimeDisplay(row?: FlightRow) {
   if (!row) return "-";
-  return row.formattedEstimatedTime || row.estimatedDateTime || row.formattedScheduleTime || row.scheduleDateTime || "-";
+  const value = row.formattedEstimatedTime || row.estimatedDateTime || row.formattedScheduleTime || row.scheduleDateTime || "";
+  return formatFlightTimeNoYear(value);
+}
+
+function getGateDisplay(row?: FlightRow) {
+  if (!row) return "";
+  return row.gatenumber || "";
+}
+
+function formatFlightTimeNoYear(value?: string) {
+  if (!value) return "-";
+
+  const normalized = value.replace("T", " ").trim();
+
+  if (/^\d{4}[/-]\d{2}[/-]\d{2}/.test(normalized)) {
+    return normalized.slice(5, 16);
+  }
+
+  return normalized;
 }
 
 function getRoomRowsCount(room: MonitorRoom | null) {
@@ -259,7 +281,7 @@ const flightRouteOnlyBlockStyle: CSSProperties = {
 
 const flightRouteRowStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "76px minmax(82px, 1fr) minmax(150px, auto)",
+  gridTemplateColumns: "70px minmax(76px, 1fr) minmax(176px, auto)",
   gap: 10,
   alignItems: "center",
   color: "#f8fafc",
@@ -280,7 +302,7 @@ const flightRouteValueStyle: CSSProperties = {
 
 const flightRouteMetaStyle: CSSProperties = {
   color: "#93c5fd",
-  fontSize: 12,
+  fontSize: 11,
   fontWeight: 900,
   textAlign: "right",
   whiteSpace: "nowrap",

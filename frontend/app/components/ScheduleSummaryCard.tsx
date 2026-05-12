@@ -6,6 +6,7 @@ import type { FlightRow, MonitorRoom } from "../page";
 type ScheduleSummaryCardProps = {
   latestRoom: MonitorRoom | null;
   syncCheckedAt: string;
+  apiSyncStatus: string;
   onOpenScheduleFlight: () => void;
   onRefreshLatestSchedule: () => void;
 };
@@ -13,6 +14,7 @@ type ScheduleSummaryCardProps = {
 export function ScheduleSummaryCard({
   latestRoom,
   syncCheckedAt,
+  apiSyncStatus,
   onOpenScheduleFlight,
   onRefreshLatestSchedule,
 }: ScheduleSummaryCardProps) {
@@ -35,6 +37,7 @@ export function ScheduleSummaryCard({
         />
         <InfoRow label="결과 수" value={`${getRoomRowsCount(latestRoom)}건`} />
       </div>
+      {apiSyncStatus ? <div style={apiSyncStatusStyle}>{apiSyncStatus}</div> : null}
       {syncCheckedAt ? <div style={syncStatusStyle}>동기화 확인 · {syncCheckedAt}</div> : null}
       <div style={buttonStackStyle}>
         <button onClick={onRefreshLatestSchedule} style={refreshButtonStyle}>
@@ -244,6 +247,15 @@ function formatDateTime(value?: string) {
   if (!value) return "-";
   return value.replace("T", " ").slice(0, 16);
 }
+
+const apiSyncStatusStyle: CSSProperties = {
+  marginTop: 12,
+  color: "#fde68a",
+  fontSize: 12,
+  fontWeight: 850,
+  textAlign: "right",
+  lineHeight: 1.4,
+};
 
 const syncStatusStyle: CSSProperties = {
   marginTop: 12,

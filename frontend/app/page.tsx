@@ -446,6 +446,7 @@ export default function HomePage() {
   const [autoPushLoading, setAutoPushLoading] = useState(false);
   const [autoPushStatusMessage, setAutoPushStatusMessage] = useState("");
   const [scheduleSyncCheckedAt, setScheduleSyncCheckedAt] = useState("");
+  const [scheduleApiSyncStatus, setScheduleApiSyncStatus] = useState("");
   const [isDailySaving, setIsDailySaving] = useState(false);
   const [isIssueSaving, setIsIssueSaving] = useState(false);
   const [weather, setWeather] = useState<WeatherInfo>(DEFAULT_WEATHER);
@@ -727,17 +728,26 @@ export default function HomePage() {
         const sent = result.sent ?? 0;
         const checkedAt = getCurrentSyncLabel();
         setScheduleSyncCheckedAt(checkedAt);
-        setNotice(
+        const message =
           changed > 0
-            ? `API 즉시 확인 완료 · 변경 ${changed}건 · 푸시 ${sent}건 · ${checkedAt}`
-            : `API 즉시 확인 완료 · 변경 없음 · ${checkedAt}`,
-        );
+            ? `API 동기화 완료 · 변경 ${changed}건 · 푸시 ${sent}건 · ${checkedAt}`
+            : `API 동기화 완료 · 변경 없음 · ${checkedAt}`;
+        setScheduleApiSyncStatus(message);
+        setNotice(message);
       }
     } catch (error) {
       await syncLatestScheduleFromServer(false);
 
       if (showNotice) {
-        setNotice(error instanceof Error ? error.message : "Schedule Flight API 즉시 확인 중 오류가 발생했습니다.");
+        const checkedAt = getCurrentSyncLabel();
+        const rawMessage = error instanceof Error ? error.message : "Schedule Flight API 즉시 확인 중 오류가 발생했습니다.";
+        const friendlyMessage = rawMessage.includes("429")
+          ? "429 한도 초과 또는 일시 제한"
+          : rawMessage;
+        const message = `API 동기화 실패 · ${friendlyMessage} · ${checkedAt}`;
+        setScheduleApiSyncStatus(message);
+        setScheduleSyncCheckedAt(checkedAt);
+        setNotice(message);
       }
     }
   };
@@ -1465,6 +1475,7 @@ export default function HomePage() {
         <ScheduleSummaryCard
           latestRoom={latestRoom}
           syncCheckedAt={scheduleSyncCheckedAt}
+          apiSyncStatus={scheduleApiSyncStatus}
           onOpenScheduleFlight={openScheduleFlight}
           onRefreshLatestSchedule={handleRefreshLatestSchedule}
         />

@@ -29,8 +29,14 @@ export function loadImages(): SavedImage[] {
 }
 
 export function saveImages(images: SavedImage[]) {
-  if (typeof window === "undefined") return;
-  localStorage.setItem(IMAGE_STORAGE_KEY, JSON.stringify(images));
+  if (typeof window === "undefined") return false;
+
+  try {
+    localStorage.setItem(IMAGE_STORAGE_KEY, JSON.stringify(images));
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 export function loadNote() {

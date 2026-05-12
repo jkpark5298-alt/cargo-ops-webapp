@@ -425,6 +425,43 @@ function getCurrentTimeLabel() {
   return `${hh}:${mm}`;
 }
 
+function resizeImageDataUrl(dataUrl: string, maxSize = 1280, quality = 0.72): Promise<string> {
+  if (typeof window === "undefined") return Promise.resolve(dataUrl);
+  if (!dataUrl.startsWith("data:image/")) return Promise.resolve(dataUrl);
+
+  return new Promise((resolve) => {
+    const image = new Image();
+
+    image.onload = () => {
+      try {
+        const scale = Math.min(1, maxSize / Math.max(image.width, image.height));
+        const width = Math.max(1, Math.round(image.width * scale));
+        const height = Math.max(1, Math.round(image.height * scale));
+
+        const canvas = document.createElement("canvas");
+        canvas.width = width;
+        canvas.height = height;
+
+        const context = canvas.getContext("2d");
+
+        if (!context) {
+          resolve(dataUrl);
+          return;
+        }
+
+        context.drawImage(image, 0, 0, width, height);
+        resolve(canvas.toDataURL("image/jpeg", quality));
+      } catch {
+        resolve(dataUrl);
+      }
+    };
+
+    image.onerror = () => resolve(dataUrl);
+    image.src = dataUrl;
+  });
+}
+
+
 export default function HomePage() {
   const router = useRouter();
   const cameraInputRef = useRef<HTMLInputElement | null>(null);
@@ -1030,17 +1067,37 @@ export default function HomePage() {
     libraryInputRef.current?.click();
   };
 
+  const persistImages = (nextImages: SavedImage[], successMessage: string) => {
+    setImages(nextImages);
+    const saved = saveImages(nextImages);
+
+    if (saved) {
+      setNotice(successMessage);
+      return;
+    }
+
+    setNotice(
+      "이미지를 화면에는 올렸지만, 기기 저장공간 제한으로 재실행 후 복원되지 않을 수 있습니다. 더 작은 사진으로 다시 저장해 주세요.",
+    );
+  };
+
   const handleImageSelected = (
     event: React.ChangeEvent<HTMLInputElement>,
     sourceLabel: "카메라 촬영" | "사진첩 선택",
   ) => {
     const file = event.target.files?.[0];
     event.target.value = "";
+
     if (!file) return;
+
     const reader = new FileReader();
-    reader.onload = () => {
-      const dataUrl = String(reader.result || "");
-      if (!dataUrl) return;
+
+    reader.onload = async () => {
+      const originalDataUrl = String(reader.result || "");
+
+      if (!originalDataUrl) return;
+
+      const dataUrl = await resizeImageDataUrl(originalDataUrl, 1280, 0.72);
       const savedAt = new Date().toLocaleString("ko-KR");
       const slotKey = pendingImageSlotRef.current;
       const slotInfo =
@@ -1054,10 +1111,14 @@ export default function HomePage() {
         savedAt,
         dataUrl,
       });
-      setImages(nextImages);
-      saveImages(nextImages);
-      setNotice(`${slotInfo.title}를 임시 저장했습니다.`);
+
+      persistImages(nextImages, `${slotInfo.title}를 기기에 저장했습니다.`);
     };
+
+    reader.onerror = () => {
+      setNotice("이미지를 읽는 중 오류가 발생했습니다.");
+    };
+
     reader.readAsDataURL(file);
   };
 
@@ -1069,9 +1130,7 @@ export default function HomePage() {
     if (!confirmed) return;
 
     const nextImages = removeImageBySlot(images, slotKey);
-    setImages(nextImages);
-    saveImages(nextImages);
-    setNotice(`${image.label}를 삭제했습니다.`);
+    persistImages(nextImages, `${image.label}를 삭제했습니다.`);
   };
 
   const openLatestImage = (image: SavedImage) => {

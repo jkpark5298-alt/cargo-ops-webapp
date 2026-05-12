@@ -3,6 +3,7 @@
 import type {
   ChangeEvent,
   CSSProperties,
+  Ref,
   RefObject,
 } from "react";
 import { ImageSlotCard, type ImageSlot, type ImageSlotKey, type SavedImage } from "./ImageSlotCard";

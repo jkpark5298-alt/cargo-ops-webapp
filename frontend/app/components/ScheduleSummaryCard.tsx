@@ -83,7 +83,33 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 function formatApiLookupTime(value?: string) {
   if (!value) return "-";
 
-  return `${value.replace("T", " ").slice(0, 19)} KST`;
+  const raw = value.replace("T", " ").replace("Z", "").slice(0, 19);
+  const match = raw.match(/^(\d{4})-(\d{2})-(\d{2}) (\d{2}):(\d{2}):(\d{2})$/);
+
+  if (!match) return `${raw} KST`;
+
+  const [, y, mo, d, h, mi, s] = match;
+  const localCandidate = new Date(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s));
+  const now = new Date();
+  const diffHours = Math.abs(now.getTime() - localCandidate.getTime()) / (1000 * 60 * 60);
+
+  // 서버에 이미 KST로 저장된 신규 값은 그대로 표시합니다.
+  // 과거 저장값처럼 UTC로 저장된 값은 KST(+9시간)로 변환해 표시합니다.
+  if (diffHours <= 4) {
+    return `${raw} KST`;
+  }
+
+  const utcDate = new Date(Date.UTC(Number(y), Number(mo) - 1, Number(d), Number(h), Number(mi), Number(s)));
+  const kstDate = new Date(utcDate.getTime() + 9 * 60 * 60 * 1000);
+
+  const yy = kstDate.getUTCFullYear();
+  const mm = String(kstDate.getUTCMonth() + 1).padStart(2, "0");
+  const dd = String(kstDate.getUTCDate()).padStart(2, "0");
+  const hh = String(kstDate.getUTCHours()).padStart(2, "0");
+  const min = String(kstDate.getUTCMinutes()).padStart(2, "0");
+  const sec = String(kstDate.getUTCSeconds()).padStart(2, "0");
+
+  return `${yy}-${mm}-${dd} ${hh}:${min}:${sec} KST`;
 }
 
 function getFlightRouteItems(room: MonitorRoom | null) {

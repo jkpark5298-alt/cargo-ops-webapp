@@ -41,6 +41,9 @@ import {
   getLastIssueSaveSignature,
   saveLastDailySaveSignature,
   saveLastIssueSaveSignature,
+  loadIssueDraft,
+  saveIssueDraft,
+  clearIssueDraft,
 } from "./lib/local-storage";
 import {
   deleteDailyRecord,
@@ -511,10 +514,74 @@ export default function HomePage() {
   );
   const flightAlertCount = flightAlertItems.length;
 
+  const saveCurrentIssueDraft = (overrides: Partial<{
+    flight: string;
+    route: string;
+    hlnbr: string;
+    text: string;
+    status: "normal" | "issue";
+    author: string;
+  }> = {}) => {
+    saveIssueDraft({
+      flight: overrides.flight ?? issueFlight,
+      route: overrides.route ?? issueRoute,
+      hlnbr: overrides.hlnbr ?? issueHlnbr,
+      text: overrides.text ?? issueText,
+      status: overrides.status ?? dailyStatus,
+      author: overrides.author ?? author,
+    });
+  };
+
+  const updateNote = (value: string) => {
+    setNote(value);
+    saveNote(value);
+  };
+
+  const updateDailyStatus = (value: "normal" | "issue") => {
+    setDailyStatus(value);
+    saveCurrentIssueDraft({ status: value });
+  };
+
+  const updateAuthor = (value: string) => {
+    setAuthor(value);
+    saveCurrentIssueDraft({ author: value });
+  };
+
+  const updateIssueFlight = (value: string) => {
+    setIssueFlight(value);
+    saveCurrentIssueDraft({ flight: value });
+  };
+
+  const updateIssueRoute = (value: string) => {
+    setIssueRoute(value);
+    saveCurrentIssueDraft({ route: value });
+  };
+
+  const updateIssueHlnbr = (value: string) => {
+    setIssueHlnbr(value);
+    saveCurrentIssueDraft({ hlnbr: value });
+  };
+
+  const updateIssueText = (value: string) => {
+    setIssueText(value);
+    saveCurrentIssueDraft({ text: value });
+  };
+
   useEffect(() => {
     setRooms(loadRooms());
     setImages(loadImages());
     setNote(loadNote());
+
+    const savedIssueDraft = loadIssueDraft();
+    if (savedIssueDraft) {
+      setIssueFlight(savedIssueDraft.flight);
+      setIssueRoute(savedIssueDraft.route);
+      setIssueHlnbr(savedIssueDraft.hlnbr);
+      setIssueText(savedIssueDraft.text);
+      setDailyStatus(savedIssueDraft.status);
+      setAuthor(savedIssueDraft.author || "jkpark");
+    }
+
     setDailyNotionRecord(loadDailyNotionRecord());
     setIssueNotionRecord(loadIssueNotionRecord());
 
@@ -1185,10 +1252,13 @@ export default function HomePage() {
   };
 
   const handleSaveDailyDraft = () => {
+    saveNote(note);
+    saveCurrentIssueDraft();
+
     setNotice(
       dailyStatus === "normal"
-        ? "일일 업무 기록을 임시 저장했습니다. 상태: 이상 없음"
-        : "일일 업무 기록을 임시 저장했습니다. 특이사항 입력 화면을 확인하세요.",
+        ? "일일 업무 주요 사항을 기기에 임시 저장했습니다. 상태: 이상 없음"
+        : "일일 업무 주요 사항과 특이사항 입력 내용을 기기에 임시 저장했습니다.",
     );
   };
 
@@ -1333,6 +1403,7 @@ export default function HomePage() {
 
     saveImages([]);
     saveNote("");
+    clearIssueDraft();
     clearDailyNotionRecord();
     clearIssueNotionRecord();
 
@@ -1386,6 +1457,11 @@ export default function HomePage() {
     }
 
     return true;
+  };
+
+  const handleSaveIssueDraft = () => {
+    saveCurrentIssueDraft();
+    setNotice("특이사항 입력 내용을 기기에 임시 저장했습니다.");
   };
 
   const handleSaveIssueToNotion = async () => {
@@ -1565,7 +1641,7 @@ export default function HomePage() {
 
         <DailyRecordCard
           dailyStatus={dailyStatus}
-          setDailyStatus={setDailyStatus}
+          setDailyStatus={updateDailyStatus}
           images={images}
           imageSlots={IMAGE_SLOTS}
           getImageBySlot={getImageBySlot}
@@ -1577,9 +1653,9 @@ export default function HomePage() {
           libraryInputRef={libraryInputRef}
           handleImageSelected={handleImageSelected}
           author={author}
-          setAuthor={setAuthor}
+          setAuthor={updateAuthor}
           note={note}
-          setNote={setNote}
+          setNote={updateNote}
           dailyNotionRecord={dailyNotionRecord}
           isDailySaving={isDailySaving}
           handleSaveDailyDraft={handleSaveDailyDraft}
@@ -1602,18 +1678,19 @@ export default function HomePage() {
             todayText={todayText}
             currentTimeText={getCurrentTimeText()}
             issueFlight={issueFlight}
-            setIssueFlight={setIssueFlight}
+            setIssueFlight={updateIssueFlight}
             issueRoute={issueRoute}
-            setIssueRoute={setIssueRoute}
+            setIssueRoute={updateIssueRoute}
             issueHlnbr={issueHlnbr}
-            setIssueHlnbr={setIssueHlnbr}
+            setIssueHlnbr={updateIssueHlnbr}
             author={author}
-            setAuthor={setAuthor}
+            setAuthor={updateAuthor}
             weatherSummary={getWeatherSummary(weather)}
             issueText={issueText}
-            setIssueText={setIssueText}
+            setIssueText={updateIssueText}
             issueNotionRecord={issueNotionRecord}
             isIssueSaving={isIssueSaving}
+            handleSaveIssueDraft={handleSaveIssueDraft}
             handleSaveIssueToNotion={handleSaveIssueToNotion}
             handleUpdateIssueToNotion={handleUpdateIssueToNotion}
             handleDeleteIssueFromNotion={handleDeleteIssueFromNotion}

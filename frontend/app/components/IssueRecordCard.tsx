@@ -1,6 +1,6 @@
 "use client";
 
-import type { CSSProperties, Dispatch, SetStateAction } from "react";
+import type { CSSProperties } from "react";
 import { ImageSlotCard, type ImageSlot, type ImageSlotKey, type SavedImage } from "./ImageSlotCard";
 
 type IssueNotionRecord = {
@@ -19,18 +19,19 @@ type IssueRecordCardProps = {
   todayText: string;
   currentTimeText: string;
   issueFlight: string;
-  setIssueFlight: Dispatch<SetStateAction<string>>;
+  setIssueFlight: (value: string) => void;
   issueRoute: string;
-  setIssueRoute: Dispatch<SetStateAction<string>>;
+  setIssueRoute: (value: string) => void;
   issueHlnbr: string;
-  setIssueHlnbr: Dispatch<SetStateAction<string>>;
+  setIssueHlnbr: (value: string) => void;
   author: string;
-  setAuthor: Dispatch<SetStateAction<string>>;
+  setAuthor: (value: string) => void;
   weatherSummary: string;
   issueText: string;
-  setIssueText: Dispatch<SetStateAction<string>>;
+  setIssueText: (value: string) => void;
   issueNotionRecord: IssueNotionRecord | null;
   isIssueSaving: boolean;
+  handleSaveIssueDraft: () => void;
   handleSaveIssueToNotion: () => void;
   handleUpdateIssueToNotion: () => void;
   handleDeleteIssueFromNotion: () => void;
@@ -61,6 +62,7 @@ export function IssueRecordCard({
   setIssueText,
   issueNotionRecord,
   isIssueSaving,
+  handleSaveIssueDraft,
   handleSaveIssueToNotion,
   handleUpdateIssueToNotion,
   handleDeleteIssueFromNotion,
@@ -155,6 +157,9 @@ export function IssueRecordCard({
             Notion 특이사항 저장 완료 · {issueNotionRecord.savedAt}
           </div>
           <div style={buttonStackStyle}>
+            <button onClick={handleSaveIssueDraft} style={darkButtonStyle}>
+              특이사항 임시 저장
+            </button>
             <button onClick={handleUpdateIssueToNotion} style={orangeButtonStyle}>
               Notion 특이사항 수정
             </button>
@@ -174,6 +179,9 @@ export function IssueRecordCard({
         </div>
       ) : (
         <div style={buttonStackStyle}>
+          <button onClick={handleSaveIssueDraft} style={darkButtonStyle}>
+            특이사항 임시 저장
+          </button>
           <button
             onClick={handleSaveIssueToNotion}
             disabled={isIssueSaving}

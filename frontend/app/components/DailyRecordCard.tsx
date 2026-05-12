@@ -3,10 +3,7 @@
 import type {
   ChangeEvent,
   CSSProperties,
-  Dispatch,
-  Ref,
   RefObject,
-  SetStateAction,
 } from "react";
 import { ImageSlotCard, type ImageSlot, type ImageSlotKey, type SavedImage } from "./ImageSlotCard";
 
@@ -20,7 +17,7 @@ type DailyNotionRecord = {
 
 type DailyRecordCardProps = {
   dailyStatus: DailyStatus;
-  setDailyStatus: Dispatch<SetStateAction<DailyStatus>>;
+  setDailyStatus: (value: DailyStatus) => void;
   images: SavedImage[];
   imageSlots: ImageSlot[];
   getImageBySlot: (images: SavedImage[], slotKey: ImageSlotKey) => SavedImage | null;
@@ -35,9 +32,9 @@ type DailyRecordCardProps = {
     sourceLabel: "카메라 촬영" | "사진첩 선택",
   ) => void;
   author: string;
-  setAuthor: Dispatch<SetStateAction<string>>;
+  setAuthor: (value: string) => void;
   note: string;
-  setNote: Dispatch<SetStateAction<string>>;
+  setNote: (value: string) => void;
   dailyNotionRecord: DailyNotionRecord | null;
   isDailySaving: boolean;
   handleSaveDailyDraft: () => void;

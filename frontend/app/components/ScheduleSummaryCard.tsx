@@ -20,6 +20,9 @@ export function ScheduleSummaryCard({
     <section style={cardStyle}>
       <div style={cardLabelStyle}>최근 Schedule Flight</div>
       <h2 style={cardTitleStyle}>{latestRoom?.name || "저장된 스케줄 없음"}</h2>
+      <div style={apiLookupTimeStyle}>
+        API 조회 {formatApiLookupTime(latestRoom?.lastFetchedAt)}
+      </div>
       <div style={infoListStyle}>
         <FlightRouteRows room={latestRoom} />
         <InfoRow
@@ -30,7 +33,6 @@ export function ScheduleSummaryCard({
               : "-"
           }
         />
-        <InfoRow label="마지막 조회" value={latestRoom?.lastFetchedAt || "-"} />
         <InfoRow label="결과 수" value={`${getRoomRowsCount(latestRoom)}건`} />
       </div>
       {syncCheckedAt ? <div style={syncStatusStyle}>동기화 확인 · {syncCheckedAt}</div> : null}
@@ -58,7 +60,7 @@ function FlightRouteRows({ room }: { room: MonitorRoom | null }) {
             <span style={flightRouteValueStyle}>{item.route}</span>
             <span style={flightRouteMetaStyle}>
               {item.status} · {item.time}
-              {item.gate ? ` · G ${item.gate}` : ""}
+              {item.gate ? ` · G${item.gate}` : ""}
             </span>
           </div>
         ))
@@ -76,6 +78,12 @@ function InfoRow({ label, value }: { label: string; value: string }) {
       <span style={infoValueStyle}>{value}</span>
     </div>
   );
+}
+
+function formatApiLookupTime(value?: string) {
+  if (!value) return "-";
+
+  return value.replace("T", " ").slice(0, 19);
 }
 
 function getFlightRouteItems(room: MonitorRoom | null) {
@@ -243,6 +251,15 @@ const cardTitleStyle: CSSProperties = {
   fontWeight: 950,
 };
 
+const apiLookupTimeStyle: CSSProperties = {
+  marginTop: -2,
+  marginBottom: 10,
+  color: "#93c5fd",
+  fontSize: 12,
+  fontWeight: 850,
+  letterSpacing: 0.2,
+};
+
 const infoListStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
@@ -281,7 +298,7 @@ const flightRouteOnlyBlockStyle: CSSProperties = {
 
 const flightRouteRowStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "70px minmax(76px, 1fr) minmax(176px, auto)",
+  gridTemplateColumns: "68px minmax(68px, 1fr) minmax(184px, auto)",
   gap: 10,
   alignItems: "center",
   color: "#f8fafc",

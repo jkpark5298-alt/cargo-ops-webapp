@@ -36,7 +36,7 @@ export function ScheduleSummaryCard({
       {syncCheckedAt ? <div style={syncStatusStyle}>동기화 확인 · {syncCheckedAt}</div> : null}
       <div style={buttonStackStyle}>
         <button onClick={onRefreshLatestSchedule} style={refreshButtonStyle}>
-          API 동기화
+          최근 Schedule Flight API 동기화
         </button>
         <button onClick={onOpenScheduleFlight} style={secondaryButtonStyle}>
           최근 Schedule Flight 열기

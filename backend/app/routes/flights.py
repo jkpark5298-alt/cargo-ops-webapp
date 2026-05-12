@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 import asyncio
@@ -30,6 +30,16 @@ AUTO_PUSH_STATUS_FILE = Path(
 )
 AUTO_PUSH_DEFAULT_INTERVAL_MINUTES = int(os.getenv("AUTO_PUSH_INTERVAL_MINUTES", "30"))
 AUTO_PUSH_STARTED = False
+
+KST = timezone(timedelta(hours=9))
+
+
+def _now_kst() -> datetime:
+    return datetime.now(KST).replace(tzinfo=None)
+
+
+def _now_kst_iso() -> str:
+    return _now_kst().isoformat(timespec="seconds")
 
 
 class PushSubscriptionRequest(BaseModel):
@@ -79,7 +89,7 @@ def _read_latest_schedule() -> Optional[Dict[str, Any]]:
 def _write_latest_schedule(room: Dict[str, Any]) -> Dict[str, Any]:
     payload = {
         "room": room,
-        "savedAt": datetime.now().isoformat(timespec="seconds"),
+        "savedAt": _now_kst_iso(),
     }
     LATEST_SCHEDULE_FILE.parent.mkdir(parents=True, exist_ok=True)
     LATEST_SCHEDULE_FILE.write_text(
@@ -564,7 +574,7 @@ async def save_push_subscription(payload: PushSubscriptionRequest) -> Dict[str, 
         "subscription": subscription,
         "userAgent": payload.userAgent or "",
         "deviceName": payload.deviceName or "",
-        "savedAt": datetime.now().isoformat(timespec="seconds"),
+        "savedAt": _now_kst_iso(),
     }
 
     filtered = [
@@ -722,7 +732,7 @@ async def _run_schedule_change_check(push_on_change: bool = True) -> Dict[str, A
 
     merged_rows = _merge_latest_rows(existing_rows, list(fresh_latest.values()))
     room["rows"] = merged_rows
-    room["lastFetchedAt"] = datetime.now().isoformat(timespec="seconds")
+    room["lastFetchedAt"] = _now_kst_iso()
     _write_latest_schedule(room)
 
     sent = 0
@@ -847,7 +857,7 @@ async def _auto_push_loop() -> None:
                 _update_auto_push_status(
                     enabled=True,
                     intervalMinutes=interval_minutes,
-                    lastRunAt=datetime.now().isoformat(timespec="seconds"),
+                    lastRunAt=_now_kst_iso(),
                     lastMessage=message,
                     lastResult=result,
                 )
@@ -855,7 +865,7 @@ async def _auto_push_loop() -> None:
                 _update_auto_push_status(
                     enabled=True,
                     intervalMinutes=interval_minutes,
-                    lastRunAt=datetime.now().isoformat(timespec="seconds"),
+                    lastRunAt=_now_kst_iso(),
                     lastMessage=f"자동 확인 오류: {exc}",
                 )
 
@@ -915,7 +925,7 @@ async def check_push_and_save_latest_schedule(payload: LatestScheduleRequest) ->
         current_room["fixed"] = True
 
     if not current_room.get("id"):
-        current_room["id"] = str(int(datetime.now().timestamp() * 1000))
+        current_room["id"] = str(int(_now_kst().timestamp() * 1000))
 
     if not current_room.get("name"):
         current_room["name"] = "Schedule_Synced"
@@ -1008,7 +1018,7 @@ async def check_push_and_save_latest_schedule(payload: LatestScheduleRequest) ->
     _update_auto_push_status(
         enabled=True,
         intervalMinutes=_get_auto_interval_minutes_for_room(current_room),
-        lastRunAt=datetime.now().isoformat(timespec="seconds"),
+        lastRunAt=_now_kst_iso(),
         lastMessage=(
             f"Schedule Lite 결과 저장 및 알림 확인 완료: 변경 {len(changed_items)}건, 푸시 {sent}건"
             if changed_items
@@ -1052,7 +1062,7 @@ async def save_latest_schedule(payload: LatestScheduleRequest) -> Dict[str, Any]
         room["fixed"] = True
 
     if not room.get("id"):
-        room["id"] = str(int(datetime.now().timestamp() * 1000))
+        room["id"] = str(int(_now_kst().timestamp() * 1000))
 
     if not room.get("name"):
         room["name"] = "Schedule_Synced"

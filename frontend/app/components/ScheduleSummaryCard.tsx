@@ -83,7 +83,7 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 function formatApiLookupTime(value?: string) {
   if (!value) return "-";
 
-  return value.replace("T", " ").slice(0, 19);
+  return `${value.replace("T", " ").slice(0, 19)} KST`;
 }
 
 function getFlightRouteItems(room: MonitorRoom | null) {

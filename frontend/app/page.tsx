@@ -590,6 +590,7 @@ export default function HomePage() {
     setFlightAlertHistory(loadFlightAlertHistory());
     setAlertCheckedAt(savedSnapshot?.savedAt || getCurrentTimeLabel());
 
+    void fetchServerFlightAlertHistory();
     void fetchWeather();
     void checkScheduleApiAndSync(false, true);
     void fetchAutoPushStatus();
@@ -617,6 +618,7 @@ export default function HomePage() {
 
     const refreshFromResume = () => {
       void checkScheduleApiAndSync(false);
+      void fetchServerFlightAlertHistory();
       void syncPwaPermissionAndSubscription(false);
       void fetchAutoPushStatus();
     };
@@ -704,6 +706,52 @@ export default function HomePage() {
     setNotice("출도착 알림 이력을 초기화했습니다.");
   };
 
+  const mergeFlightAlertHistoryItems = (items: FlightAlertHistoryItem[]) => {
+    if (!items.length) return;
+
+    setFlightAlertHistory((prevItems) => {
+      const merged = [...items, ...prevItems];
+      const seen = new Set<string>();
+      const deduped: FlightAlertHistoryItem[] = [];
+
+      for (const item of merged) {
+        const dedupeKey = `${item.title}|${item.description}|${item.checkedAt}`;
+        if (seen.has(dedupeKey)) continue;
+        seen.add(dedupeKey);
+        deduped.push(item);
+      }
+
+      const nextItems = deduped.slice(0, 20);
+      saveFlightAlertHistory(nextItems);
+      return nextItems;
+    });
+  };
+
+  const fetchServerFlightAlertHistory = async () => {
+    try {
+      const res = await fetch(`${BACKEND_URL}/flights/notification-history`, {
+        cache: "no-store",
+      });
+      const json = await res.json();
+
+      if (!res.ok || json.success === false || !Array.isArray(json.items)) return;
+
+      const items = json.items
+        .map((item: Partial<FlightAlertHistoryItem>) => ({
+          key: String(item.key || `server-${Date.now()}-${Math.random()}`),
+          title: String(item.title || "Schedule Flight"),
+          description: String(item.description || "운항 정보 변경"),
+          checkedAt: String(item.checkedAt || getCurrentTimeLabel()),
+          roomName: String(item.roomName || "Schedule Flight"),
+        }))
+        .filter((item: FlightAlertHistoryItem) => item.title && item.description);
+
+      mergeFlightAlertHistoryItems(items);
+    } catch {
+      // 서버 알림 이력 조회 실패 시 기존 로컬 이력은 유지합니다.
+    }
+  };
+
   const appendBackendFlightAlertHistory = (result: BackendScheduleCheckResult, sourceLabel = "API 확인") => {
     const changes = Array.isArray(result.changes) ? result.changes : [];
 
@@ -724,9 +772,7 @@ export default function HomePage() {
       };
     });
 
-    const nextHistory = [...historyItems, ...flightAlertHistory].slice(0, 20);
-    setFlightAlertHistory(nextHistory);
-    saveFlightAlertHistory(nextHistory);
+    mergeFlightAlertHistoryItems(historyItems);
   };
 
   const openFlights = () => router.push("/flights");

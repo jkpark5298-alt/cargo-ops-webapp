@@ -28,6 +28,9 @@ PUSH_SUBSCRIPTIONS_FILE = Path(
 AUTO_PUSH_STATUS_FILE = Path(
     os.getenv("AUTO_PUSH_STATUS_FILE", "/tmp/cargo_ops_auto_push_status.json")
 )
+NOTIFICATION_HISTORY_FILE = Path(
+    os.getenv("NOTIFICATION_HISTORY_FILE", "/tmp/cargo_ops_notification_history.json")
+)
 AUTO_PUSH_DEFAULT_INTERVAL_MINUTES = int(os.getenv("AUTO_PUSH_INTERVAL_MINUTES", "30"))
 AUTO_PUSH_STARTED = False
 
@@ -97,6 +100,70 @@ def _write_latest_schedule(room: Dict[str, Any]) -> Dict[str, Any]:
         encoding="utf-8",
     )
     return payload
+
+
+def _read_notification_history() -> List[Dict[str, Any]]:
+    try:
+        if not NOTIFICATION_HISTORY_FILE.exists():
+            return []
+
+        data = json.loads(NOTIFICATION_HISTORY_FILE.read_text(encoding="utf-8"))
+        items = data.get("items")
+        return items if isinstance(items, list) else []
+    except Exception:
+        return []
+
+
+def _write_notification_history(items: List[Dict[str, Any]]) -> None:
+    NOTIFICATION_HISTORY_FILE.parent.mkdir(parents=True, exist_ok=True)
+    NOTIFICATION_HISTORY_FILE.write_text(
+        json.dumps({"items": items[:100]}, ensure_ascii=False),
+        encoding="utf-8",
+    )
+
+
+def _append_notification_history(
+    changed_items: List[Dict[str, Any]],
+    room: Optional[Dict[str, Any]] = None,
+    source: str = "자동 알림",
+) -> List[Dict[str, Any]]:
+    if not changed_items:
+        return _read_notification_history()
+
+    checked_at = _now_kst_iso()
+    room_name = str((room or {}).get("name") or "Schedule Flight")
+    new_items: List[Dict[str, Any]] = []
+
+    for index, item in enumerate(changed_items[:20]):
+        flight = str(item.get("flight") or "Schedule Flight")
+        route = str(item.get("route") or "")
+        changes = item.get("changes") if isinstance(item.get("changes"), list) else []
+        description = " · ".join(str(change) for change in changes[:4]) or "운항 정보 변경"
+
+        new_items.append(
+            {
+                "key": f"server-{checked_at}-{index}-{flight}",
+                "title": f"{flight} {route}".strip(),
+                "description": f"{source} · {description}",
+                "checkedAt": checked_at.replace("T", " "),
+                "roomName": room_name,
+            }
+        )
+
+    existing = _read_notification_history()
+    merged = new_items + existing
+    seen: set[str] = set()
+    deduped: List[Dict[str, Any]] = []
+
+    for item in merged:
+        dedupe_key = f"{item.get('title')}|{item.get('description')}|{item.get('checkedAt')}"
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        deduped.append(item)
+
+    _write_notification_history(deduped)
+    return deduped
 
 
 def _read_push_subscriptions() -> List[Dict[str, Any]]:
@@ -769,6 +836,9 @@ async def _run_schedule_change_check(push_on_change: bool = True) -> Dict[str, A
                 failed += 1
                 errors.append(str(exc))
 
+    if changed_items:
+        _append_notification_history(changed_items, room, "자동/수동 API 확인")
+
     if prealert_keys_to_save:
         _append_arrival_prealert_keys(prealert_keys_to_save)
 
@@ -1011,6 +1081,9 @@ async def check_push_and_save_latest_schedule(payload: LatestScheduleRequest) ->
                 failed += 1
                 errors.append(str(exc))
 
+    if changed_items:
+        _append_notification_history(changed_items, current_room, "Schedule Lite 저장 알림")
+
     saved = _write_latest_schedule(current_room)
     if prealert_keys_to_save:
         _append_arrival_prealert_keys(prealert_keys_to_save)
@@ -1042,6 +1115,14 @@ async def check_push_and_save_latest_schedule(payload: LatestScheduleRequest) ->
         "failed": failed,
         "changes": changed_items,
         "errors": errors[:3],
+    }
+
+
+@router.get("/notification-history")
+async def get_notification_history() -> Dict[str, Any]:
+    return {
+        "success": True,
+        "items": _read_notification_history()[:50],
     }
 
 

@@ -368,6 +368,15 @@ function normalizeFlightsInput(rawInput: string) {
     });
 }
 
+function filterRowsByFlightInput(rows: FlightRow[], flights: string[]) {
+  const flightSet = new Set(flights.map((flight) => flight.replace(/\s+/g, "").toUpperCase()));
+
+  return rows.filter((row) => {
+    const rowFlight = getFlightDisplay(row).replace(/\s+/g, "").toUpperCase();
+    return flightSet.has(rowFlight);
+  });
+}
+
 function buildFixedDetailRows(row: FlightRow) {
   return [
     { label: "현황", value: getComputedStatus(row) },
@@ -650,6 +659,52 @@ export default function FlightsPage() {
       saveRooms(nextRooms);
       return nextRooms;
     });
+  };
+
+  const handleFlightsInputChange = (value: string) => {
+    setInput(value.toUpperCase());
+  };
+
+  const syncFixedRoomFlightsInput = async () => {
+    const normalizedFlights = normalizeFlightsInput(input);
+    const normalizedInput = normalizedFlights.join(", ");
+
+    setInput(normalizedInput);
+
+    if (!selectedRoom || !selectedRoom.fixed) return;
+
+    const nextRows = filterRowsByFlightInput(selectedRoom.rows || [], normalizedFlights);
+    const updatedRoom: MonitorRoom = {
+      ...selectedRoom,
+      flightsInput: normalizedInput,
+      rows: nextRows,
+      lastFetchedAt: new Date().toLocaleString("ko-KR"),
+    };
+
+    const nextRooms = rooms.map((room) =>
+      room.id === selectedRoom.id ? updatedRoom : room
+    );
+
+    setRooms(nextRooms);
+    saveRooms(nextRooms);
+    setRows(nextRows);
+    setSelectedScheduleKeys({});
+    setExpandedDetailKeys({});
+
+    try {
+      await saveLatestScheduleToServer(updatedRoom);
+      setError(
+        normalizedFlights.length > 0
+          ? "Schedule Flight 편명 변경을 Schedule Lite와 최근 Schedule Flight에 동기화했습니다."
+          : "Schedule Flight 편명을 모두 비웠습니다. Schedule Lite와 최근 Schedule Flight도 비워졌습니다.",
+      );
+    } catch (syncError) {
+      setError(
+        syncError instanceof Error
+          ? `로컬 편명 변경 완료. 서버 동기화 실패: ${syncError.message}`
+          : "로컬 편명 변경 완료. 서버 동기화 중 오류가 발생했습니다.",
+      );
+    }
   };
 
   const resetLookupView = () => {
@@ -1270,10 +1325,9 @@ export default function FlightsPage() {
             <div style={{ display: "flex", gap: 10, marginTop: 14 }}>
               <input
                 value={input}
-                onChange={(e) => setInput(e.target.value.toUpperCase())}
+                onChange={(e) => handleFlightsInputChange(e.target.value)}
                 onBlur={() => {
-                  const normalized = normalizeFlightsInput(input).join(", ");
-                  if (normalized) setInput(normalized);
+                  void syncFixedRoomFlightsInput();
                 }}
                 placeholder="예: 247,972 또는 KJ247,KJ972"
                 style={{

@@ -90,7 +90,7 @@ function mergeLatestScheduleRoom(rooms: MonitorRoom[], latestRoom: MonitorRoom) 
 }
 
 async function loadLatestScheduleFromServer() {
-  const res = await fetch(`${BACKEND_URL}/flights/latest-schedule/check-push-and-save`, {
+  const res = await fetch(`${BACKEND_URL}/flights/latest-schedule`, {
     cache: "no-store",
   });
   const json = await res.json();

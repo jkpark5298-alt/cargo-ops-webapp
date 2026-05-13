@@ -21,7 +21,7 @@ export function ScheduleSummaryCard({
   return (
     <section style={cardStyle}>
       <div style={cardLabelStyle}>최근 Schedule Flight</div>
-      <h2 style={cardTitleStyle}>{latestRoom?.name || "저장된 스케줄 없음"}</h2>
+      <h2 style={cardTitleStyle}>{getScheduleSummaryTitle(latestRoom)}</h2>
       <div style={apiLookupTimeStyle}>
         API 조회 {formatApiLookupTime(latestRoom?.lastFetchedAt)}
       </div>
@@ -81,6 +81,20 @@ function InfoRow({ label, value }: { label: string; value: string }) {
       <span style={infoValueStyle}>{value}</span>
     </div>
   );
+}
+
+function getScheduleSummaryTitle(room: MonitorRoom | null) {
+  if (!room) return "최근 Schedule Flight";
+
+  const rawName = room.name || "";
+  const dateMatch = rawName.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
+
+  if (dateMatch) {
+    const [, , month, day, hour, minute] = dateMatch;
+    return `최근 Schedule Flight · ${month}/${day} ${hour}:${minute}`;
+  }
+
+  return "최근 Schedule Flight";
 }
 
 function formatApiLookupTime(value?: string) {
@@ -282,9 +296,9 @@ const cardLabelStyle: CSSProperties = {
 };
 
 const cardTitleStyle: CSSProperties = {
-  margin: "6px 0 8px",
+  margin: "6px 0 6px",
   color: "#f8fafc",
-  fontSize: 21,
+  fontSize: 22,
   lineHeight: 1.25,
   fontWeight: 950,
 };

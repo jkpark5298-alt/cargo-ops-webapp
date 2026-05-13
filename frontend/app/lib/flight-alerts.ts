@@ -109,7 +109,7 @@ export function createFlightAlertItems(
       alerts.push({
         key: `new-${key}`,
         title: `${current.flight} ${current.route}`,
-        description: "새로 조회된 편명입니다. 운항 정보를 확인하세요.",
+        description: "신규 조회",
       });
       return;
     }
@@ -152,7 +152,7 @@ export function createFlightAlertItems(
       alerts.push({
         key: `missing-${key}`,
         title: `${previous.flight} ${previous.route}`,
-        description: "이전 기준에 있던 편명이 현재 조회 결과에서 보이지 않습니다.",
+        description: "조회 대상에서 제외 또는 삭제됨",
       });
     }
   });

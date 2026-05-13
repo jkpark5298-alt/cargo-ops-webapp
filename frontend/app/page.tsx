@@ -654,6 +654,20 @@ export default function HomePage() {
   }, [latestRoom?.id, flightAlertSnapshot?.roomId]);
 
   useEffect(() => {
+    if (!latestRoom || flightAlertItems.length === 0) return;
+
+    const checkedAt = getCurrentTimeLabel();
+    const historyItems = flightAlertItems.map((item) => ({
+      ...item,
+      checkedAt,
+      roomName: latestRoom.name,
+    }));
+
+    mergeFlightAlertHistoryItems(historyItems);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [latestRoom?.id, latestRoom?.lastFetchedAt, flightAlertItems.length]);
+
+  useEffect(() => {
     const route = getRouteByFlight(latestRoom, issueFlight);
     const hlnbr = getHlnbrByFlight(latestRoom, issueFlight);
 
@@ -682,9 +696,7 @@ export default function HomePage() {
         checkedAt,
         roomName: latestRoom?.name || snapshot.roomName,
       }));
-      const nextHistory = [...historyItems, ...flightAlertHistory].slice(0, 20);
-      setFlightAlertHistory(nextHistory);
-      saveFlightAlertHistory(nextHistory);
+      mergeFlightAlertHistoryItems(historyItems);
     }
 
     setFlightAlertSnapshot(snapshot);

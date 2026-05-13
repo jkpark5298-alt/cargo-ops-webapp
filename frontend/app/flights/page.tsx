@@ -93,6 +93,23 @@ function saveRooms(rooms: MonitorRoom[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(rooms));
 }
 
+function mergeLatestScheduleRoom(rooms: MonitorRoom[], latestRoom: MonitorRoom) {
+  return [latestRoom, ...rooms.filter((room) => !room.fixed)];
+}
+
+async function loadLatestScheduleFromServer() {
+  const res = await fetch(`${BACKEND_URL}/flights/latest-schedule`, {
+    cache: "no-store",
+  });
+  const json = await res.json();
+
+  if (!res.ok || json.success === false) {
+    throw new Error(json.detail || json.message || "Schedule Flight 서버 조회 실패");
+  }
+
+  return (json.room || null) as MonitorRoom | null;
+}
+
 async function saveLatestScheduleToServer(room: MonitorRoom) {
   const res = await fetch(`${BACKEND_URL}/flights/latest-schedule`, {
     method: "POST",
@@ -830,6 +847,17 @@ export default function FlightsPage() {
   useEffect(() => {
     const savedRooms = loadRooms();
     setRooms(savedRooms);
+
+    void loadLatestScheduleFromServer()
+      .then((serverRoom) => {
+        if (!serverRoom) return;
+        const mergedRooms = mergeLatestScheduleRoom(loadRooms(), serverRoom);
+        setRooms(mergedRooms);
+        saveRooms(mergedRooms);
+      })
+      .catch(() => {
+        // 서버 기준 조회 실패 시 기기 저장값을 유지합니다.
+      });
 
     if (typeof window === "undefined") return;
 

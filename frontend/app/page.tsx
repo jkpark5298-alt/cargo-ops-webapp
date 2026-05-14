@@ -678,13 +678,9 @@ export default function HomePage() {
     setFlightAlertSnapshot(snapshot);
     saveFlightAlertSnapshot(snapshot);
     setAlertCheckedAt(snapshot.savedAt);
-    setNotice("출도착 알림을 이력에 자동 저장하고 현재 알림을 정리했습니다.");
+    setNotice(`출도착 알림 ${historyItems.length}건을 이력에 자동 저장했습니다.`);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [latestRoom?.id, latestRoom?.lastFetchedAt, flightAlertItems.length]);
-
-  useEffect(() => {
-    saveFlightAlertHistory(flightAlertHistory);
-  }, [flightAlertHistory]);
 
   useEffect(() => {
     const route = getRouteByFlight(latestRoom, issueFlight);
@@ -758,13 +754,13 @@ export default function HomePage() {
       const deduped: FlightAlertHistoryItem[] = [];
 
       for (const item of merged) {
-        const dedupeKey = `${item.title}|${item.description}|${item.checkedAt}`;
+        const dedupeKey = `${item.key}|${item.title}|${item.description}|${item.roomName}`;
         if (seen.has(dedupeKey)) continue;
         seen.add(dedupeKey);
         deduped.push(item);
       }
 
-      const nextItems = deduped.slice(0, 20);
+      const nextItems = deduped.slice(0, 30);
       saveFlightAlertHistory(nextItems);
       return nextItems;
     });

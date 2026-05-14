@@ -8,7 +8,6 @@ import {
   type CSSProperties,
 } from "react";
 import { useRouter } from "next/navigation";
-import { FlightAlertCard } from "./components/FlightAlertCard";
 import { FlightAlertHistoryCard } from "./components/FlightAlertHistoryCard";
 import { WeatherCard } from "./components/WeatherCard";
 import { ScheduleSummaryCard } from "./components/ScheduleSummaryCard";
@@ -514,7 +513,6 @@ export default function HomePage() {
     () => createFlightAlertItems(latestRoom, flightAlertSnapshot),
     [latestRoom, flightAlertSnapshot],
   );
-  const flightAlertCount = flightAlertItems.length;
 
   const saveCurrentIssueDraft = (overrides: Partial<{
     flight: string;
@@ -1699,12 +1697,13 @@ export default function HomePage() {
           onOpenNaver={openNaverWeather}
         />
 
-        <FlightAlertCard
-          alertCount={flightAlertCount}
-          alertItems={flightAlertItems}
-          checkedAt={alertCheckedAt}
-          snapshotName={flightAlertSnapshot?.roomName || null}
-          onSaveCurrent={handleCheckFlightAlerts}
+        <ScheduleSummaryCard
+          latestRoom={latestRoom}
+          syncCheckedAt={scheduleSyncCheckedAt}
+          apiSyncStatus={scheduleApiSyncStatus}
+          apiSyncLoading={scheduleApiSyncLoading}
+          onOpenScheduleFlight={openScheduleFlight}
+          onRefreshLatestSchedule={handleRefreshLatestSchedule}
         />
 
         <FlightAlertHistoryCard
@@ -1715,15 +1714,6 @@ export default function HomePage() {
       </section>
 
       <section style={stackStyle}>
-        <ScheduleSummaryCard
-          latestRoom={latestRoom}
-          syncCheckedAt={scheduleSyncCheckedAt}
-          apiSyncStatus={scheduleApiSyncStatus}
-          apiSyncLoading={scheduleApiSyncLoading}
-          onOpenScheduleFlight={openScheduleFlight}
-          onRefreshLatestSchedule={handleRefreshLatestSchedule}
-        />
-
         <ActionCard
           label="오늘 KJ 화물기 조회"
           title="오늘 KJ 화물기 조회"

@@ -45,6 +45,19 @@ def _now_kst_iso() -> str:
     return _now_kst().isoformat(timespec="seconds")
 
 
+def _parse_kst_iso(value: Any) -> Optional[datetime]:
+    if not value:
+        return None
+
+    try:
+        return datetime.fromisoformat(str(value).replace("Z", "+00:00")).astimezone(KST).replace(tzinfo=None)
+    except Exception:
+        try:
+            return datetime.fromisoformat(str(value)).replace(tzinfo=None)
+        except Exception:
+            return None
+
+
 class PushSubscriptionRequest(BaseModel):
     subscription: Dict[str, Any]
     userAgent: Optional[str] = None
@@ -939,7 +952,7 @@ async def _auto_push_loop() -> None:
                     lastMessage=f"자동 확인 오류: {exc}",
                 )
 
-        await asyncio.sleep(interval_minutes * 60)
+        await asyncio.sleep(min(interval_minutes, 5) * 60)
 
 
 @router.on_event("startup")
@@ -963,8 +976,86 @@ async def check_schedule_and_push() -> Dict[str, Any]:
     return await _run_schedule_change_check(push_on_change=True)
 
 
+async def _run_auto_push_tick_if_due(source: str = "health") -> Dict[str, Any]:
+    status = _read_auto_push_status()
+    interval_minutes = _get_current_auto_interval_minutes()
+    enabled = bool(status.get("enabled", True))
+    now = _now_kst()
+    last_run_at = _parse_kst_iso(status.get("lastRunAt"))
+    elapsed_seconds = (
+        (now - last_run_at).total_seconds()
+        if last_run_at is not None
+        else None
+    )
+    due = enabled and (
+        elapsed_seconds is None
+        or elapsed_seconds >= interval_minutes * 60
+    )
+
+    tick_result: Dict[str, Any] = {
+        "enabled": enabled,
+        "intervalMinutes": interval_minutes,
+        "mode": "focus" if interval_minutes == 5 else "normal",
+        "due": due,
+        "source": source,
+        "lastRunAt": status.get("lastRunAt") or "",
+        "elapsedSeconds": elapsed_seconds,
+        "ran": False,
+        "message": status.get("lastMessage") or "",
+    }
+
+    if not due:
+        return tick_result
+
+    try:
+        result = await _run_schedule_change_check(push_on_change=True)
+        changed = result.get("changed", 0)
+        sent = result.get("sent", 0)
+        mode_text = "집중 5분" if interval_minutes == 5 else "일반 30분"
+        message = (
+            f"자동 확인 완료({mode_text}, {source}): 변경 {changed}건, 푸시 {sent}건"
+            if changed
+            else f"자동 확인 완료({mode_text}, {source}): 변경 없음, 재조회 {result.get('checked', 0)}건"
+        )
+        _update_auto_push_status(
+            enabled=True,
+            intervalMinutes=interval_minutes,
+            lastRunAt=_now_kst_iso(),
+            lastMessage=message,
+            lastResult=result,
+        )
+        tick_result.update(
+            {
+                "ran": True,
+                "lastRunAt": _now_kst_iso(),
+                "message": message,
+                "result": result,
+            }
+        )
+    except Exception as exc:
+        message = f"자동 확인 오류({source}): {exc}"
+        _update_auto_push_status(
+            enabled=True,
+            intervalMinutes=interval_minutes,
+            lastRunAt=_now_kst_iso(),
+            lastMessage=message,
+        )
+        tick_result.update(
+            {
+                "ran": True,
+                "lastRunAt": _now_kst_iso(),
+                "message": message,
+                "error": str(exc),
+            }
+        )
+
+    return tick_result
+
+
+
 @router.get("/health")
 async def health_check() -> Dict[str, Any]:
+    tick = await _run_auto_push_tick_if_due("health")
     room = _read_latest_schedule()
     status = _read_auto_push_status()
     interval = _get_current_auto_interval_minutes()
@@ -987,6 +1078,7 @@ async def health_check() -> Dict[str, Any]:
         "lastMessage": status.get("lastMessage") or "",
         "scheduleFlightCount": len(requested_flights),
         "rowCount": len(rows),
+        "tick": tick,
     }
 
 

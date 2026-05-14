@@ -128,6 +128,17 @@ async function saveLatestScheduleToServer(room: MonitorRoom) {
   return json.room as MonitorRoom;
 }
 
+async function clearLatestScheduleOnServer(room: MonitorRoom) {
+  const emptyRoom: MonitorRoom = {
+    ...room,
+    flightsInput: "",
+    rows: [],
+    lastFetchedAt: new Date().toLocaleString("ko-KR"),
+  };
+
+  return saveLatestScheduleToServer(emptyRoom);
+}
+
 function clearFlightAlertBaselineAndHistory() {
   if (typeof window === "undefined") return;
   localStorage.removeItem(FLIGHT_ALERT_SNAPSHOT_KEY);
@@ -1197,17 +1208,31 @@ export default function FlightsPage() {
   };
 
   const handleDeleteRoom = (roomId: string) => {
+    const targetRoom = rooms.find((room) => room.id === roomId);
+    const confirmed = window.confirm("저장된 조회를 삭제할까요?");
+    if (!confirmed) return;
+
     const nextRooms = rooms.filter((room) => room.id !== roomId);
     setRooms(nextRooms);
     saveRooms(nextRooms);
 
     if (selectedRoomId === roomId) {
-      setSelectedRoomId("");
-      setInput("");
-      setRows([]);
-      setLastFetchedAt("");
-      setFixed(false);
-      setExpandedDetailKeys({});
+      resetLookupView();
+    }
+
+    if (targetRoom?.fixed) {
+      clearFlightAlertBaselineAndHistory();
+      void clearLatestScheduleOnServer(targetRoom)
+        .then(() => {
+          setError("Schedule Flight 저장방을 삭제하고 초기화면 최근 Schedule Flight도 비웠습니다.");
+        })
+        .catch((error) => {
+          setError(
+            error instanceof Error
+              ? `저장방은 삭제했지만 서버 Schedule Flight 비우기 실패: ${error.message}`
+              : "저장방은 삭제했지만 서버 Schedule Flight 비우기 중 오류가 발생했습니다.",
+          );
+        });
     }
   };
 

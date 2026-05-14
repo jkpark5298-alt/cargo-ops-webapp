@@ -20,7 +20,6 @@ export function ScheduleSummaryCard({
 }: ScheduleSummaryCardProps) {
   return (
     <section style={cardStyle}>
-      <div style={cardLabelStyle}>최근 Schedule Flight</div>
       <h2 style={cardTitleStyle}>{getScheduleSummaryTitle(latestRoom)}</h2>
 
       <div style={summaryTopInfoStyle}>
@@ -83,18 +82,18 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 }
 
 function getScheduleSummaryTitle(room: MonitorRoom | null) {
-  if (!room) return "-";
+  if (!room) return "최근 Schedule Flight";
 
   const rawName = room.name || "";
   const dateMatch = rawName.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
 
   if (dateMatch) {
     const [, year, month, day, hour, minute] = dateMatch;
-    return `'${year.slice(2)}/${month}/${day} ${hour}:${minute}`;
+    return `최근 Schedule Flight('${year.slice(2)}/${month}/${day} ${hour}:${minute})`;
   }
 
   const rangeStart = formatCompactSlashDateTime(room.startDateTime);
-  return rangeStart !== "-" ? rangeStart : "-";
+  return rangeStart !== "-" ? `최근 Schedule Flight(${rangeStart})` : "최근 Schedule Flight";
 }
 
 function formatApiLookupTime(value?: string) {
@@ -369,11 +368,12 @@ const cardLabelStyle: CSSProperties = {
 };
 
 const cardTitleStyle: CSSProperties = {
-  margin: "5px 0 4px",
-  color: "#f8fafc",
-  fontSize: 21,
-  lineHeight: 1.25,
+  margin: "0 0 8px",
+  color: "#cbd5e1",
+  fontSize: 14,
+  lineHeight: 1.35,
   fontWeight: 950,
+  letterSpacing: 0.6,
 };
 
 const summaryTopInfoStyle: CSSProperties = {

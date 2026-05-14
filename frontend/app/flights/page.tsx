@@ -682,6 +682,40 @@ export default function FlightsPage() {
     setInput(value.toUpperCase());
   };
 
+  const clearSelectedScheduleFlight = async () => {
+    if (!selectedRoom || !selectedRoom.fixed) return;
+
+    const updatedRoom: MonitorRoom = {
+      ...selectedRoom,
+      flightsInput: "",
+      rows: [],
+      lastFetchedAt: new Date().toLocaleString("ko-KR"),
+    };
+
+    const nextRooms = rooms.map((room) =>
+      room.id === selectedRoom.id ? updatedRoom : room
+    );
+
+    setInput("");
+    setRooms(nextRooms);
+    saveRooms(nextRooms);
+    setRows([]);
+    clearFlightAlertBaselineAndHistory();
+    setSelectedScheduleKeys({});
+    setExpandedDetailKeys({});
+
+    try {
+      await saveLatestScheduleToServer(updatedRoom);
+      setError("Schedule Flight를 비웠습니다. 초기화면과 Schedule Lite에도 반영됩니다.");
+    } catch (syncError) {
+      setError(
+        syncError instanceof Error
+          ? `로컬 Schedule Flight 비우기 완료. 서버 동기화 실패: ${syncError.message}`
+          : "로컬 Schedule Flight 비우기 완료. 서버 동기화 중 오류가 발생했습니다.",
+      );
+    }
+  };
+
   const syncFixedRoomFlightsInput = async () => {
     const normalizedFlights = normalizeFlightsInput(input);
     const normalizedInput = normalizedFlights.join(", ");
@@ -1381,6 +1415,11 @@ export default function FlightsPage() {
                 value={input}
                 onChange={(e) => handleFlightsInputChange(e.target.value)}
                 onBlur={() => {
+                  if (isSelectedFixedRoom && input.trim() === "") {
+                    void clearSelectedScheduleFlight();
+                    return;
+                  }
+
                   void syncFixedRoomFlightsInput();
                 }}
                 placeholder="예: 247,972 또는 KJ247,KJ972"
@@ -2011,4 +2050,17 @@ const badgeNormal: CSSProperties = {
   ...badgeBase,
   background: "rgba(148, 163, 184, 0.16)",
   color: "#cbd5e1",
+};
+
+
+const clearScheduleButtonStyle: React.CSSProperties = {
+  minHeight: 48,
+  padding: "0 14px",
+  border: "1px solid rgba(248, 113, 113, 0.45)",
+  borderRadius: 8,
+  background: "rgba(127, 29, 29, 0.35)",
+  color: "#fecaca",
+  fontSize: 14,
+  fontWeight: 900,
+  cursor: "pointer",
 };

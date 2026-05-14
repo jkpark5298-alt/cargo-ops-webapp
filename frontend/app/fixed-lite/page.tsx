@@ -559,7 +559,7 @@ export default function FixedLitePage() {
   useEffect(() => {
     clearTimer();
 
-    if (!selectedRoom) {
+    if (!selectedRoom || (!selectedRoom.flightsInput.trim() && (selectedRoom.rows || []).length === 0)) {
       setSummary(null);
       setNextRefreshAt(null);
       setCurrentIntervalMinutes(null);

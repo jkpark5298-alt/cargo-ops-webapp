@@ -83,17 +83,18 @@ function InfoRow({ label, value }: { label: string; value: string }) {
 }
 
 function getScheduleSummaryTitle(room: MonitorRoom | null) {
-  if (!room) return "최근 Schedule Flight";
+  if (!room) return "-";
 
   const rawName = room.name || "";
   const dateMatch = rawName.match(/(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
 
   if (dateMatch) {
-    const [, , month, day, hour, minute] = dateMatch;
-    return `최근 Schedule Flight · ${month}/${day} ${hour}:${minute}`;
+    const [, year, month, day, hour, minute] = dateMatch;
+    return `'${year.slice(2)}/${month}/${day} ${hour}:${minute}`;
   }
 
-  return "최근 Schedule Flight";
+  const rangeStart = formatCompactSlashDateTime(room.startDateTime);
+  return rangeStart !== "-" ? rangeStart : "-";
 }
 
 function formatApiLookupTime(value?: string) {
@@ -270,6 +271,20 @@ function formatCompactDateTime(value?: string) {
   if (match) {
     const [, yy, mo, dd, hh, mi] = match;
     return `'${yy.slice(2)}-${mo}-${dd} ${hh}:${mi}`;
+  }
+
+  return normalized.slice(0, 16);
+}
+
+function formatCompactSlashDateTime(value?: string) {
+  if (!value) return "-";
+
+  const normalized = value.replace("T", " ").trim();
+  const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
+
+  if (match) {
+    const [, yy, mo, dd, hh, mi] = match;
+    return `'${yy.slice(2)}/${mo}/${dd} ${hh}:${mi}`;
   }
 
   return normalized.slice(0, 16);

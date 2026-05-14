@@ -22,20 +22,18 @@ export function ScheduleSummaryCard({
     <section style={cardStyle}>
       <div style={cardLabelStyle}>최근 Schedule Flight</div>
       <h2 style={cardTitleStyle}>{getScheduleSummaryTitle(latestRoom)}</h2>
+
+      <div style={summaryTopInfoStyle}>
+        <span>조회범위 {latestRoom ? `${formatCompactDateTime(latestRoom.startDateTime)} ~ ${formatCompactDateTime(latestRoom.endDateTime)}` : "-"}</span>
+        <span>결과 {getRoomRowsCount(latestRoom)}건</span>
+      </div>
+
       <div style={apiLookupTimeStyle}>
         API 조회 {formatApiLookupTime(latestRoom?.lastFetchedAt)}
       </div>
+
       <div style={infoListStyle}>
         <FlightRouteRows room={latestRoom} />
-        <InfoRow
-          label="조회범위"
-          value={
-            latestRoom
-              ? `${formatDateTime(latestRoom.startDateTime)} ~ ${formatDateTime(latestRoom.endDateTime)}`
-              : "-"
-          }
-        />
-        <InfoRow label="결과 수" value={`${getRoomRowsCount(latestRoom)}건`} />
       </div>
       {apiSyncStatus ? <div style={apiSyncStatusStyle}>{apiSyncStatus}</div> : null}
       {syncCheckedAt ? <div style={syncStatusStyle}>동기화 확인 · {syncCheckedAt}</div> : null}
@@ -61,9 +59,10 @@ function FlightRouteRows({ room }: { room: MonitorRoom | null }) {
           <div key={`${item.flight}-${item.route}`} style={flightRouteRowStyle}>
             <span style={flightRouteNoStyle}>{item.flight}</span>
             <span style={flightRouteValueStyle}>{item.route}</span>
-            <span style={flightRouteMetaStyle}>
-              {item.status} · {item.time}
-              {item.gate ? ` · G${item.gate}` : ""}
+            <span style={getFlightRouteMetaStyle(item.status)}>
+              <span style={getStatusBadgeStyle(item.status)}>{item.status}</span>
+              <span> · {item.time}</span>
+              {item.gate ? <span> · G{item.gate}</span> : null}
             </span>
           </div>
         ))
@@ -262,6 +261,65 @@ function formatDateTime(value?: string) {
   return value.replace("T", " ").slice(0, 16);
 }
 
+function formatCompactDateTime(value?: string) {
+  if (!value) return "-";
+
+  const normalized = value.replace("T", " ").trim();
+  const match = normalized.match(/^(\d{4})-(\d{2})-(\d{2})\s+(\d{2}):(\d{2})/);
+
+  if (match) {
+    const [, yy, mo, dd, hh, mi] = match;
+    return `'${yy.slice(2)}-${mo}-${dd} ${hh}:${mi}`;
+  }
+
+  return normalized.slice(0, 16);
+}
+
+function getStatusTone(status: string) {
+  if (status.includes("도착")) return "arrival";
+  if (status.includes("출발")) return "departure";
+  if (status.includes("지연")) return "delay";
+  if (status.includes("결항") || status.includes("회항")) return "danger";
+  return "normal";
+}
+
+function getFlightRouteMetaStyle(status: string): CSSProperties {
+  const tone = getStatusTone(status);
+
+  return {
+    ...flightRouteMetaStyle,
+    color:
+      tone === "arrival"
+        ? "#86efac"
+        : tone === "departure"
+          ? "#93c5fd"
+          : tone === "delay"
+            ? "#fde68a"
+            : tone === "danger"
+              ? "#fca5a5"
+              : "#cbd5e1",
+  };
+}
+
+function getStatusBadgeStyle(status: string): CSSProperties {
+  const tone = getStatusTone(status);
+
+  return {
+    padding: "2px 6px",
+    borderRadius: 999,
+    background:
+      tone === "arrival"
+        ? "rgba(34, 197, 94, 0.16)"
+        : tone === "departure"
+          ? "rgba(59, 130, 246, 0.16)"
+          : tone === "delay"
+            ? "rgba(245, 158, 11, 0.18)"
+            : tone === "danger"
+              ? "rgba(239, 68, 68, 0.18)"
+              : "rgba(148, 163, 184, 0.14)",
+  };
+}
+
 const apiSyncStatusStyle: CSSProperties = {
   marginTop: 12,
   color: "#fde68a",
@@ -296,11 +354,23 @@ const cardLabelStyle: CSSProperties = {
 };
 
 const cardTitleStyle: CSSProperties = {
-  margin: "6px 0 6px",
+  margin: "5px 0 4px",
   color: "#f8fafc",
-  fontSize: 22,
+  fontSize: 21,
   lineHeight: 1.25,
   fontWeight: 950,
+};
+
+const summaryTopInfoStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 10,
+  marginTop: 6,
+  marginBottom: 8,
+  color: "#cbd5e1",
+  fontSize: 12,
+  fontWeight: 850,
+  lineHeight: 1.4,
 };
 
 const apiLookupTimeStyle: CSSProperties = {
@@ -315,7 +385,7 @@ const apiLookupTimeStyle: CSSProperties = {
 const infoListStyle: CSSProperties = {
   display: "flex",
   flexDirection: "column",
-  marginTop: 12,
+  marginTop: 4,
 };
 
 const infoRowStyle: CSSProperties = {
@@ -350,7 +420,7 @@ const flightRouteOnlyBlockStyle: CSSProperties = {
 
 const flightRouteRowStyle: CSSProperties = {
   display: "grid",
-  gridTemplateColumns: "68px minmax(68px, 1fr) minmax(184px, auto)",
+  gridTemplateColumns: "68px minmax(68px, 1fr) minmax(190px, auto)",
   gap: 10,
   alignItems: "center",
   color: "#f8fafc",

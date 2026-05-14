@@ -690,7 +690,9 @@ export default function FlightsPage() {
 
     if (!selectedRoom || !selectedRoom.fixed) return;
 
-    const nextRows = filterRowsByFlightInput(selectedRoom.rows || [], normalizedFlights);
+    const nextRows = normalizedFlights.length > 0
+      ? filterRowsByFlightInput(selectedRoom.rows || [], normalizedFlights)
+      : [];
     const updatedRoom: MonitorRoom = {
       ...selectedRoom,
       flightsInput: normalizedInput,
@@ -705,6 +707,7 @@ export default function FlightsPage() {
     setRooms(nextRooms);
     saveRooms(nextRooms);
     setRows(nextRows);
+    clearFlightAlertBaselineAndHistory();
     setSelectedScheduleKeys({});
     setExpandedDetailKeys({});
 
@@ -876,8 +879,31 @@ export default function FlightsPage() {
         setLastFetchedAt(foundRoom.lastFetchedAt);
         setRows(foundRoom.rows);
         setExpandedDetailKeys({});
-        return;
       }
+
+      void loadLatestScheduleFromServer()
+        .then((serverRoom) => {
+          if (!serverRoom) return;
+          const mergedRooms = mergeLatestScheduleRoom(loadRooms(), serverRoom);
+          setRooms(mergedRooms);
+          saveRooms(mergedRooms);
+
+          if (serverRoom.id === roomId || serverRoom.fixed) {
+            setSelectedRoomId(serverRoom.id);
+            setInput(serverRoom.flightsInput);
+            setStartDateTime(serverRoom.startDateTime);
+            setEndDateTime(serverRoom.endDateTime);
+            setFixed(serverRoom.fixed);
+            setLastFetchedAt(serverRoom.lastFetchedAt);
+            setRows(serverRoom.rows || []);
+            setExpandedDetailKeys({});
+          }
+        })
+        .catch(() => {
+          // 서버 기준 조회 실패 시 현재 화면을 유지합니다.
+        });
+
+      return;
     }
 
     if (q) {

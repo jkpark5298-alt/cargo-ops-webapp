@@ -1709,6 +1709,7 @@ export default function HomePage() {
 
         <FlightAlertHistoryCard
           historyItems={flightAlertHistory}
+          onDeleteItem={handleDeleteFlightAlertHistoryItem}
           onClear={handleClearFlightAlertHistory}
         />
       </section>

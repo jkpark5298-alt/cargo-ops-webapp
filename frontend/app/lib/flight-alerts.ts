@@ -115,25 +115,23 @@ export function createFlightAlertItems(
     }
 
     const changes: string[] = [];
-
-    if (previous.route !== current.route) {
-      changes.push(`구간 ${previous.route || "-"} → ${current.route || "-"}`);
-    }
+    const previousStatus = previous.remark || previous.status || "-";
+    const currentStatus = current.remark || current.status || "-";
 
     if (previous.estimatedTime !== current.estimatedTime) {
-      changes.push(`시간 ${previous.estimatedTime || "-"} → ${current.estimatedTime || "-"}`);
+      changes.push(`시간 ${previous.estimatedTime || "-"}→${current.estimatedTime || "-"}`);
+    }
+
+    if (previousStatus !== currentStatus) {
+      changes.push(`상태 ${previousStatus}→${currentStatus}`);
     }
 
     if (previous.gate !== current.gate) {
-      changes.push(`게이트 ${previous.gate || "-"} → ${current.gate || "-"}`);
+      changes.push(`게이트 ${previous.gate || "-"}→${current.gate || "-"}`);
     }
 
-    if (previous.terminal !== current.terminal) {
-      changes.push(`터미널 ${previous.terminal || "-"} → ${current.terminal || "-"}`);
-    }
-
-    if (previous.remark !== current.remark) {
-      changes.push(`상태 ${previous.remark || previous.status || "-"} → ${current.remark || current.status || "-"}`);
+    if (previous.route !== current.route) {
+      changes.push(`구간 ${previous.route || "-"}→${current.route || "-"}`);
     }
 
     if (changes.length > 0) {

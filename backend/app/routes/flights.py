@@ -953,6 +953,11 @@ async def start_auto_push_worker() -> None:
     asyncio.create_task(_auto_push_loop())
 
 
+@router.post("/check-schedule")
+async def check_schedule() -> Dict[str, Any]:
+    return await _run_schedule_change_check(push_on_change=False)
+
+
 @router.post("/check-schedule-and-push")
 async def check_schedule_and_push() -> Dict[str, Any]:
     return await _run_schedule_change_check(push_on_change=True)

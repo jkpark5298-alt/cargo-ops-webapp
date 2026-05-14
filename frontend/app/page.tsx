@@ -473,6 +473,7 @@ export default function HomePage() {
   const issueSavingRef = useRef(false);
   const pendingImageSlotRef = useRef<ImageSlotKey>("daily-schedule");
   const lastImmediateApiCheckRef = useRef(0);
+  const autoSavedFlightAlertKeysRef = useRef("");
   const [rooms, setRooms] = useState<MonitorRoom[]>([]);
   const [images, setImages] = useState<SavedImage[]>([]);
   const [note, setNote] = useState("");
@@ -657,6 +658,17 @@ export default function HomePage() {
   useEffect(() => {
     if (!latestRoom || flightAlertItems.length === 0) return;
 
+    const snapshot = buildFlightAlertSnapshot(latestRoom);
+    if (!snapshot) return;
+
+    const alertKey = flightAlertItems
+      .map((item) => `${item.key}:${item.description}`)
+      .sort()
+      .join("|");
+
+    if (autoSavedFlightAlertKeysRef.current === alertKey) return;
+    autoSavedFlightAlertKeysRef.current = alertKey;
+
     const checkedAt = getCurrentTimeLabel();
     const historyItems = flightAlertItems.map((item) => ({
       ...item,
@@ -665,6 +677,10 @@ export default function HomePage() {
     }));
 
     mergeFlightAlertHistoryItems(historyItems);
+    setFlightAlertSnapshot(snapshot);
+    saveFlightAlertSnapshot(snapshot);
+    setAlertCheckedAt(snapshot.savedAt);
+    setNotice("출도착 알림을 이력에 자동 저장하고 현재 알림을 정리했습니다.");
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [latestRoom?.id, latestRoom?.lastFetchedAt, flightAlertItems.length]);
 
@@ -869,7 +885,8 @@ export default function HomePage() {
     lastImmediateApiCheckRef.current = now;
 
     try {
-      const res = await fetch(`${BACKEND_URL}/flights/check-schedule-and-push`, {
+      const endpoint = showNotice ? "check-schedule-and-push" : "check-schedule";
+      const res = await fetch(`${BACKEND_URL}/flights/${endpoint}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -944,7 +961,8 @@ export default function HomePage() {
 
       setAutoPushEnabled(Boolean(json.enabled));
       const modeText = json.mode === "focus" ? "집중 5분 확인" : "일반 30분 확인";
-      setAutoPushStatusMessage(`${modeText} · ${json.lastMessage || ""}`);
+      const lastRunText = json.lastRunAt ? ` · 마지막 ${String(json.lastRunAt).replace("T", " ").slice(5, 16)}` : "";
+      setAutoPushStatusMessage(`${modeText} · ${json.lastMessage || ""}${lastRunText}`);
     } catch {
       // 자동 확인 상태 조회 실패 시 화면만 조용히 유지합니다.
     }

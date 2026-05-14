@@ -963,6 +963,33 @@ async def check_schedule_and_push() -> Dict[str, Any]:
     return await _run_schedule_change_check(push_on_change=True)
 
 
+@router.get("/health")
+async def health_check() -> Dict[str, Any]:
+    room = _read_latest_schedule()
+    status = _read_auto_push_status()
+    interval = _get_current_auto_interval_minutes()
+
+    rows = room.get("rows") if isinstance(room, dict) else []
+    if not isinstance(rows, list):
+        rows = []
+
+    requested_flights = _normalize_flights([str(room.get("flightsInput") or "")]) if isinstance(room, dict) else []
+
+    return {
+        "success": True,
+        "service": "cargo-ops-backend",
+        "status": "ok",
+        "nowKst": _now_kst_iso(),
+        "autoPushEnabled": bool(status.get("enabled", True)),
+        "intervalMinutes": interval,
+        "mode": "focus" if interval == 5 else "normal",
+        "lastRunAt": status.get("lastRunAt") or "",
+        "lastMessage": status.get("lastMessage") or "",
+        "scheduleFlightCount": len(requested_flights),
+        "rowCount": len(rows),
+    }
+
+
 @router.get("/auto-push/status")
 async def get_auto_push_status() -> Dict[str, Any]:
     status = _read_auto_push_status()

@@ -487,6 +487,7 @@ export default function HomePage() {
   const [autoPushStatusMessage, setAutoPushStatusMessage] = useState("");
   const [scheduleSyncCheckedAt, setScheduleSyncCheckedAt] = useState("");
   const [scheduleApiSyncStatus, setScheduleApiSyncStatus] = useState("");
+  const [scheduleApiSyncLoading, setScheduleApiSyncLoading] = useState(false);
   const [isDailySaving, setIsDailySaving] = useState(false);
   const [isIssueSaving, setIsIssueSaving] = useState(false);
   const [weather, setWeather] = useState<WeatherInfo>(DEFAULT_WEATHER);
@@ -914,8 +915,22 @@ export default function HomePage() {
     }
   };
 
-  const handleRefreshLatestSchedule = () => {
-    void checkScheduleApiAndSync(true, true);
+  const handleRefreshLatestSchedule = async () => {
+    if (scheduleApiSyncLoading) return;
+
+    const requestedAt = getCurrentSyncLabel();
+    setScheduleApiSyncLoading(true);
+    setScheduleSyncCheckedAt(requestedAt);
+    setScheduleApiSyncStatus(`API 동기화 요청 중 · ${requestedAt}`);
+    setNotice("최근 Schedule Flight API 동기화를 시작했습니다.");
+
+    try {
+      await checkScheduleApiAndSync(true);
+      await syncLatestScheduleFromServer(false);
+      await fetchServerFlightAlertHistory();
+    } finally {
+      setScheduleApiSyncLoading(false);
+    }
   };
 
   const fetchAutoPushStatus = async () => {
@@ -1669,6 +1684,7 @@ export default function HomePage() {
           latestRoom={latestRoom}
           syncCheckedAt={scheduleSyncCheckedAt}
           apiSyncStatus={scheduleApiSyncStatus}
+          apiSyncLoading={scheduleApiSyncLoading}
           onOpenScheduleFlight={openScheduleFlight}
           onRefreshLatestSchedule={handleRefreshLatestSchedule}
         />

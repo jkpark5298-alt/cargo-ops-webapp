@@ -7,6 +7,7 @@ type ScheduleSummaryCardProps = {
   latestRoom: MonitorRoom | null;
   syncCheckedAt: string;
   apiSyncStatus: string;
+  apiSyncLoading: boolean;
   onOpenScheduleFlight: () => void;
   onRefreshLatestSchedule: () => void;
 };
@@ -15,6 +16,7 @@ export function ScheduleSummaryCard({
   latestRoom,
   syncCheckedAt,
   apiSyncStatus,
+  apiSyncLoading,
   onOpenScheduleFlight,
   onRefreshLatestSchedule,
 }: ScheduleSummaryCardProps) {
@@ -37,8 +39,16 @@ export function ScheduleSummaryCard({
       {apiSyncStatus ? <div style={apiSyncStatusStyle}>{apiSyncStatus}</div> : null}
       {syncCheckedAt ? <div style={syncStatusStyle}>동기화 확인 · {syncCheckedAt}</div> : null}
       <div style={buttonStackStyle}>
-        <button onClick={onRefreshLatestSchedule} style={refreshButtonStyle}>
-          최근 Schedule Flight API 동기화
+        <button
+          onClick={onRefreshLatestSchedule}
+          style={{
+            ...refreshButtonStyle,
+            opacity: apiSyncLoading ? 0.72 : 1,
+            cursor: apiSyncLoading ? "wait" : "pointer",
+          }}
+          disabled={apiSyncLoading}
+        >
+          {apiSyncLoading ? "API 동기화 중..." : "최근 Schedule Flight API 동기화"}
         </button>
         <button onClick={onOpenScheduleFlight} style={secondaryButtonStyle}>
           최근 Schedule Flight 열기

@@ -819,6 +819,13 @@ async def _run_schedule_change_check(push_on_change: bool = True) -> Dict[str, A
     failed = 0
     errors: List[str] = []
 
+    if changed_items:
+        _append_notification_history(
+            changed_items,
+            room,
+            "푸시 자동 확인" if push_on_change else "앱 자동 확인",
+        )
+
     if changed_items and push_on_change:
         first = changed_items[0]
         extra_count = len(changed_items) - 1
@@ -848,9 +855,6 @@ async def _run_schedule_change_check(push_on_change: bool = True) -> Dict[str, A
             except Exception as exc:
                 failed += 1
                 errors.append(str(exc))
-
-    if changed_items:
-        _append_notification_history(changed_items, room, "자동/수동 API 확인")
 
     if prealert_keys_to_save:
         _append_arrival_prealert_keys(prealert_keys_to_save)

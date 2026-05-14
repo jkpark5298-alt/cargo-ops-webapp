@@ -642,6 +642,21 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const timer = window.setInterval(() => {
+      if (document.visibilityState === "visible") {
+        void fetchServerFlightAlertHistory();
+      }
+    }, 60000);
+
+    return () => {
+      window.clearInterval(timer);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
     if (!latestRoom) return;
     if (flightAlertSnapshot?.roomId === latestRoom.id) return;
 
@@ -754,7 +769,7 @@ export default function HomePage() {
       const deduped: FlightAlertHistoryItem[] = [];
 
       for (const item of merged) {
-        const dedupeKey = `${item.key}|${item.title}|${item.description}|${item.roomName}`;
+        const dedupeKey = `${item.title}|${item.description}|${item.roomName}`;
         if (seen.has(dedupeKey)) continue;
         seen.add(dedupeKey);
         deduped.push(item);

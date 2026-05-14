@@ -5,11 +5,13 @@ import type { FlightAlertHistoryItem } from "../lib/flight-alerts";
 
 type FlightAlertHistoryCardProps = {
   historyItems: FlightAlertHistoryItem[];
+  onDeleteItem: (item: FlightAlertHistoryItem) => void;
   onClear: () => void;
 };
 
 export function FlightAlertHistoryCard({
   historyItems,
+  onDeleteItem,
   onClear,
 }: FlightAlertHistoryCardProps) {
   return (
@@ -26,7 +28,17 @@ export function FlightAlertHistoryCard({
         <div style={flightAlertListStyle}>
           {historyItems.slice(0, 5).map((item, index) => (
             <div key={`${item.key}-${item.checkedAt}-${index}`} style={flightAlertHistoryItemStyle}>
-              <div style={flightAlertItemTitleStyle}>{item.title}</div>
+              <div style={flightAlertHistoryItemHeaderStyle}>
+                <div style={flightAlertItemTitleStyle}>{item.title}</div>
+                <button
+                  type="button"
+                  onClick={() => onDeleteItem(item)}
+                  style={deleteItemButtonStyle}
+                  aria-label={`${item.title} 알림 삭제`}
+                >
+                  삭제
+                </button>
+              </div>
               <div style={flightAlertItemDescStyle}>{item.description}</div>
               <div style={flightAlertHistoryMetaStyle}>
                 확인 {item.checkedAt} · {item.roomName}
@@ -109,6 +121,14 @@ const flightAlertHistoryItemStyle: CSSProperties = {
   padding: "10px 12px",
 };
 
+const flightAlertHistoryItemHeaderStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 10,
+  alignItems: "flex-start",
+  marginBottom: 4,
+};
+
 const flightAlertItemTitleStyle: CSSProperties = {
   color: "#fef3c7",
   fontSize: 14,
@@ -141,4 +161,17 @@ const resetButtonStyle: CSSProperties = {
   fontSize: 16,
   fontWeight: 900,
   cursor: "pointer",
+};
+
+
+const deleteItemButtonStyle: CSSProperties = {
+  border: "1px solid rgba(248, 113, 113, 0.42)",
+  borderRadius: 999,
+  padding: "4px 8px",
+  background: "rgba(127, 29, 29, 0.38)",
+  color: "#fecaca",
+  fontSize: 11,
+  fontWeight: 900,
+  cursor: "pointer",
+  whiteSpace: "nowrap",
 };

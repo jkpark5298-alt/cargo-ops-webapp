@@ -685,6 +685,10 @@ export default function HomePage() {
   }, [latestRoom?.id, latestRoom?.lastFetchedAt, flightAlertItems.length]);
 
   useEffect(() => {
+    saveFlightAlertHistory(flightAlertHistory);
+  }, [flightAlertHistory]);
+
+  useEffect(() => {
     const route = getRouteByFlight(latestRoom, issueFlight);
     const hlnbr = getHlnbrByFlight(latestRoom, issueFlight);
 
@@ -724,6 +728,18 @@ export default function HomePage() {
         ? "변경 알림을 이력에 저장하고 현재 결과를 새 기준으로 저장했습니다."
         : "현재 Schedule Flight 결과를 변경 감지 기준으로 저장했습니다.",
     );
+  };
+
+  const handleDeleteFlightAlertHistoryItem = (targetItem: FlightAlertHistoryItem) => {
+    const nextItems = flightAlertHistory.filter((item) => {
+      const itemKey = `${item.key}|${item.title}|${item.description}|${item.checkedAt}`;
+      const targetKey = `${targetItem.key}|${targetItem.title}|${targetItem.description}|${targetItem.checkedAt}`;
+      return itemKey !== targetKey;
+    });
+
+    setFlightAlertHistory(nextItems);
+    saveFlightAlertHistory(nextItems);
+    setNotice("선택한 출도착 알림 이력을 삭제했습니다.");
   };
 
   const handleClearFlightAlertHistory = () => {

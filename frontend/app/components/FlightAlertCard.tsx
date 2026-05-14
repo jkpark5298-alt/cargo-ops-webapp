@@ -29,25 +29,20 @@ export function FlightAlertCard({
       </div>
 
       <div style={flightAlertSummaryStyle}>
-        {alertCount > 0 ? "변경 확인 필요" : snapshotName ? "최근 변경 없음" : "먼저 현재 결과를 기준으로 저장하세요"}
+        {alertCount > 0 ? "알림 이력으로 자동 저장 중" : snapshotName ? "최근 변경 없음" : "먼저 현재 결과를 기준으로 저장하세요"}
       </div>
       <div style={flightAlertMetaStyle}>
         마지막 확인: {checkedAt || "-"} · 기준 결과: {snapshotName || "아직 저장 안 됨"}
       </div>
 
       {alertCount > 0 && (
-        <div style={flightAlertListStyle}>
-          {alertItems.map((item) => (
-            <div key={item.key} style={flightAlertItemStyle}>
-              <div style={flightAlertItemTitleStyle}>{item.title}</div>
-              <div style={flightAlertItemDescStyle}>{item.description}</div>
-            </div>
-          ))}
+        <div style={flightAlertAutoSaveNoticeStyle}>
+          새 알림은 출도착 알림 이력에 자동 저장된 뒤 현재 알림에서 정리됩니다.
         </div>
       )}
 
       <div style={flightAlertGuideStyle}>
-        확인 후 버튼을 누르면 현재 조회 결과가 새 기준으로 저장됩니다.
+        현재 알림은 임시 감지용입니다. 실제 확인과 관리는 아래 출도착 알림 이력에서 합니다.
       </div>
 
       <button onClick={onSaveCurrent} style={secondaryButtonStyle}>
@@ -111,6 +106,18 @@ const flightAlertMetaStyle: CSSProperties = {
   fontSize: 13,
   lineHeight: 1.5,
   marginBottom: 14,
+};
+
+const flightAlertAutoSaveNoticeStyle: CSSProperties = {
+  border: "1px solid rgba(251, 191, 36, 0.24)",
+  background: "rgba(120, 53, 15, 0.18)",
+  borderRadius: 14,
+  padding: "10px 12px",
+  color: "#fde68a",
+  fontSize: 12,
+  lineHeight: 1.45,
+  fontWeight: 850,
+  marginBottom: 12,
 };
 
 const flightAlertGuideStyle: CSSProperties = {

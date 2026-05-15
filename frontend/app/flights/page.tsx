@@ -1318,6 +1318,15 @@ export default function FlightsPage() {
     setError("");
   };
 
+  const refreshSelectedRoom = async () => {
+    if (!selectedRoom) {
+      setError("다시 조회할 Monitor를 먼저 선택하세요.");
+      return;
+    }
+
+    await refreshRoomData(selectedRoom);
+  };
+
   const handleDeleteRoom = (roomId: string) => {
     const targetRoom = rooms.find((room) => room.id === roomId);
     const confirmed = window.confirm("저장된 조회를 삭제할까요?");

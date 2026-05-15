@@ -192,6 +192,32 @@ function getFlightTimeFromRow(row: FlightRow): Date | null {
   );
 }
 
+function getFlightNo(row: FlightRow) {
+  return row.flightId || row.flightNo || "";
+}
+
+function sortRowsByScheduleAsc(rows: FlightRow[]) {
+  return [...rows].sort((a, b) => {
+    const aTime = getFlightTimeFromRow(a)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    const bTime = getFlightTimeFromRow(b)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+
+    if (aTime !== bTime) return aTime - bTime;
+
+    return getFlightNo(a).localeCompare(getFlightNo(b), "en");
+  });
+}
+
+function sortItemsByScheduleAsc(items: WidgetSummaryItem[]) {
+  return [...items].sort((a, b) => {
+    const aTime = parseDateTime(a.displayTime)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+    const bTime = parseDateTime(b.displayTime)?.getTime() ?? Number.MAX_SAFE_INTEGER;
+
+    if (aTime !== bTime) return aTime - bTime;
+
+    return a.flight.localeCompare(b.flight, "en");
+  });
+}
+
 function getRemarkStatus(row: FlightRow): string {
   return `${row.status || ""} ${row.remark || ""}`.trim().toUpperCase();
 }
@@ -453,7 +479,7 @@ export default function FixedLitePage() {
       (lastKnownItemsByRoom[selectedRoom.id] || []).map((item) => [item.flight, item])
     );
 
-    return requested.map((flight) => {
+    const items = requested.map((flight) => {
       const known = knownItemsMap.get(flight);
       const excludeReason = reasonMap.get(flight);
       if (known) return { ...known, excludeReason };
@@ -463,6 +489,8 @@ export default function FixedLitePage() {
 
       return { ...formatFallbackDisplayItem(flight), excludeReason };
     });
+
+    return sortItemsByScheduleAsc(items);
   }, [selectedRoom, lastKnownItemsByRoom]);
 
   const activeItemsForSelectedRoom = useMemo(() => {
@@ -545,11 +573,15 @@ export default function FixedLitePage() {
     void loadLatestScheduleFromServer()
       .then((serverRoom) => {
         if (!serverRoom) return;
-        const nextRooms = mergeLatestScheduleRoom(loadRooms(), serverRoom);
+        const sortedServerRoom = {
+          ...serverRoom,
+          rows: sortRowsByScheduleAsc(serverRoom.rows || []),
+        };
+        const nextRooms = mergeLatestScheduleRoom(loadRooms(), sortedServerRoom);
         setRooms(nextRooms);
         saveRooms(nextRooms);
-        setSelectedRoomId(serverRoom.id);
-        localStorage.setItem(LAST_FIXED_ROOM_KEY, serverRoom.id);
+        setSelectedRoomId(sortedServerRoom.id);
+        localStorage.setItem(LAST_FIXED_ROOM_KEY, sortedServerRoom.id);
       })
       .catch(() => {
         // 서버 동기화 실패 시 로컬 Schedule Flight를 그대로 사용합니다.
@@ -629,17 +661,21 @@ export default function FixedLitePage() {
           const flight = row.flightId || row.flightNo || "";
           return Boolean(flight) && !refreshedFlightSet.has(flight);
         });
-        nextRows = [...rowsToKeep, ...refreshedRows];
+        nextRows = sortRowsByScheduleAsc([...rowsToKeep, ...refreshedRows]);
       }
+
+      nextRows = sortRowsByScheduleAsc(nextRows);
 
       const latestRowMap = getLatestRowsByFlight(nextRows);
       const excludeReasonMap = getRefreshExcludeReasonMapFromRows(nextRows);
-      const nextItems = requestedFlights.map((flight) => {
-        const latestRow = latestRowMap.get(flight)?.row;
-        const excludeReason = excludeReasonMap.get(flight);
-        if (latestRow) return { ...formatDisplayItemFromRow(flight, latestRow), excludeReason };
-        return { ...formatFallbackDisplayItem(flight), excludeReason };
-      });
+      const nextItems = sortItemsByScheduleAsc(
+        requestedFlights.map((flight) => {
+          const latestRow = latestRowMap.get(flight)?.row;
+          const excludeReason = excludeReasonMap.get(flight);
+          if (latestRow) return { ...formatDisplayItemFromRow(flight, latestRow), excludeReason };
+          return { ...formatFallbackDisplayItem(flight), excludeReason };
+        })
+      );
 
       const fetchedAt = new Date().toLocaleString("ko-KR");
       const updatedRoom: MonitorRoom = {

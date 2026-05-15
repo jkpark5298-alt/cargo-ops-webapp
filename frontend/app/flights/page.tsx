@@ -1183,7 +1183,7 @@ export default function FlightsPage() {
     await refreshRoomData(selectedRoom, true);
   };
 
-  const handleCreateMonitor = () => {
+  const handleCreateMonitor = async () => {
     const trimmedInput = input.trim();
 
     if (!trimmedInput) {
@@ -1193,6 +1193,55 @@ export default function FlightsPage() {
 
     const now = new Date();
     const normalizedInput = normalizeFlightsInput(trimmedInput).join(", ");
+
+    if (selectedRoom?.fixed) {
+      const updatedScheduleRoom: MonitorRoom = {
+        ...selectedRoom,
+        flightsInput: normalizedInput,
+        startDateTime,
+        endDateTime,
+        fixed: true,
+        lastFetchedAt: lastFetchedAt || new Date().toISOString(),
+        rows,
+      };
+
+      const nextRooms = mergeLatestScheduleRoom(rooms, updatedScheduleRoom);
+      setRooms(nextRooms);
+      saveRooms(nextRooms);
+      setSelectedRoomId(updatedScheduleRoom.id);
+      setInput(updatedScheduleRoom.flightsInput);
+      clearFlightAlertBaselineAndHistory();
+
+      try {
+        const serverRoom = await saveLatestScheduleToServer(updatedScheduleRoom);
+        const finalRoom: MonitorRoom = {
+          ...updatedScheduleRoom,
+          ...serverRoom,
+          fixed: true,
+          rows: Array.isArray(serverRoom.rows) ? serverRoom.rows : updatedScheduleRoom.rows,
+          flightsInput: serverRoom.flightsInput || updatedScheduleRoom.flightsInput,
+          startDateTime: serverRoom.startDateTime || updatedScheduleRoom.startDateTime,
+          endDateTime: serverRoom.endDateTime || updatedScheduleRoom.endDateTime,
+          lastFetchedAt: serverRoom.lastFetchedAt || updatedScheduleRoom.lastFetchedAt,
+        };
+
+        const syncedRooms = mergeLatestScheduleRoom(loadRooms(), finalRoom);
+        setRooms(syncedRooms);
+        saveRooms(syncedRooms);
+        setSelectedRoomId(finalRoom.id);
+        setInput(finalRoom.flightsInput);
+        setError("현재 Schedule Flight 기준을 저장하고 초기화면 최근 Schedule Flight에 동기화했습니다.");
+      } catch (syncError) {
+        setError(
+          syncError instanceof Error
+            ? `이 기기에는 저장했습니다. 서버 Schedule Flight 동기화 실패: ${syncError.message}`
+            : "이 기기에는 저장했습니다. 서버 Schedule Flight 동기화 중 오류가 발생했습니다.",
+        );
+      }
+
+      return;
+    }
+
     const newRoom: MonitorRoom = {
       id: `${now.getTime()}`,
       name: formatMonitorRoomName(now),

@@ -139,6 +139,28 @@ async function clearLatestScheduleOnServer(room: MonitorRoom) {
   return saveLatestScheduleToServer(emptyRoom);
 }
 
+function isScheduleFlightRoom(room?: MonitorRoom | null) {
+  if (!room) return false;
+
+  return Boolean(
+    room.fixed ||
+      room.name?.startsWith("Schedule_") ||
+      room.name?.includes("Schedule Flight")
+  );
+}
+
+async function shouldClearLatestScheduleForDeletedRoom(room?: MonitorRoom | null) {
+  if (!room) return false;
+  if (isScheduleFlightRoom(room)) return true;
+
+  try {
+    const latestRoom = await loadLatestScheduleFromServer();
+    return Boolean(latestRoom?.id && latestRoom.id === room.id);
+  } catch {
+    return false;
+  }
+}
+
 function clearFlightAlertBaselineAndHistory() {
   if (typeof window === "undefined") return;
   localStorage.removeItem(FLIGHT_ALERT_SNAPSHOT_KEY);
@@ -1453,10 +1475,12 @@ export default function FlightsPage() {
     await refreshRoomData(selectedRoom);
   };
 
-  const handleDeleteRoom = (roomId: string) => {
+  const handleDeleteRoom = async (roomId: string) => {
     const targetRoom = rooms.find((room) => room.id === roomId);
     const confirmed = window.confirm("저장된 조회를 삭제할까요?");
     if (!confirmed) return;
+
+    const clearLatestSchedule = await shouldClearLatestScheduleForDeletedRoom(targetRoom);
 
     const nextRooms = rooms.filter((room) => room.id !== roomId);
     setRooms(nextRooms);
@@ -1466,19 +1490,24 @@ export default function FlightsPage() {
       resetLookupView();
     }
 
-    if (targetRoom?.fixed) {
+    if (clearLatestSchedule && targetRoom) {
       clearFlightAlertBaselineAndHistory();
-      void clearLatestScheduleOnServer(targetRoom)
-        .then(() => {
-          setError("Schedule Flight 저장방을 삭제하고 초기화면 최근 Schedule Flight도 비웠습니다.");
-        })
-        .catch((error) => {
-          setError(
-            error instanceof Error
-              ? `저장방은 삭제했지만 서버 Schedule Flight 비우기 실패: ${error.message}`
-              : "저장방은 삭제했지만 서버 Schedule Flight 비우기 중 오류가 발생했습니다.",
-          );
-        });
+
+      try {
+        await clearLatestScheduleOnServer(targetRoom);
+        if (typeof window !== "undefined") {
+          window.localStorage.setItem("cargo_ops_latest_schedule_updated_at", new Date().toISOString());
+        }
+        setError("Schedule Flight 저장방을 삭제하고 초기화면 최근 Schedule Flight도 비웠습니다.");
+      } catch (error) {
+        setError(
+          error instanceof Error
+            ? `저장방은 삭제했지만 서버 Schedule Flight 비우기 실패: ${error.message}`
+            : "저장방은 삭제했지만 서버 Schedule Flight 비우기 중 오류가 발생했습니다.",
+        );
+      }
+    } else {
+      setError("저장된 조회를 삭제했습니다.");
     }
   };
 
@@ -1636,7 +1665,7 @@ export default function FlightsPage() {
                 </div>
 
                 <button
-                  onClick={() => handleDeleteRoom(room.id)}
+                  onClick={() => void handleDeleteRoom(room.id)}
                   style={{
                     marginTop: 10,
                     width: "100%",

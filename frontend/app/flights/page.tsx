@@ -1002,10 +1002,15 @@ export default function FlightsPage() {
       return;
     }
 
+    const keepScheduleContext = Boolean(selectedRoom?.fixed);
+    const previousScheduleRows = keepScheduleContext ? selectedRoom?.rows || [] : [];
+
     setQueryMode("manual");
     setInput(flights.join(", "));
-    setSelectedRoomId("");
-    setFixed(false);
+    if (!keepScheduleContext) {
+      setSelectedRoomId("");
+      setFixed(false);
+    }
     setRows([]);
     setSelectedScheduleKeys({});
     setExpandedDetailKeys({});
@@ -1037,6 +1042,25 @@ export default function FlightsPage() {
       setRows(nextRows);
       setLastFetchedAt(fetchedAt);
       setExpandedDetailKeys({});
+
+      if (keepScheduleContext && selectedRoom) {
+        const mergedInput = mergeFlightsInput(selectedRoom.flightsInput, flights.join(", "));
+        const mergedRows = mergeScheduleRowsByFlight(previousScheduleRows, nextRows);
+        const updatedRoom: MonitorRoom = {
+          ...selectedRoom,
+          flightsInput: mergedInput,
+          rows: mergedRows,
+          lastFetchedAt: fetchedAt,
+        };
+
+        const nextRooms = mergeLatestScheduleRoom(rooms, updatedRoom);
+        setRooms(nextRooms);
+        saveRooms(nextRooms);
+        setSelectedRoomId(updatedRoom.id);
+        setFixed(true);
+        setError("추가 편명 조회 완료. 결과 행의 +를 선택한 뒤 ‘선택한 Schedule Flight 저장’을 누르면 기존 정보에 병합됩니다.");
+        return;
+      }
 
       if (selectedRoomId) {
         persistRoom(
@@ -1651,8 +1675,10 @@ export default function FlightsPage() {
         )}
 
         {isSelectedFixedRoom && (
-          <div style={{ marginTop: 14, color: "#93c5fd", fontSize: 14 }}>
-            Schedule Flight 선택 중입니다. 조회 기간은 아래 상세 영역에서 수정합니다.
+          <div style={{ marginTop: 14, color: "#93c5fd", fontSize: 14, lineHeight: 1.6 }}>
+            Schedule Flight 저장방 선택 중입니다. 추가 편명을 조회해도 기존 편명 정보는 바로 지우지 않습니다.
+            <br />
+            추가할 결과 행의 <b style={{ color: "#facc15" }}>+</b>를 선택한 뒤 <b>선택한 Schedule Flight 저장</b>을 누르면 기존 정보에 병합됩니다.
           </div>
         )}
 
@@ -1928,13 +1954,42 @@ export default function FlightsPage() {
                       }}
                     >
                       <td style={tdStyle}>
-                        <input
-                          type="checkbox"
-                          checked={selected}
-                          disabled={finalCompleted}
-                          onChange={() => handleToggleScheduleSelection(r, i)}
-                          title={finalCompleted ? `${getRefreshExcludeReason(r)}으로 API 재조회 제외` : "Schedule Flight 선택"}
-                        />
+                        <label
+                          style={{
+                            display: "inline-flex",
+                            alignItems: "center",
+                            gap: 6,
+                            cursor: finalCompleted ? "not-allowed" : "pointer",
+                          }}
+                          title={finalCompleted ? `${getRefreshExcludeReason(r)}으로 API 재조회 제외` : "Schedule Flight 추가 선택"}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={selected}
+                            disabled={finalCompleted}
+                            onChange={() => handleToggleScheduleSelection(r, i)}
+                          />
+                          {!finalCompleted && (
+                            <span
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                justifyContent: "center",
+                                width: 22,
+                                height: 22,
+                                borderRadius: 999,
+                                background: selected ? "#2563eb" : "#1e293b",
+                                color: selected ? "#ffffff" : "#93c5fd",
+                                border: selected ? "1px solid #60a5fa" : "1px solid #334155",
+                                fontWeight: 900,
+                                fontSize: 16,
+                                lineHeight: 1,
+                              }}
+                            >
+                              +
+                            </span>
+                          )}
+                        </label>
                         {finalCompleted && (
                           <div style={{ color: "#94a3b8", fontSize: 11, marginTop: 4 }}>
                             조회 제외

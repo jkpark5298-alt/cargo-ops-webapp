@@ -138,6 +138,20 @@ function formatApiLookupTime(value?: string) {
   return `${yy}-${mm}-${dd} ${hh}:${min}:${sec} KST`;
 }
 
+function normalizeSummaryFlightKey(value: string) {
+  return value.replace(/\s+/g, "").toUpperCase();
+}
+
+function getSummaryFlightOrderIndex(room: MonitorRoom, flight: string) {
+  const order = room.flightsInput
+    .split(",")
+    .map((value) => normalizeSummaryFlightKey(value.trim()))
+    .filter(Boolean);
+
+  const index = order.indexOf(normalizeSummaryFlightKey(flight));
+  return index === -1 ? Number.MAX_SAFE_INTEGER : index;
+}
+
 function getFlightRouteItems(room: MonitorRoom | null) {
   if (!room) return [];
 
@@ -176,7 +190,11 @@ function getFlightRouteItems(room: MonitorRoom | null) {
   });
 
   if (uniqueRowItems.length > 0) {
-    return uniqueRowItems;
+    return uniqueRowItems.sort((a, b) => {
+      const orderDiff = getSummaryFlightOrderIndex(room, a.flight) - getSummaryFlightOrderIndex(room, b.flight);
+      if (orderDiff !== 0) return orderDiff;
+      return a.flight.localeCompare(b.flight, "en");
+    });
   }
 
   return room.flightsInput

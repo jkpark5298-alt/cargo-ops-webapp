@@ -643,6 +643,7 @@ export default function FlightsPage() {
   const [input, setInput] = useState("");
   const [rows, setRows] = useState<FlightRow[]>([]);
   const [selectedScheduleKeys, setSelectedScheduleKeys] = useState<Record<string, boolean>>({});
+  const [selectedScheduleOrder, setSelectedScheduleOrder] = useState<string[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -662,10 +663,20 @@ export default function FlightsPage() {
 
   const alertCounts = useMemo(() => getAlertCounts(rows), [rows]);
 
-  const selectedScheduleRows = useMemo(
-    () => rows.filter((row, idx) => selectedScheduleKeys[getSelectionKey(row, idx)]),
-    [rows, selectedScheduleKeys]
-  );
+  const selectedScheduleRows = useMemo(() => {
+    const rowMap = new Map<string, FlightRow>();
+
+    rows.forEach((row, idx) => {
+      const key = getSelectionKey(row, idx);
+      if (selectedScheduleKeys[key]) {
+        rowMap.set(key, row);
+      }
+    });
+
+    return selectedScheduleOrder
+      .map((key) => rowMap.get(key))
+      .filter((row): row is FlightRow => Boolean(row));
+  }, [rows, selectedScheduleKeys, selectedScheduleOrder]);
 
   const refreshExcludedRows = useMemo(() => rows.filter(isFinalCompletedRow), [rows]);
   const refreshActiveRows = useMemo(() => rows.filter((row) => !isFinalCompletedRow(row)), [rows]);
@@ -713,6 +724,7 @@ export default function FlightsPage() {
     setRows([]);
     clearFlightAlertBaselineAndHistory();
     setSelectedScheduleKeys({});
+    setSelectedScheduleOrder([]);
     setExpandedDetailKeys({});
 
     try {
@@ -754,6 +766,7 @@ export default function FlightsPage() {
     setRows(nextRows);
     clearFlightAlertBaselineAndHistory();
     setSelectedScheduleKeys({});
+    setSelectedScheduleOrder([]);
     setExpandedDetailKeys({});
 
     try {
@@ -775,6 +788,7 @@ export default function FlightsPage() {
   const resetLookupView = () => {
     setRows([]);
     setSelectedScheduleKeys({});
+    setSelectedScheduleOrder([]);
     setExpandedDetailKeys({});
     setError("");
     setLastFetchedAt("");
@@ -1013,6 +1027,7 @@ export default function FlightsPage() {
     }
     setRows([]);
     setSelectedScheduleKeys({});
+    setSelectedScheduleOrder([]);
     setExpandedDetailKeys({});
     setLoading(true);
     setError("");
@@ -1058,7 +1073,12 @@ export default function FlightsPage() {
         saveRooms(nextRooms);
         setSelectedRoomId(updatedRoom.id);
         setFixed(true);
-        setError("추가 편명 조회 완료. 결과 행의 +를 선택한 뒤 ‘선택한 Schedule Flight 저장’을 누르면 기존 정보에 병합됩니다.");
+        const missingFlights = getMissingInputFlights(flights.join(", "), nextRows);
+        setError(
+          missingFlights.length > 0
+            ? `추가 편명 조회 완료. 조회 결과가 없는 편명은 저장 대상에서 제외됩니다: ${missingFlights.join(", ")}`
+            : "추가 편명 조회 완료. 결과 행의 +를 선택한 뒤 ‘선택한 Schedule Flight 저장’을 누르면 기존 정보에 병합됩니다.",
+        );
         return;
       }
 
@@ -1088,6 +1108,7 @@ export default function FlightsPage() {
     setLastFetchedAt("");
     setExpandedDetailKeys({});
     setSelectedScheduleKeys({});
+    setSelectedScheduleOrder([]);
     setLoading(true);
     setError("");
 
@@ -1132,10 +1153,23 @@ export default function FlightsPage() {
     if (isFinalCompletedRow(row)) return;
 
     const key = getSelectionKey(row, idx);
-    setSelectedScheduleKeys((prev) => ({
-      ...prev,
-      [key]: !prev[key],
-    }));
+
+    setSelectedScheduleKeys((prev) => {
+      const nextSelected = !prev[key];
+
+      setSelectedScheduleOrder((prevOrder) => {
+        if (nextSelected) {
+          return prevOrder.includes(key) ? prevOrder : [...prevOrder, key];
+        }
+
+        return prevOrder.filter((itemKey) => itemKey !== key);
+      });
+
+      return {
+        ...prev,
+        [key]: nextSelected,
+      };
+    });
   };
 
   const mergeScheduleRowsByFlight = (baseRows: FlightRow[], addRows: FlightRow[]) => {
@@ -1171,26 +1205,58 @@ export default function FlightsPage() {
     return merged.join(", ");
   };
 
+  const getFlightsFromRowsInOrder = (targetRows: FlightRow[]) => {
+    const seen = new Set<string>();
+    const flights: string[] = [];
+
+    targetRows.forEach((row) => {
+      const flight = (row.flightId || row.flightNo || "").replace(/\s+/g, "").toUpperCase();
+      if (!flight || seen.has(flight)) return;
+      seen.add(flight);
+      flights.push(flight);
+    });
+
+    return flights;
+  };
+
+  const getMissingInputFlights = (inputText: string, targetRows: FlightRow[]) => {
+    const found = new Set(
+      targetRows
+        .map((row) => (row.flightId || row.flightNo || "").replace(/\s+/g, "").toUpperCase())
+        .filter(Boolean),
+    );
+
+    return normalizeFlightsInput(inputText).filter((flight) => !found.has(flight));
+  };
+
+  const buildScheduleFlightsInputFromRows = (targetRows: FlightRow[]) => {
+    return getFlightsFromRowsInOrder(targetRows).join(", ");
+  };
+
   const handleSaveSelectedSchedule = async () => {
     if (selectedScheduleRows.length === 0) {
-      setError("Schedule Flight로 추가/저장할 편명을 먼저 선택하세요.");
+      const missingFlights = getMissingInputFlights(input, rows);
+      setError(
+        missingFlights.length > 0
+          ? `조회 결과가 없는 편명은 Schedule Flight에 저장할 수 없습니다: ${missingFlights.join(", ")}`
+          : "Schedule Flight로 추가/저장할 편명을 먼저 + 선택하세요.",
+      );
       return;
     }
 
-    const selectedFlights = getUniqueFlightInputs(selectedScheduleRows);
+    const selectedFlights = getFlightsFromRowsInOrder(selectedScheduleRows);
     if (selectedFlights.length === 0) {
       setError("선택한 결과에서 편명을 확인하지 못했습니다.");
       return;
     }
 
+    const missingFlights = getMissingInputFlights(input, rows);
     const now = new Date();
     const baseScheduleRoom = selectedRoom?.fixed ? selectedRoom : null;
-    const mergedFlightsInput = baseScheduleRoom
-      ? mergeFlightsInput(baseScheduleRoom.flightsInput, selectedFlights.join(", "))
-      : selectedFlights.join(", ");
     const mergedRows = baseScheduleRoom
       ? mergeScheduleRowsByFlight(baseScheduleRoom.rows || [], selectedScheduleRows)
       : selectedScheduleRows;
+    const mergedFlightsInput = buildScheduleFlightsInputFromRows(mergedRows);
 
     const baseRoom: MonitorRoom = {
       id: baseScheduleRoom?.id || `${now.getTime()}`,
@@ -1205,7 +1271,7 @@ export default function FlightsPage() {
 
     setError(
       baseScheduleRoom
-        ? "선택한 편명을 기존 Schedule Flight에 추가 저장 중입니다."
+        ? "선택한 편명을 기존 Schedule Flight에 병합 저장 중입니다."
         : "선택한 Schedule Flight를 최신 기준으로 저장 중입니다.",
     );
 
@@ -1223,10 +1289,13 @@ export default function FlightsPage() {
         endDateTime: serverRoom.endDateTime || baseRoom.endDateTime,
         lastFetchedAt: serverRoom.lastFetchedAt || baseRoom.lastFetchedAt,
       };
+
       setError(
-        baseScheduleRoom
-          ? "선택한 편명을 기존 Schedule Flight에 추가하고 초기화면 기준에 반영했습니다."
-          : "선택한 Schedule Flight를 저장하고 초기화면 최근 Schedule Flight 기준으로 반영했습니다.",
+        missingFlights.length > 0
+          ? `저장 완료. 조회 결과가 없는 편명은 제외했습니다: ${missingFlights.join(", ")}`
+          : baseScheduleRoom
+            ? "선택한 편명을 기존 Schedule Flight에 추가하고 초기화면/Schedule Lite 기준에 반영했습니다."
+            : "선택한 Schedule Flight를 저장하고 초기화면/Schedule Lite 기준으로 반영했습니다.",
       );
     } catch (syncError) {
       setError(
@@ -1244,6 +1313,7 @@ export default function FlightsPage() {
     setInput(finalRoom.flightsInput);
     setFixed(false);
     setSelectedScheduleKeys({});
+    setSelectedScheduleOrder([]);
     setExpandedDetailKeys({});
 
     if (typeof window !== "undefined") {
@@ -1338,6 +1408,7 @@ export default function FlightsPage() {
     setRows(room.rows);
     setQueryMode("manual");
     setSelectedScheduleKeys({});
+    setSelectedScheduleOrder([]);
     setExpandedDetailKeys({});
     setError("");
   };
@@ -1679,6 +1750,8 @@ export default function FlightsPage() {
             Schedule Flight 저장방 선택 중입니다. 추가 편명을 조회해도 기존 편명 정보는 바로 지우지 않습니다.
             <br />
             추가할 결과 행의 <b style={{ color: "#facc15" }}>+</b>를 선택한 뒤 <b>선택한 Schedule Flight 저장</b>을 누르면 기존 정보에 병합됩니다.
+            <br />
+            조회 결과가 없는 편명은 저장되지 않으며, 경고 메시지로 제외 안내가 표시됩니다.
           </div>
         )}
 

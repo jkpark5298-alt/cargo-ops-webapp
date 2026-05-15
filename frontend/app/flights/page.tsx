@@ -1127,36 +1127,54 @@ export default function FlightsPage() {
     }
 
     const now = new Date();
-    const newRoom: MonitorRoom = {
+    const baseRoom: MonitorRoom = {
       id: `${now.getTime()}`,
       name: `Schedule_${formatMonitorRoomName(now).replace("Monitor_", "")}`,
       flightsInput: flights.join(", "),
       startDateTime,
       endDateTime,
       fixed: true,
-      lastFetchedAt: lastFetchedAt || new Date().toLocaleString("ko-KR"),
+      lastFetchedAt: new Date().toISOString(),
       rows: selectedScheduleRows,
     };
 
-    const nextRooms = [newRoom, ...rooms.filter((room) => !room.fixed)];
+    setError("선택한 Schedule Flight를 최신 기준으로 저장 중입니다.");
+
+    let finalRoom = baseRoom;
+
+    try {
+      const serverRoom = await saveLatestScheduleToServer(baseRoom);
+      finalRoom = {
+        ...baseRoom,
+        ...serverRoom,
+        fixed: true,
+        rows: Array.isArray(serverRoom.rows) ? serverRoom.rows : baseRoom.rows,
+        flightsInput: serverRoom.flightsInput || baseRoom.flightsInput,
+        startDateTime: serverRoom.startDateTime || baseRoom.startDateTime,
+        endDateTime: serverRoom.endDateTime || baseRoom.endDateTime,
+        lastFetchedAt: serverRoom.lastFetchedAt || baseRoom.lastFetchedAt,
+      };
+      setError("선택한 Schedule Flight를 저장하고 초기화면 최근 Schedule Flight 기준으로 반영했습니다.");
+    } catch (syncError) {
+      setError(
+        syncError instanceof Error
+          ? `서버 동기화 실패. 이 기기에는 저장했습니다: ${syncError.message}`
+          : "서버 동기화 실패. 이 기기에는 저장했습니다.",
+      );
+    }
+
+    const nextRooms = mergeLatestScheduleRoom(rooms, finalRoom);
     setRooms(nextRooms);
     saveRooms(nextRooms);
     clearFlightAlertBaselineAndHistory();
-    setSelectedRoomId(newRoom.id);
-    setInput(newRoom.flightsInput);
+    setSelectedRoomId(finalRoom.id);
+    setInput(finalRoom.flightsInput);
     setFixed(false);
     setSelectedScheduleKeys({});
     setExpandedDetailKeys({});
 
-    try {
-      await saveLatestScheduleToServer(newRoom);
-      setError("선택한 Schedule Flight를 저장하고 PC/아이폰 동기화 기준으로 올렸습니다.");
-    } catch (syncError) {
-      setError(
-        syncError instanceof Error
-          ? `로컬 저장 완료. 서버 동기화 실패: ${syncError.message}`
-          : "로컬 저장 완료. 서버 동기화 중 오류가 발생했습니다.",
-      );
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("cargo_ops_latest_schedule_updated_at", new Date().toISOString());
     }
   };
 

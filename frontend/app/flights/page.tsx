@@ -1114,31 +1114,76 @@ export default function FlightsPage() {
     }));
   };
 
+  const mergeScheduleRowsByFlight = (baseRows: FlightRow[], addRows: FlightRow[]) => {
+    const mergedMap = new Map<string, FlightRow>();
+
+    baseRows.forEach((row) => {
+      const flight = (row.flightId || row.flightNo || "").replace(/\s+/g, "").toUpperCase();
+      if (!flight) return;
+      mergedMap.set(flight, row);
+    });
+
+    addRows.forEach((row) => {
+      const flight = (row.flightId || row.flightNo || "").replace(/\s+/g, "").toUpperCase();
+      if (!flight) return;
+      mergedMap.set(flight, row);
+    });
+
+    return Array.from(mergedMap.values());
+  };
+
+  const mergeFlightsInput = (baseInput: string, addInput: string) => {
+    const values = [...normalizeFlightsInput(baseInput), ...normalizeFlightsInput(addInput)];
+    const seen = new Set<string>();
+    const merged: string[] = [];
+
+    values.forEach((flight) => {
+      const key = flight.replace(/\s+/g, "").toUpperCase();
+      if (!key || seen.has(key)) return;
+      seen.add(key);
+      merged.push(key);
+    });
+
+    return merged.join(", ");
+  };
+
   const handleSaveSelectedSchedule = async () => {
     if (selectedScheduleRows.length === 0) {
-      setError("Schedule Flight로 관리할 편명을 먼저 선택하세요.");
+      setError("Schedule Flight로 추가/저장할 편명을 먼저 선택하세요.");
       return;
     }
 
-    const flights = getUniqueFlightInputs(selectedScheduleRows);
-    if (flights.length === 0) {
+    const selectedFlights = getUniqueFlightInputs(selectedScheduleRows);
+    if (selectedFlights.length === 0) {
       setError("선택한 결과에서 편명을 확인하지 못했습니다.");
       return;
     }
 
     const now = new Date();
+    const baseScheduleRoom = selectedRoom?.fixed ? selectedRoom : null;
+    const mergedFlightsInput = baseScheduleRoom
+      ? mergeFlightsInput(baseScheduleRoom.flightsInput, selectedFlights.join(", "))
+      : selectedFlights.join(", ");
+    const mergedRows = baseScheduleRoom
+      ? mergeScheduleRowsByFlight(baseScheduleRoom.rows || [], selectedScheduleRows)
+      : selectedScheduleRows;
+
     const baseRoom: MonitorRoom = {
-      id: `${now.getTime()}`,
-      name: `Schedule_${formatMonitorRoomName(now).replace("Monitor_", "")}`,
-      flightsInput: flights.join(", "),
-      startDateTime,
-      endDateTime,
+      id: baseScheduleRoom?.id || `${now.getTime()}`,
+      name: baseScheduleRoom?.name || `Schedule_${formatMonitorRoomName(now).replace("Monitor_", "")}`,
+      flightsInput: mergedFlightsInput,
+      startDateTime: baseScheduleRoom?.startDateTime || startDateTime,
+      endDateTime: baseScheduleRoom?.endDateTime || endDateTime,
       fixed: true,
       lastFetchedAt: new Date().toISOString(),
-      rows: selectedScheduleRows,
+      rows: mergedRows,
     };
 
-    setError("선택한 Schedule Flight를 최신 기준으로 저장 중입니다.");
+    setError(
+      baseScheduleRoom
+        ? "선택한 편명을 기존 Schedule Flight에 추가 저장 중입니다."
+        : "선택한 Schedule Flight를 최신 기준으로 저장 중입니다.",
+    );
 
     let finalRoom = baseRoom;
 
@@ -1154,7 +1199,11 @@ export default function FlightsPage() {
         endDateTime: serverRoom.endDateTime || baseRoom.endDateTime,
         lastFetchedAt: serverRoom.lastFetchedAt || baseRoom.lastFetchedAt,
       };
-      setError("선택한 Schedule Flight를 저장하고 초기화면 최근 Schedule Flight 기준으로 반영했습니다.");
+      setError(
+        baseScheduleRoom
+          ? "선택한 편명을 기존 Schedule Flight에 추가하고 초기화면 기준에 반영했습니다."
+          : "선택한 Schedule Flight를 저장하고 초기화면 최근 Schedule Flight 기준으로 반영했습니다.",
+      );
     } catch (syncError) {
       setError(
         syncError instanceof Error
@@ -1176,11 +1225,6 @@ export default function FlightsPage() {
     if (typeof window !== "undefined") {
       window.localStorage.setItem("cargo_ops_latest_schedule_updated_at", new Date().toISOString());
     }
-  };
-
-  const refreshSelectedRoom = async () => {
-    if (!selectedRoom) return;
-    await refreshRoomData(selectedRoom, true);
   };
 
   const handleCreateMonitor = async () => {
@@ -1628,22 +1672,6 @@ export default function FlightsPage() {
           >
             선택한 Schedule Flight 저장
           </button>
-        </div>
-
-        <div style={scheduleGuideBoxStyle}>
-          <div style={scheduleGuideTitleStyle}>편명 조회 · Schedule Flight 저장 안내</div>
-          <div style={scheduleGuideLineStyle}>
-            <b>Schedule Flight</b> 버튼은 현재 조회 결과를 Schedule Flight 후보로 전환하는 버튼입니다. 이 버튼만 누르면 저장은 아직 되지 않습니다.
-          </div>
-          <div style={scheduleGuideLineStyle}>
-            <b>선택한 Schedule Flight 저장</b>은 체크한 편명만 Schedule Flight로 저장하고, 초기화면 최근 Schedule Flight와 Schedule Lite 기준으로 반영합니다.
-          </div>
-          <div style={scheduleGuideLineStyle}>
-            <b>현재 조회 저장</b>은 지금 입력창의 편명과 조회 결과를 저장합니다. 기존 Schedule Flight 저장방을 선택한 상태에서는 기존 Schedule Flight 기준을 갱신합니다.
-          </div>
-          <div style={scheduleGuideLineStyle}>
-            <b>편명 추가 방법</b>: 왼쪽 Schedule Flight 저장방 선택 → 입력창에 기존 편명과 추가 편명 입력 → 조회시간 확인 → 편명 조회/KJ 전체 조회 → 현재 조회 저장.
-          </div>
         </div>
 
         {fixed && (
@@ -2171,26 +2199,4 @@ const clearScheduleButtonStyle: React.CSSProperties = {
   fontSize: 14,
   fontWeight: 900,
   cursor: "pointer",
-};
-
-const scheduleGuideBoxStyle: React.CSSProperties = {
-  border: "1px solid rgba(250, 204, 21, 0.28)",
-  background: "rgba(113, 63, 18, 0.18)",
-  borderRadius: 12,
-  padding: "12px 14px",
-  marginTop: 12,
-  color: "#fde68a",
-  fontSize: 13,
-  lineHeight: 1.55,
-};
-
-const scheduleGuideTitleStyle: React.CSSProperties = {
-  fontSize: 14,
-  fontWeight: 900,
-  marginBottom: 6,
-  color: "#facc15",
-};
-
-const scheduleGuideLineStyle: React.CSSProperties = {
-  marginTop: 4,
 };

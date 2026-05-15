@@ -520,11 +520,15 @@ function TimeSelect24({
 function FixedResultsTable({
   rows,
   expandedKeys,
+  selectedKeys,
   onToggleDetail,
+  onToggleSelect,
 }: {
   rows: FlightRow[];
   expandedKeys: Record<string, boolean>;
+  selectedKeys: Record<string, boolean>;
   onToggleDetail: (key: string) => void;
+  onToggleSelect: (row: FlightRow, idx: number) => void;
 }) {
   return (
     <div style={{ marginTop: 30, overflowX: "auto" }}>
@@ -539,6 +543,7 @@ function FixedResultsTable({
       >
         <thead>
           <tr style={{ background: "#18263f" }}>
+            <th style={thStyle}>추가</th>
             <th style={thStyle}>편명</th>
             <th style={thStyle}>구분</th>
             <th style={thStyle}>출발</th>
@@ -551,7 +556,7 @@ function FixedResultsTable({
         <tbody>
           {rows.length === 0 && (
             <tr>
-              <td style={tdStyle} colSpan={7}>
+              <td style={tdStyle} colSpan={8}>
                 조회 결과가 없습니다.
               </td>
             </tr>
@@ -559,7 +564,10 @@ function FixedResultsTable({
 
           {rows.map((row, idx) => {
             const rowKey = getRowKey(row, idx);
+            const selectionKey = getSelectionKey(row, idx);
             const expanded = Boolean(expandedKeys[rowKey]);
+            const selected = Boolean(selectedKeys[selectionKey]);
+            const finalCompleted = isFinalCompletedRow(row);
             const detailRows = buildFixedDetailRows(row);
 
             return (
@@ -572,6 +580,29 @@ function FixedResultsTable({
                     background: getRowBackground(row),
                   }}
                 >
+                  <td style={tdStyle}>
+                    <button
+                      type="button"
+                      onClick={() => onToggleSelect(row, idx)}
+                      disabled={finalCompleted}
+                      title={finalCompleted ? `${getRefreshExcludeReason(row)}으로 저장 제외` : "Schedule Flight에 추가 선택"}
+                      style={{
+                        width: 30,
+                        height: 30,
+                        borderRadius: 999,
+                        border: selected ? "1px solid #60a5fa" : "1px solid #334155",
+                        background: selected ? "#2563eb" : "#111827",
+                        color: selected ? "#ffffff" : "#facc15",
+                        fontWeight: 900,
+                        fontSize: 20,
+                        lineHeight: 1,
+                        cursor: finalCompleted ? "not-allowed" : "pointer",
+                        opacity: finalCompleted ? 0.45 : 1,
+                      }}
+                    >
+                      {selected ? "✓" : "+"}
+                    </button>
+                  </td>
                   <td style={tdStyle}>{getFlightDisplay(row)}</td>
                   <td
                     style={{
@@ -596,7 +627,7 @@ function FixedResultsTable({
 
                 {expanded && (
                   <tr style={{ background: "#0c1a31", borderBottom: "1px solid #2b4269" }}>
-                    <td colSpan={7} style={{ padding: 14 }}>
+                    <td colSpan={8} style={{ padding: 14 }}>
                       <table
                         style={{
                           width: "100%",
@@ -2103,7 +2134,9 @@ export default function FlightsPage() {
           <FixedResultsTable
             rows={rows}
             expandedKeys={expandedDetailKeys}
+            selectedKeys={selectedScheduleKeys}
             onToggleDetail={handleToggleDetail}
+            onToggleSelect={handleToggleScheduleSelection}
           />
         )}
 

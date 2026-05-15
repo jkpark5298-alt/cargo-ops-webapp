@@ -1630,6 +1630,22 @@ export default function FlightsPage() {
           </button>
         </div>
 
+        <div style={scheduleGuideBoxStyle}>
+          <div style={scheduleGuideTitleStyle}>편명 조회 · Schedule Flight 저장 안내</div>
+          <div style={scheduleGuideLineStyle}>
+            <b>Schedule Flight</b> 버튼은 현재 조회 결과를 Schedule Flight 후보로 전환하는 버튼입니다. 이 버튼만 누르면 저장은 아직 되지 않습니다.
+          </div>
+          <div style={scheduleGuideLineStyle}>
+            <b>선택한 Schedule Flight 저장</b>은 체크한 편명만 Schedule Flight로 저장하고, 초기화면 최근 Schedule Flight와 Schedule Lite 기준으로 반영합니다.
+          </div>
+          <div style={scheduleGuideLineStyle}>
+            <b>현재 조회 저장</b>은 지금 입력창의 편명과 조회 결과를 저장합니다. 기존 Schedule Flight 저장방을 선택한 상태에서는 기존 Schedule Flight 기준을 갱신합니다.
+          </div>
+          <div style={scheduleGuideLineStyle}>
+            <b>편명 추가 방법</b>: 왼쪽 Schedule Flight 저장방 선택 → 입력창에 기존 편명과 추가 편명 입력 → 조회시간 확인 → 편명 조회/KJ 전체 조회 → 현재 조회 저장.
+          </div>
+        </div>
+
         {fixed && (
           <div style={{ marginTop: 6, color: "#facc15", fontSize: 14 }}>
             Schedule Flight 관리 상태: 기본 6개 정보만 표시되며, D를 눌러 상세 정보를 확인합니다.
@@ -2155,4 +2171,26 @@ const clearScheduleButtonStyle: React.CSSProperties = {
   fontSize: 14,
   fontWeight: 900,
   cursor: "pointer",
+};
+
+const scheduleGuideBoxStyle: React.CSSProperties = {
+  border: "1px solid rgba(250, 204, 21, 0.28)",
+  background: "rgba(113, 63, 18, 0.18)",
+  borderRadius: 12,
+  padding: "12px 14px",
+  marginTop: 12,
+  color: "#fde68a",
+  fontSize: 13,
+  lineHeight: 1.55,
+};
+
+const scheduleGuideTitleStyle: React.CSSProperties = {
+  fontSize: 14,
+  fontWeight: 900,
+  marginBottom: 6,
+  color: "#facc15",
+};
+
+const scheduleGuideLineStyle: React.CSSProperties = {
+  marginTop: 4,
 };

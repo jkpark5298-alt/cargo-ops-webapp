@@ -475,6 +475,7 @@ export default function HomePage() {
   const autoSavedFlightAlertKeysRef = useRef("");
   const [rooms, setRooms] = useState<MonitorRoom[]>([]);
   const [images, setImages] = useState<SavedImage[]>([]);
+  const [selectedImage, setSelectedImage] = useState<SavedImage | null>(null);
   const [note, setNote] = useState("");
   const [notice, setNotice] = useState("");
   const [pwaPermissionLabel, setPwaPermissionLabel] = useState("확인 전");
@@ -739,25 +740,45 @@ export default function HomePage() {
     );
   };
 
-  const handleDeleteFlightAlertHistoryItem = (targetItem: FlightAlertHistoryItem) => {
+  const handleDeleteFlightAlertHistoryItem = async (targetItem: FlightAlertHistoryItem) => {
+    const targetKey = `${targetItem.key}|${targetItem.title}|${targetItem.description}|${targetItem.checkedAt}`;
     const nextItems = flightAlertHistory.filter((item) => {
       const itemKey = `${item.key}|${item.title}|${item.description}|${item.checkedAt}`;
-      const targetKey = `${targetItem.key}|${targetItem.title}|${targetItem.description}|${targetItem.checkedAt}`;
       return itemKey !== targetKey;
     });
 
     setFlightAlertHistory(nextItems);
     saveFlightAlertHistory(nextItems);
+
+    if (targetItem.key) {
+      try {
+        await fetch(`${BACKEND_URL}/flights/notification-history/${encodeURIComponent(targetItem.key)}`, {
+          method: "DELETE",
+        });
+      } catch {
+        // 서버 이력 삭제 실패 시에도 앱 이력 삭제는 유지합니다.
+      }
+    }
+
     setNotice("선택한 출도착 알림 이력을 삭제했습니다.");
   };
 
-  const handleClearFlightAlertHistory = () => {
-    const confirmed = window.confirm("앱에 저장된 출도착 알림 이력을 초기화할까요?");
+  const handleClearFlightAlertHistory = async () => {
+    const confirmed = window.confirm("앱과 서버에 저장된 출도착 알림 이력을 모두 삭제할까요?");
     if (!confirmed) return;
 
     setFlightAlertHistory([]);
     clearFlightAlertHistory();
-    setNotice("출도착 알림 이력을 초기화했습니다.");
+
+    try {
+      await fetch(`${BACKEND_URL}/flights/notification-history`, {
+        method: "DELETE",
+      });
+    } catch {
+      // 서버 전체 삭제 실패 시에도 앱 이력 삭제는 유지합니다.
+    }
+
+    setNotice("출도착 알림 이력을 전체 삭제했습니다.");
   };
 
   const mergeFlightAlertHistoryItems = (items: FlightAlertHistoryItem[]) => {
@@ -804,6 +825,22 @@ export default function HomePage() {
     } catch {
       // 서버 알림 이력 조회 실패 시 기존 로컬 이력은 유지합니다.
     }
+  };
+
+  const handleSaveFlightAlertHistoryToApp = () => {
+    const currentItems = flightAlertHistory.length ? flightAlertHistory : loadFlightAlertHistory();
+    saveFlightAlertHistory(currentItems);
+    setFlightAlertHistory(currentItems);
+    setNotice(
+      currentItems.length > 0
+        ? `출도착 알림 이력 ${currentItems.length}건을 앱에 저장했습니다.`
+        : "저장할 출도착 알림 이력이 없습니다.",
+    );
+  };
+
+  const handleRefreshFlightAlertHistory = async () => {
+    await fetchServerFlightAlertHistory();
+    setNotice("서버 출도착 알림 이력을 다시 확인했습니다.");
   };
 
   const appendBackendFlightAlertHistory = (result: BackendScheduleCheckResult, sourceLabel = "API 확인") => {
@@ -1317,47 +1354,12 @@ export default function HomePage() {
   };
 
   const openLatestImage = (image: SavedImage) => {
-    const imageWindow = window.open("", "_blank", "noopener,noreferrer");
+    setSelectedImage(image);
+    setNotice(`${image.label} 이미지를 화면에서 엽니다.`);
+  };
 
-    if (!imageWindow) {
-      setNotice("이미지를 새 창으로 열 수 없습니다. 팝업 차단을 확인하세요.");
-      return;
-    }
-
-    imageWindow.document.write(`
-      <!doctype html>
-      <html lang="ko">
-        <head>
-          <meta charset="utf-8" />
-          <meta name="viewport" content="width=device-width, initial-scale=1" />
-          <title>${image.label}</title>
-          <style>
-            body {
-              margin: 0;
-              background: #020617;
-              color: #e5edf7;
-              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-              display: flex;
-              min-height: 100vh;
-              align-items: center;
-              justify-content: center;
-              padding: 16px;
-              box-sizing: border-box;
-            }
-            img {
-              max-width: 100%;
-              max-height: 92vh;
-              border-radius: 14px;
-              object-fit: contain;
-            }
-          </style>
-        </head>
-        <body>
-          <img src="${image.dataUrl}" alt="${image.label}" />
-        </body>
-      </html>
-    `);
-    imageWindow.document.close();
+  const closeSelectedImage = () => {
+    setSelectedImage(null);
   };
 
   const handleSaveNoteLocal = () => {
@@ -1719,6 +1721,8 @@ export default function HomePage() {
 
         <FlightAlertHistoryCard
           historyItems={flightAlertHistory}
+          onSaveToApp={handleSaveFlightAlertHistoryToApp}
+          onRefreshServer={handleRefreshFlightAlertHistory}
           onDeleteItem={handleDeleteFlightAlertHistoryItem}
           onClear={handleClearFlightAlertHistory}
         />
@@ -1808,6 +1812,24 @@ export default function HomePage() {
             openNotionDatabase={openNotionDatabase}
             handleResetLocalDraft={handleResetLocalDraft}
           />
+        )}
+
+        {selectedImage && (
+          <div style={imageViewerOverlayStyle} onClick={closeSelectedImage}>
+            <div style={imageViewerPanelStyle} onClick={(event) => event.stopPropagation()}>
+              <div style={imageViewerHeaderStyle}>
+                <div>
+                  <div style={imageViewerLabelStyle}>사진 보기</div>
+                  <strong>{selectedImage.label}</strong>
+                  <small style={imageViewerDateStyle}>{selectedImage.savedAt}</small>
+                </div>
+                <button type="button" onClick={closeSelectedImage} style={imageViewerCloseButtonStyle}>
+                  닫기
+                </button>
+              </div>
+              <img src={selectedImage.dataUrl} alt={selectedImage.label} style={imageViewerImageStyle} />
+            </div>
+          </div>
         )}
 
         {notice && <div style={noticeStyle}>{notice}</div>}
@@ -2332,4 +2354,73 @@ const footerStyle: CSSProperties = {
   textAlign: "center",
   fontSize: 13,
   fontWeight: 800,
+};
+
+
+const imageViewerOverlayStyle: CSSProperties = {
+  position: "fixed",
+  inset: 0,
+  zIndex: 1000,
+  padding: "max(18px, env(safe-area-inset-top)) 14px max(18px, env(safe-area-inset-bottom))",
+  background: "rgba(2, 8, 23, 0.88)",
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+};
+
+const imageViewerPanelStyle: CSSProperties = {
+  width: "100%",
+  maxWidth: 720,
+  maxHeight: "92vh",
+  overflow: "auto",
+  borderRadius: 22,
+  border: "1px solid rgba(147, 197, 253, 0.3)",
+  background: "#020817",
+  boxShadow: "0 24px 70px rgba(0, 0, 0, 0.45)",
+  padding: 14,
+};
+
+const imageViewerHeaderStyle: CSSProperties = {
+  display: "flex",
+  justifyContent: "space-between",
+  gap: 12,
+  alignItems: "flex-start",
+  color: "#e5edf7",
+  marginBottom: 12,
+};
+
+const imageViewerLabelStyle: CSSProperties = {
+  color: "#93c5fd",
+  fontSize: 12,
+  fontWeight: 900,
+  letterSpacing: "0.12em",
+  marginBottom: 4,
+};
+
+const imageViewerDateStyle: CSSProperties = {
+  display: "block",
+  color: "#94a3b8",
+  fontSize: 12,
+  marginTop: 4,
+};
+
+const imageViewerCloseButtonStyle: CSSProperties = {
+  border: "1px solid rgba(248, 113, 113, 0.42)",
+  borderRadius: 999,
+  background: "rgba(127, 29, 29, 0.42)",
+  color: "#fecaca",
+  padding: "8px 12px",
+  fontSize: 13,
+  fontWeight: 900,
+  cursor: "pointer",
+  whiteSpace: "nowrap",
+};
+
+const imageViewerImageStyle: CSSProperties = {
+  display: "block",
+  width: "100%",
+  maxHeight: "76vh",
+  objectFit: "contain",
+  borderRadius: 16,
+  background: "#0f172a",
 };

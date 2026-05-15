@@ -1254,6 +1254,31 @@ async def get_notification_history() -> Dict[str, Any]:
     }
 
 
+@router.delete("/notification-history")
+async def clear_notification_history() -> Dict[str, Any]:
+    _write_notification_history([])
+    return {
+        "success": True,
+        "items": [],
+    }
+
+
+@router.delete("/notification-history/{item_key}")
+async def delete_notification_history_item(item_key: str) -> Dict[str, Any]:
+    items = _read_notification_history()
+    next_items = [
+        item
+        for item in items
+        if str(item.get("key") or "") != item_key
+    ]
+    _write_notification_history(next_items)
+    return {
+        "success": True,
+        "deleted": len(items) - len(next_items),
+        "items": next_items[:50],
+    }
+
+
 @router.get("/latest-schedule")
 async def get_latest_schedule() -> Dict[str, Any]:
     room = _read_latest_schedule()

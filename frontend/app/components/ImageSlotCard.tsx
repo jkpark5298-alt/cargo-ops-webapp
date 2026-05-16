@@ -25,6 +25,7 @@ export type SavedImage = {
 type ImageSlotCardProps = {
   slot: ImageSlot;
   image: SavedImage | null;
+  images?: SavedImage[];
   onCamera: () => void;
   onLibrary: () => void;
   onView: (image: SavedImage) => void;
@@ -34,6 +35,7 @@ type ImageSlotCardProps = {
 export function ImageSlotCard({
   slot,
   image,
+  images = image ? [image] : [],
   onCamera,
   onLibrary,
   onView,
@@ -46,24 +48,40 @@ export function ImageSlotCard({
         <div style={imageSlotDescStyle}>{slot.description}</div>
       </div>
 
-      {image ? (
+      {images.length > 0 ? (
         <div style={imageSlotSavedStyle}>
-          <button onClick={() => onView(image)} style={imagePreviewButtonStyle}>
-            <img src={image.dataUrl} alt={image.label} style={imagePreviewStyle} />
+          <button onClick={() => images[0] && onView(images[0])} style={imagePreviewButtonStyle}>
+            <img src={images[0]?.dataUrl} alt={images[0]?.label || "저장 이미지"} style={imagePreviewStyle} />
             <span style={imageTextStyle}>
               저장됨
-              <small style={imageDateStyle}>{image.savedAt}</small>
+              <small style={imageDateStyle}>{images[0]?.savedAt}</small>
             </span>
           </button>
+          {images.length > 1 && (
+            <div style={thumbGridStyle}>
+              {images.slice(1).map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  onClick={() => onView(item)}
+                  style={thumbButtonStyle}
+                  title={item.label}
+                >
+                  <img src={item.dataUrl} alt={item.label} style={thumbImageStyle} />
+                </button>
+              ))}
+            </div>
+          )}
+
           <div style={imageSlotActionRowStyle}>
-            <button onClick={() => onView(image)} style={miniButtonStyle}>
+            <button onClick={() => images[0] && onView(images[0])} style={miniButtonStyle}>
               보기
             </button>
             <button onClick={onCamera} style={miniButtonStyle}>
-              촬영 변경
+              사진 추가
             </button>
             <button onClick={onLibrary} style={miniButtonStyle}>
-              사진첩 변경
+              사진첩 추가
             </button>
             <button onClick={onDelete} style={miniDangerButtonStyle}>
               삭제
@@ -184,4 +202,28 @@ const miniDangerButtonStyle: CSSProperties = {
   borderColor: "rgba(239, 68, 68, 0.55)",
   background: "#450a0a",
   color: "#fecaca",
+};
+
+
+const thumbGridStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "repeat(3, minmax(0, 1fr))",
+  gap: 8,
+  marginTop: 10,
+};
+
+const thumbButtonStyle: CSSProperties = {
+  border: "1px solid rgba(148, 163, 184, 0.35)",
+  borderRadius: 12,
+  padding: 0,
+  background: "#0f172a",
+  overflow: "hidden",
+  cursor: "pointer",
+};
+
+const thumbImageStyle: CSSProperties = {
+  width: "100%",
+  height: 72,
+  objectFit: "cover",
+  display: "block",
 };

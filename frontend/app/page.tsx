@@ -8,6 +8,7 @@ import {
   type CSSProperties,
 } from "react";
 import { useRouter } from "next/navigation";
+import { FlightAlertCard } from "./components/FlightAlertCard";
 import { FlightAlertHistoryCard } from "./components/FlightAlertHistoryCard";
 import { WeatherCard } from "./components/WeatherCard";
 import { ScheduleSummaryCard } from "./components/ScheduleSummaryCard";
@@ -40,9 +41,6 @@ import {
   getLastIssueSaveSignature,
   saveLastDailySaveSignature,
   saveLastIssueSaveSignature,
-  loadIssueDraft,
-  saveIssueDraft,
-  clearIssueDraft,
 } from "./lib/local-storage";
 import {
   deleteDailyRecord,
@@ -274,8 +272,11 @@ function upsertImageBySlot(
   images: SavedImage[],
   nextImage: SavedImage,
 ): SavedImage[] {
-  const filtered = images.filter((image) => image.type !== nextImage.type);
-  return [nextImage, ...filtered].slice(0, 8);
+  return [nextImage, ...images].slice(0, 20);
+}
+
+function getImagesBySlot(images: SavedImage[], slotKey: ImageSlotKey) {
+  return images.filter((image) => image.type === slotKey);
 }
 
 function removeImageBySlot(images: SavedImage[], slotKey: ImageSlotKey) {
@@ -472,10 +473,8 @@ export default function HomePage() {
   const issueSavingRef = useRef(false);
   const pendingImageSlotRef = useRef<ImageSlotKey>("daily-schedule");
   const lastImmediateApiCheckRef = useRef(0);
-  const autoSavedFlightAlertKeysRef = useRef("");
   const [rooms, setRooms] = useState<MonitorRoom[]>([]);
   const [images, setImages] = useState<SavedImage[]>([]);
-  const [selectedImage, setSelectedImage] = useState<SavedImage | null>(null);
   const [note, setNote] = useState("");
   const [notice, setNotice] = useState("");
   const [pwaPermissionLabel, setPwaPermissionLabel] = useState("확인 전");
@@ -488,7 +487,6 @@ export default function HomePage() {
   const [autoPushStatusMessage, setAutoPushStatusMessage] = useState("");
   const [scheduleSyncCheckedAt, setScheduleSyncCheckedAt] = useState("");
   const [scheduleApiSyncStatus, setScheduleApiSyncStatus] = useState("");
-  const [scheduleApiSyncLoading, setScheduleApiSyncLoading] = useState(false);
   const [isDailySaving, setIsDailySaving] = useState(false);
   const [isIssueSaving, setIsIssueSaving] = useState(false);
   const [weather, setWeather] = useState<WeatherInfo>(DEFAULT_WEATHER);
@@ -514,75 +512,12 @@ export default function HomePage() {
     () => createFlightAlertItems(latestRoom, flightAlertSnapshot),
     [latestRoom, flightAlertSnapshot],
   );
-
-  const saveCurrentIssueDraft = (overrides: Partial<{
-    flight: string;
-    route: string;
-    hlnbr: string;
-    text: string;
-    status: "normal" | "issue";
-    author: string;
-  }> = {}) => {
-    saveIssueDraft({
-      flight: overrides.flight ?? issueFlight,
-      route: overrides.route ?? issueRoute,
-      hlnbr: overrides.hlnbr ?? issueHlnbr,
-      text: overrides.text ?? issueText,
-      status: overrides.status ?? dailyStatus,
-      author: overrides.author ?? author,
-    });
-  };
-
-  const updateNote = (value: string) => {
-    setNote(value);
-    saveNote(value);
-  };
-
-  const updateDailyStatus = (value: "normal" | "issue") => {
-    setDailyStatus(value);
-    saveCurrentIssueDraft({ status: value });
-  };
-
-  const updateAuthor = (value: string) => {
-    setAuthor(value);
-    saveCurrentIssueDraft({ author: value });
-  };
-
-  const updateIssueFlight = (value: string) => {
-    setIssueFlight(value);
-    saveCurrentIssueDraft({ flight: value });
-  };
-
-  const updateIssueRoute = (value: string) => {
-    setIssueRoute(value);
-    saveCurrentIssueDraft({ route: value });
-  };
-
-  const updateIssueHlnbr = (value: string) => {
-    setIssueHlnbr(value);
-    saveCurrentIssueDraft({ hlnbr: value });
-  };
-
-  const updateIssueText = (value: string) => {
-    setIssueText(value);
-    saveCurrentIssueDraft({ text: value });
-  };
+  const flightAlertCount = flightAlertItems.length;
 
   useEffect(() => {
     setRooms(loadRooms());
     setImages(loadImages());
     setNote(loadNote());
-
-    const savedIssueDraft = loadIssueDraft();
-    if (savedIssueDraft) {
-      setIssueFlight(savedIssueDraft.flight);
-      setIssueRoute(savedIssueDraft.route);
-      setIssueHlnbr(savedIssueDraft.hlnbr);
-      setIssueText(savedIssueDraft.text);
-      setDailyStatus(savedIssueDraft.status);
-      setAuthor(savedIssueDraft.author || "jkpark");
-    }
-
     setDailyNotionRecord(loadDailyNotionRecord());
     setIssueNotionRecord(loadIssueNotionRecord());
 
@@ -591,7 +526,6 @@ export default function HomePage() {
     setFlightAlertHistory(loadFlightAlertHistory());
     setAlertCheckedAt(savedSnapshot?.savedAt || getCurrentTimeLabel());
 
-    void fetchServerFlightAlertHistory();
     void fetchWeather();
     void checkScheduleApiAndSync(false, true);
     void fetchAutoPushStatus();
@@ -619,7 +553,6 @@ export default function HomePage() {
 
     const refreshFromResume = () => {
       void checkScheduleApiAndSync(false);
-      void fetchServerFlightAlertHistory();
       void syncPwaPermissionAndSubscription(false);
       void fetchAutoPushStatus();
     };
@@ -643,21 +576,6 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    if (typeof window === "undefined") return;
-
-    const timer = window.setInterval(() => {
-      if (document.visibilityState === "visible") {
-        void fetchServerFlightAlertHistory();
-      }
-    }, 60000);
-
-    return () => {
-      window.clearInterval(timer);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
-
-  useEffect(() => {
     if (!latestRoom) return;
     if (flightAlertSnapshot?.roomId === latestRoom.id) return;
 
@@ -668,35 +586,6 @@ export default function HomePage() {
     saveFlightAlertSnapshot(nextSnapshot);
     setAlertCheckedAt(nextSnapshot.savedAt);
   }, [latestRoom?.id, flightAlertSnapshot?.roomId]);
-
-  useEffect(() => {
-    if (!latestRoom || flightAlertItems.length === 0) return;
-
-    const snapshot = buildFlightAlertSnapshot(latestRoom);
-    if (!snapshot) return;
-
-    const alertKey = flightAlertItems
-      .map((item) => `${item.key}:${item.description}`)
-      .sort()
-      .join("|");
-
-    if (autoSavedFlightAlertKeysRef.current === alertKey) return;
-    autoSavedFlightAlertKeysRef.current = alertKey;
-
-    const checkedAt = getCurrentTimeLabel();
-    const historyItems = flightAlertItems.map((item) => ({
-      ...item,
-      checkedAt,
-      roomName: latestRoom.name,
-    }));
-
-    mergeFlightAlertHistoryItems(historyItems);
-    setFlightAlertSnapshot(snapshot);
-    saveFlightAlertSnapshot(snapshot);
-    setAlertCheckedAt(snapshot.savedAt);
-    setNotice(`출도착 알림 ${historyItems.length}건을 이력에 자동 저장했습니다.`);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [latestRoom?.id, latestRoom?.lastFetchedAt, flightAlertItems.length]);
 
   useEffect(() => {
     const route = getRouteByFlight(latestRoom, issueFlight);
@@ -727,7 +616,9 @@ export default function HomePage() {
         checkedAt,
         roomName: latestRoom?.name || snapshot.roomName,
       }));
-      mergeFlightAlertHistoryItems(historyItems);
+      const nextHistory = [...historyItems, ...flightAlertHistory].slice(0, 20);
+      setFlightAlertHistory(nextHistory);
+      saveFlightAlertHistory(nextHistory);
     }
 
     setFlightAlertSnapshot(snapshot);
@@ -740,107 +631,13 @@ export default function HomePage() {
     );
   };
 
-  const handleDeleteFlightAlertHistoryItem = async (targetItem: FlightAlertHistoryItem) => {
-    const targetKey = `${targetItem.key}|${targetItem.title}|${targetItem.description}|${targetItem.checkedAt}`;
-    const nextItems = flightAlertHistory.filter((item) => {
-      const itemKey = `${item.key}|${item.title}|${item.description}|${item.checkedAt}`;
-      return itemKey !== targetKey;
-    });
-
-    setFlightAlertHistory(nextItems);
-    saveFlightAlertHistory(nextItems);
-
-    if (targetItem.key) {
-      try {
-        await fetch(`${BACKEND_URL}/flights/notification-history/${encodeURIComponent(targetItem.key)}`, {
-          method: "DELETE",
-        });
-      } catch {
-        // 서버 이력 삭제 실패 시에도 앱 이력 삭제는 유지합니다.
-      }
-    }
-
-    setNotice("선택한 출도착 알림 이력을 삭제했습니다.");
-  };
-
-  const handleClearFlightAlertHistory = async () => {
-    const confirmed = window.confirm("앱과 서버에 저장된 출도착 알림 이력을 모두 삭제할까요?");
+  const handleClearFlightAlertHistory = () => {
+    const confirmed = window.confirm("앱에 저장된 출도착 알림 이력을 초기화할까요?");
     if (!confirmed) return;
 
     setFlightAlertHistory([]);
     clearFlightAlertHistory();
-
-    try {
-      await fetch(`${BACKEND_URL}/flights/notification-history`, {
-        method: "DELETE",
-      });
-    } catch {
-      // 서버 전체 삭제 실패 시에도 앱 이력 삭제는 유지합니다.
-    }
-
-    setNotice("출도착 알림 이력을 전체 삭제했습니다.");
-  };
-
-  const mergeFlightAlertHistoryItems = (items: FlightAlertHistoryItem[]) => {
-    if (!items.length) return;
-
-    setFlightAlertHistory((prevItems) => {
-      const merged = [...items, ...prevItems];
-      const seen = new Set<string>();
-      const deduped: FlightAlertHistoryItem[] = [];
-
-      for (const item of merged) {
-        const dedupeKey = `${item.title}|${item.description}|${item.roomName}`;
-        if (seen.has(dedupeKey)) continue;
-        seen.add(dedupeKey);
-        deduped.push(item);
-      }
-
-      const nextItems = deduped.slice(0, 30);
-      saveFlightAlertHistory(nextItems);
-      return nextItems;
-    });
-  };
-
-  const fetchServerFlightAlertHistory = async () => {
-    try {
-      const res = await fetch(`${BACKEND_URL}/flights/notification-history`, {
-        cache: "no-store",
-      });
-      const json = await res.json();
-
-      if (!res.ok || json.success === false || !Array.isArray(json.items)) return;
-
-      const items = json.items
-        .map((item: Partial<FlightAlertHistoryItem>) => ({
-          key: String(item.key || `server-${Date.now()}-${Math.random()}`),
-          title: String(item.title || "Schedule Flight"),
-          description: String(item.description || "운항 정보 변경"),
-          checkedAt: String(item.checkedAt || getCurrentTimeLabel()),
-          roomName: String(item.roomName || "Schedule Flight"),
-        }))
-        .filter((item: FlightAlertHistoryItem) => item.title && item.description);
-
-      mergeFlightAlertHistoryItems(items);
-    } catch {
-      // 서버 알림 이력 조회 실패 시 기존 로컬 이력은 유지합니다.
-    }
-  };
-
-  const handleSaveFlightAlertHistoryToApp = () => {
-    const currentItems = flightAlertHistory.length ? flightAlertHistory : loadFlightAlertHistory();
-    saveFlightAlertHistory(currentItems);
-    setFlightAlertHistory(currentItems);
-    setNotice(
-      currentItems.length > 0
-        ? `출도착 알림 이력 ${currentItems.length}건을 앱에 저장했습니다.`
-        : "저장할 출도착 알림 이력이 없습니다.",
-    );
-  };
-
-  const handleRefreshFlightAlertHistory = async () => {
-    await fetchServerFlightAlertHistory();
-    setNotice("서버 출도착 알림 이력을 다시 확인했습니다.");
+    setNotice("출도착 알림 이력을 초기화했습니다.");
   };
 
   const appendBackendFlightAlertHistory = (result: BackendScheduleCheckResult, sourceLabel = "API 확인") => {
@@ -863,7 +660,9 @@ export default function HomePage() {
       };
     });
 
-    mergeFlightAlertHistoryItems(historyItems);
+    const nextHistory = [...historyItems, ...flightAlertHistory].slice(0, 20);
+    setFlightAlertHistory(nextHistory);
+    saveFlightAlertHistory(nextHistory);
   };
 
   const openFlights = () => router.push("/flights");
@@ -947,8 +746,7 @@ export default function HomePage() {
     lastImmediateApiCheckRef.current = now;
 
     try {
-      const endpoint = showNotice ? "check-schedule-and-push" : "check-schedule";
-      const res = await fetch(`${BACKEND_URL}/flights/${endpoint}`, {
+      const res = await fetch(`${BACKEND_URL}/flights/check-schedule-and-push`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -994,22 +792,8 @@ export default function HomePage() {
     }
   };
 
-  const handleRefreshLatestSchedule = async () => {
-    if (scheduleApiSyncLoading) return;
-
-    const requestedAt = getCurrentSyncLabel();
-    setScheduleApiSyncLoading(true);
-    setScheduleSyncCheckedAt(requestedAt);
-    setScheduleApiSyncStatus(`API 동기화 요청 중 · ${requestedAt}`);
-    setNotice("최근 Schedule Flight API 동기화를 시작했습니다.");
-
-    try {
-      await checkScheduleApiAndSync(true);
-      await syncLatestScheduleFromServer(false);
-      await fetchServerFlightAlertHistory();
-    } finally {
-      setScheduleApiSyncLoading(false);
-    }
+  const handleRefreshLatestSchedule = () => {
+    void checkScheduleApiAndSync(true, true);
   };
 
   const fetchAutoPushStatus = async () => {
@@ -1023,8 +807,7 @@ export default function HomePage() {
 
       setAutoPushEnabled(Boolean(json.enabled));
       const modeText = json.mode === "focus" ? "집중 5분 확인" : "일반 30분 확인";
-      const lastRunText = json.lastRunAt ? ` · 마지막 ${String(json.lastRunAt).replace("T", " ").slice(5, 16)}` : "";
-      setAutoPushStatusMessage(`${modeText} · ${json.lastMessage || ""}${lastRunText}`);
+      setAutoPushStatusMessage(`${modeText} · ${json.lastMessage || ""}`);
     } catch {
       // 자동 확인 상태 조회 실패 시 화면만 조용히 유지합니다.
     }
@@ -1354,12 +1137,47 @@ export default function HomePage() {
   };
 
   const openLatestImage = (image: SavedImage) => {
-    setSelectedImage(image);
-    setNotice(`${image.label} 이미지를 화면에서 엽니다.`);
-  };
+    const imageWindow = window.open("", "_blank", "noopener,noreferrer");
 
-  const closeSelectedImage = () => {
-    setSelectedImage(null);
+    if (!imageWindow) {
+      setNotice("이미지를 새 창으로 열 수 없습니다. 팝업 차단을 확인하세요.");
+      return;
+    }
+
+    imageWindow.document.write(`
+      <!doctype html>
+      <html lang="ko">
+        <head>
+          <meta charset="utf-8" />
+          <meta name="viewport" content="width=device-width, initial-scale=1" />
+          <title>${image.label}</title>
+          <style>
+            body {
+              margin: 0;
+              background: #020617;
+              color: #e5edf7;
+              font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+              display: flex;
+              min-height: 100vh;
+              align-items: center;
+              justify-content: center;
+              padding: 16px;
+              box-sizing: border-box;
+            }
+            img {
+              max-width: 100%;
+              max-height: 92vh;
+              border-radius: 14px;
+              object-fit: contain;
+            }
+          </style>
+        </head>
+        <body>
+          <img src="${image.dataUrl}" alt="${image.label}" />
+        </body>
+      </html>
+    `);
+    imageWindow.document.close();
   };
 
   const handleSaveNoteLocal = () => {
@@ -1370,13 +1188,10 @@ export default function HomePage() {
   };
 
   const handleSaveDailyDraft = () => {
-    saveNote(note);
-    saveCurrentIssueDraft();
-
     setNotice(
       dailyStatus === "normal"
-        ? "일일 업무 주요 사항을 기기에 임시 저장했습니다. 상태: 이상 없음"
-        : "일일 업무 주요 사항과 특이사항 입력 내용을 기기에 임시 저장했습니다.",
+        ? "일일 업무 기록을 임시 저장했습니다. 상태: 이상 없음"
+        : "일일 업무 기록을 임시 저장했습니다. 특이사항 입력 화면을 확인하세요.",
     );
   };
 
@@ -1393,18 +1208,15 @@ export default function HomePage() {
 
 
   const buildDailyPayload = () => {
-    const dailyImages = IMAGE_SLOTS.map((slot) => {
-      const image = getImageBySlot(images, slot.key);
-      if (!image) return null;
-
-      return {
+    const dailyImages = IMAGE_SLOTS.flatMap((slot) =>
+      getImagesBySlot(images, slot.key).map((image) => ({
         slotKey: slot.key,
         propertyName: IMAGE_SLOT_PROPERTY_NAME[slot.key],
         label: image.label,
         savedAt: image.savedAt,
         dataUrl: image.dataUrl,
-      };
-    }).filter(Boolean);
+      })),
+    );
 
     return {
       title: `${todayText} KJ 일일 업무`,
@@ -1521,7 +1333,6 @@ export default function HomePage() {
 
     saveImages([]);
     saveNote("");
-    clearIssueDraft();
     clearDailyNotionRecord();
     clearIssueNotionRecord();
 
@@ -1575,11 +1386,6 @@ export default function HomePage() {
     }
 
     return true;
-  };
-
-  const handleSaveIssueDraft = () => {
-    saveCurrentIssueDraft();
-    setNotice("특이사항 입력 내용을 기기에 임시 저장했습니다.");
   };
 
   const handleSaveIssueToNotion = async () => {
@@ -1710,25 +1516,29 @@ export default function HomePage() {
           onOpenNaver={openNaverWeather}
         />
 
-        <ScheduleSummaryCard
-          latestRoom={latestRoom}
-          syncCheckedAt={scheduleSyncCheckedAt}
-          apiSyncStatus={scheduleApiSyncStatus}
-          apiSyncLoading={scheduleApiSyncLoading}
-          onOpenScheduleFlight={openScheduleFlight}
-          onRefreshLatestSchedule={handleRefreshLatestSchedule}
+        <FlightAlertCard
+          alertCount={flightAlertCount}
+          alertItems={flightAlertItems}
+          checkedAt={alertCheckedAt}
+          snapshotName={flightAlertSnapshot?.roomName || null}
+          onSaveCurrent={handleCheckFlightAlerts}
         />
 
         <FlightAlertHistoryCard
           historyItems={flightAlertHistory}
-          onSaveToApp={handleSaveFlightAlertHistoryToApp}
-          onRefreshServer={handleRefreshFlightAlertHistory}
-          onDeleteItem={handleDeleteFlightAlertHistoryItem}
           onClear={handleClearFlightAlertHistory}
         />
       </section>
 
       <section style={stackStyle}>
+        <ScheduleSummaryCard
+          latestRoom={latestRoom}
+          syncCheckedAt={scheduleSyncCheckedAt}
+          apiSyncStatus={scheduleApiSyncStatus}
+          onOpenScheduleFlight={openScheduleFlight}
+          onRefreshLatestSchedule={handleRefreshLatestSchedule}
+        />
+
         <ActionCard
           label="오늘 KJ 화물기 조회"
           title="오늘 KJ 화물기 조회"
@@ -1755,7 +1565,7 @@ export default function HomePage() {
 
         <DailyRecordCard
           dailyStatus={dailyStatus}
-          setDailyStatus={updateDailyStatus}
+          setDailyStatus={setDailyStatus}
           images={images}
           imageSlots={IMAGE_SLOTS}
           getImageBySlot={getImageBySlot}
@@ -1767,9 +1577,9 @@ export default function HomePage() {
           libraryInputRef={libraryInputRef}
           handleImageSelected={handleImageSelected}
           author={author}
-          setAuthor={updateAuthor}
+          setAuthor={setAuthor}
           note={note}
-          setNote={updateNote}
+          setNote={setNote}
           dailyNotionRecord={dailyNotionRecord}
           isDailySaving={isDailySaving}
           handleSaveDailyDraft={handleSaveDailyDraft}
@@ -1792,19 +1602,18 @@ export default function HomePage() {
             todayText={todayText}
             currentTimeText={getCurrentTimeText()}
             issueFlight={issueFlight}
-            setIssueFlight={updateIssueFlight}
+            setIssueFlight={setIssueFlight}
             issueRoute={issueRoute}
-            setIssueRoute={updateIssueRoute}
+            setIssueRoute={setIssueRoute}
             issueHlnbr={issueHlnbr}
-            setIssueHlnbr={updateIssueHlnbr}
+            setIssueHlnbr={setIssueHlnbr}
             author={author}
-            setAuthor={updateAuthor}
+            setAuthor={setAuthor}
             weatherSummary={getWeatherSummary(weather)}
             issueText={issueText}
-            setIssueText={updateIssueText}
+            setIssueText={setIssueText}
             issueNotionRecord={issueNotionRecord}
             isIssueSaving={isIssueSaving}
-            handleSaveIssueDraft={handleSaveIssueDraft}
             handleSaveIssueToNotion={handleSaveIssueToNotion}
             handleUpdateIssueToNotion={handleUpdateIssueToNotion}
             handleDeleteIssueFromNotion={handleDeleteIssueFromNotion}
@@ -1812,24 +1621,6 @@ export default function HomePage() {
             openNotionDatabase={openNotionDatabase}
             handleResetLocalDraft={handleResetLocalDraft}
           />
-        )}
-
-        {selectedImage && (
-          <div style={imageViewerOverlayStyle} onClick={closeSelectedImage}>
-            <div style={imageViewerPanelStyle} onClick={(event) => event.stopPropagation()}>
-              <div style={imageViewerHeaderStyle}>
-                <div>
-                  <div style={imageViewerLabelStyle}>사진 보기</div>
-                  <strong>{selectedImage.label}</strong>
-                  <small style={imageViewerDateStyle}>{selectedImage.savedAt}</small>
-                </div>
-                <button type="button" onClick={closeSelectedImage} style={imageViewerCloseButtonStyle}>
-                  닫기
-                </button>
-              </div>
-              <img src={selectedImage.dataUrl} alt={selectedImage.label} style={imageViewerImageStyle} />
-            </div>
-          </div>
         )}
 
         {notice && <div style={noticeStyle}>{notice}</div>}
@@ -2354,73 +2145,4 @@ const footerStyle: CSSProperties = {
   textAlign: "center",
   fontSize: 13,
   fontWeight: 800,
-};
-
-
-const imageViewerOverlayStyle: CSSProperties = {
-  position: "fixed",
-  inset: 0,
-  zIndex: 1000,
-  padding: "max(18px, env(safe-area-inset-top)) 14px max(18px, env(safe-area-inset-bottom))",
-  background: "rgba(2, 8, 23, 0.88)",
-  display: "flex",
-  alignItems: "center",
-  justifyContent: "center",
-};
-
-const imageViewerPanelStyle: CSSProperties = {
-  width: "100%",
-  maxWidth: 720,
-  maxHeight: "92vh",
-  overflow: "auto",
-  borderRadius: 22,
-  border: "1px solid rgba(147, 197, 253, 0.3)",
-  background: "#020817",
-  boxShadow: "0 24px 70px rgba(0, 0, 0, 0.45)",
-  padding: 14,
-};
-
-const imageViewerHeaderStyle: CSSProperties = {
-  display: "flex",
-  justifyContent: "space-between",
-  gap: 12,
-  alignItems: "flex-start",
-  color: "#e5edf7",
-  marginBottom: 12,
-};
-
-const imageViewerLabelStyle: CSSProperties = {
-  color: "#93c5fd",
-  fontSize: 12,
-  fontWeight: 900,
-  letterSpacing: "0.12em",
-  marginBottom: 4,
-};
-
-const imageViewerDateStyle: CSSProperties = {
-  display: "block",
-  color: "#94a3b8",
-  fontSize: 12,
-  marginTop: 4,
-};
-
-const imageViewerCloseButtonStyle: CSSProperties = {
-  border: "1px solid rgba(248, 113, 113, 0.42)",
-  borderRadius: 999,
-  background: "rgba(127, 29, 29, 0.42)",
-  color: "#fecaca",
-  padding: "8px 12px",
-  fontSize: 13,
-  fontWeight: 900,
-  cursor: "pointer",
-  whiteSpace: "nowrap",
-};
-
-const imageViewerImageStyle: CSSProperties = {
-  display: "block",
-  width: "100%",
-  maxHeight: "76vh",
-  objectFit: "contain",
-  borderRadius: 16,
-  background: "#0f172a",
 };

@@ -3,8 +3,10 @@
 import type {
   ChangeEvent,
   CSSProperties,
+  Dispatch,
   Ref,
   RefObject,
+  SetStateAction,
 } from "react";
 import { ImageSlotCard, type ImageSlot, type ImageSlotKey, type SavedImage } from "./ImageSlotCard";
 
@@ -18,7 +20,7 @@ type DailyNotionRecord = {
 
 type DailyRecordCardProps = {
   dailyStatus: DailyStatus;
-  setDailyStatus: (value: DailyStatus) => void;
+  setDailyStatus: Dispatch<SetStateAction<DailyStatus>>;
   images: SavedImage[];
   imageSlots: ImageSlot[];
   getImageBySlot: (images: SavedImage[], slotKey: ImageSlotKey) => SavedImage | null;
@@ -33,9 +35,9 @@ type DailyRecordCardProps = {
     sourceLabel: "카메라 촬영" | "사진첩 선택",
   ) => void;
   author: string;
-  setAuthor: (value: string) => void;
+  setAuthor: Dispatch<SetStateAction<string>>;
   note: string;
-  setNote: (value: string) => void;
+  setNote: Dispatch<SetStateAction<string>>;
   dailyNotionRecord: DailyNotionRecord | null;
   isDailySaving: boolean;
   handleSaveDailyDraft: () => void;
@@ -103,6 +105,7 @@ export function DailyRecordCard({
             key={slot.key}
             slot={slot}
             image={getImageBySlot(images, slot.key)}
+            images={images.filter((image) => image.type === slot.key)}
             onCamera={() => openCamera(slot.key)}
             onLibrary={() => openPhotoLibrary(slot.key)}
             onView={openLatestImage}

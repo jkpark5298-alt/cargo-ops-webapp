@@ -6,6 +6,7 @@ from typing import Any, Dict, List, Optional
 import asyncio
 import json
 import os
+import re
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
@@ -43,6 +44,34 @@ def _now_kst() -> datetime:
 
 def _now_kst_iso() -> str:
     return _now_kst().isoformat(timespec="seconds")
+
+
+def _format_alert_time(value: Any) -> str:
+    parsed = _parse_row_datetime(value)
+    if parsed is not None:
+        return f"'{str(parsed.year)[2:]}/{parsed.month:02d}/{parsed.day:02d} {parsed.hour:02d}:{parsed.minute:02d}"
+
+    raw = _display_value(value)
+    raw = raw.replace("T", " ").replace("Z", "").strip()
+
+    match = re.match(r"^(\d{4})[-/.](\d{2})[-/.](\d{2})\s+(\d{2}):(\d{2})", raw)
+    if match:
+        year, month, day, hour, minute = match.groups()
+        return f"'{year[2:]}/{month}/{day} {hour}:{minute}"
+
+    return raw
+
+
+def _get_schedule_time_value(row: Dict[str, Any]) -> Any:
+    return row.get("formattedScheduleTime") or row.get("scheduleDateTime")
+
+
+def _get_estimated_time_value(row: Dict[str, Any]) -> Any:
+    return row.get("formattedEstimatedTime") or row.get("estimatedDateTime")
+
+
+def _get_alert_time_value(row: Dict[str, Any]) -> Any:
+    return _get_estimated_time_value(row) or _get_schedule_time_value(row)
 
 
 def _parse_kst_iso(value: Any) -> Optional[datetime]:
@@ -504,15 +533,12 @@ def _row_alert_time(row: Optional[Dict[str, Any]]) -> str:
 def _row_changed_fields(previous: Optional[Dict[str, Any]], current: Dict[str, Any]) -> List[str]:
     if previous is None:
         current_status = _row_operational_status(current)
-        current_time = _row_alert_time(current)
+        current_time = _format_alert_time(_get_alert_time_value(current))
         return [f"신규 정보 {current_status} · {current_time}"]
 
     checks = [
-        ("운항상태", _row_operational_status(previous), _row_operational_status(current)),
-        ("기준시각", _row_alert_time(previous), _row_alert_time(current)),
-        ("예정시각", previous.get("formattedScheduleTime") or previous.get("scheduleDateTime"), current.get("formattedScheduleTime") or current.get("scheduleDateTime")),
-        ("변경시각", previous.get("formattedEstimatedTime") or previous.get("estimatedDateTime"), current.get("formattedEstimatedTime") or current.get("estimatedDateTime")),
-        ("REMARK", previous.get("remark") or previous.get("status"), current.get("remark") or current.get("status")),
+        ("운항시각", _get_alert_time_value(previous), _get_alert_time_value(current)),
+        ("상태", previous.get("remark") or previous.get("status"), current.get("remark") or current.get("status")),
         ("게이트", previous.get("gatenumber"), current.get("gatenumber")),
         ("터미널", previous.get("terminalid"), current.get("terminalid")),
     ]
@@ -521,8 +547,12 @@ def _row_changed_fields(previous: Optional[Dict[str, Any]], current: Dict[str, A
     seen: set[str] = set()
 
     for label, before_raw, after_raw in checks:
-        before = _normalize_alert_value(before_raw)
-        after = _normalize_alert_value(after_raw)
+        if label == "운항시각":
+            before = _format_alert_time(before_raw)
+            after = _format_alert_time(after_raw)
+        else:
+            before = _normalize_alert_value(before_raw)
+            after = _normalize_alert_value(after_raw)
 
         if before == after:
             continue
@@ -567,8 +597,8 @@ def _get_arrival_prealert_changes(
     return {
         "key": key,
         "changes": [
-            f"도착 예정 10분 전 {_row_alert_time(row)}",
-            f"운항상태 {_row_operational_status(row)}",
+            f"도착 예정 {_format_alert_time(_get_alert_time_value(row))}",
+            f"상태 {_row_operational_status(row)}",
         ],
     }
 
@@ -831,11 +861,12 @@ async def _run_schedule_change_check(push_on_change: bool = True) -> Dict[str, A
         extra_count = len(changed_items) - 1
         body_lines = [
             f"{first['flight']} {first['route']}",
-            *first["changes"][:2],
+            first["changes"][0] if first.get("changes") else "운항 정보 변경",
+            f"확인 {_format_alert_time(room.get('lastFetchedAt'))}",
         ]
 
         if extra_count > 0:
-            body_lines.append(f"외 {extra_count}건 변경")
+            body_lines.append(f"외 {extra_count}건")
 
         payload = {
             "title": "Schedule Flight 변경 감지",
@@ -1251,31 +1282,6 @@ async def get_notification_history() -> Dict[str, Any]:
     return {
         "success": True,
         "items": _read_notification_history()[:50],
-    }
-
-
-@router.delete("/notification-history")
-async def clear_notification_history() -> Dict[str, Any]:
-    _write_notification_history([])
-    return {
-        "success": True,
-        "items": [],
-    }
-
-
-@router.delete("/notification-history/{item_key}")
-async def delete_notification_history_item(item_key: str) -> Dict[str, Any]:
-    items = _read_notification_history()
-    next_items = [
-        item
-        for item in items
-        if str(item.get("key") or "") != item_key
-    ]
-    _write_notification_history(next_items)
-    return {
-        "success": True,
-        "deleted": len(items) - len(next_items),
-        "items": next_items[:50],
     }
 
 

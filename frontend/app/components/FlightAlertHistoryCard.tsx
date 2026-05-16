@@ -5,16 +5,12 @@ import type { FlightAlertHistoryItem } from "../lib/flight-alerts";
 
 type FlightAlertHistoryCardProps = {
   historyItems: FlightAlertHistoryItem[];
-  onSaveToApp: () => void;
-  onRefreshServer: () => void;
   onDeleteItem: (item: FlightAlertHistoryItem) => void;
   onClear: () => void;
 };
 
 export function FlightAlertHistoryCard({
   historyItems,
-  onSaveToApp,
-  onRefreshServer,
   onDeleteItem,
   onClear,
 }: FlightAlertHistoryCardProps) {
@@ -25,14 +21,7 @@ export function FlightAlertHistoryCard({
           <div style={cardLabelStyle}>출도착 알림 이력</div>
           <h2 style={flightAlertTitleStyle}>최근 변경 {historyItems.length}건</h2>
         </div>
-        <div style={historyTopActionStyle}>
-          <button type="button" onClick={onSaveToApp} style={saveBadgeButtonStyle}>
-            앱 저장
-          </button>
-          <button type="button" onClick={onRefreshServer} style={syncBadgeButtonStyle}>
-            서버 확인
-          </button>
-        </div>
+        <div style={flightAlertBadgeStyle}>앱 저장</div>
       </div>
 
       {historyItems.length > 0 ? (
@@ -52,7 +41,7 @@ export function FlightAlertHistoryCard({
               </div>
               <div style={flightAlertItemDescStyle}>{item.description}</div>
               <div style={flightAlertHistoryMetaStyle}>
-                확인 {item.checkedAt} · {item.roomName}
+                확인 {formatHistoryTime(item.checkedAt)} · {item.roomName}
               </div>
             </div>
           ))}
@@ -63,7 +52,7 @@ export function FlightAlertHistoryCard({
 
       {historyItems.length > 0 && (
         <button onClick={onClear} style={resetButtonStyle}>
-          알림 이력 전체 삭제
+          알림 이력 초기화
         </button>
       )}
     </section>
@@ -102,15 +91,7 @@ const flightAlertTitleStyle: CSSProperties = {
   fontWeight: 950,
 };
 
-const historyTopActionStyle: CSSProperties = {
-  display: "flex",
-  gap: 7,
-  flexWrap: "wrap",
-  justifyContent: "flex-end",
-};
-
-const saveBadgeButtonStyle: CSSProperties = {
-  border: "none",
+const flightAlertBadgeStyle: CSSProperties = {
   padding: "7px 10px",
   borderRadius: 999,
   background: "#1d4ed8",
@@ -118,13 +99,6 @@ const saveBadgeButtonStyle: CSSProperties = {
   fontSize: 12,
   fontWeight: 900,
   whiteSpace: "nowrap",
-  cursor: "pointer",
-};
-
-const syncBadgeButtonStyle: CSSProperties = {
-  ...saveBadgeButtonStyle,
-  background: "#0f172a",
-  border: "1px solid rgba(147, 197, 253, 0.32)",
 };
 
 const flightAlertMetaStyle: CSSProperties = {
@@ -201,3 +175,18 @@ const deleteItemButtonStyle: CSSProperties = {
   cursor: "pointer",
   whiteSpace: "nowrap",
 };
+
+
+function formatHistoryTime(value?: string) {
+  if (!value) return "-";
+
+  const raw = value.replace("T", " ").replace("Z", "").trim();
+  const match = raw.match(/^(\d{4})[-/.](\d{2})[-/.](\d{2})\s+(\d{2}):(\d{2})/);
+
+  if (match) {
+    const [, year, month, day, hour, minute] = match;
+    return `'${year.slice(2)}/${month}/${day} ${hour}:${minute}`;
+  }
+
+  return raw;
+}

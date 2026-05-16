@@ -498,6 +498,7 @@ export default function HomePage() {
   const [autoPushStatusMessage, setAutoPushStatusMessage] = useState("");
   const [scheduleSyncCheckedAt, setScheduleSyncCheckedAt] = useState("");
   const [scheduleApiSyncStatus, setScheduleApiSyncStatus] = useState("");
+  const [scheduleApiSyncLoading, setScheduleApiSyncLoading] = useState(false);
   const [isDailySaving, setIsDailySaving] = useState(false);
   const [isIssueSaving, setIsIssueSaving] = useState(false);
   const [weather, setWeather] = useState<WeatherInfo>(DEFAULT_WEATHER);
@@ -799,9 +800,18 @@ export default function HomePage() {
 
   const checkScheduleApiAndSync = async (showNotice = false, force = false) => {
     const now = Date.now();
+    const showLoading = Boolean(showNotice || force);
+
+    if (showLoading) {
+      setScheduleApiSyncLoading(true);
+      setScheduleApiSyncStatus("Schedule Flight API 즉시 확인 중...");
+    }
 
     if (!force && now - lastImmediateApiCheckRef.current < 60_000) {
       await syncLatestScheduleFromServer(false);
+      if (showLoading) {
+        setScheduleApiSyncLoading(false);
+      }
       return;
     }
 
@@ -846,10 +856,14 @@ export default function HomePage() {
         const friendlyMessage = rawMessage.includes("429")
           ? "429 한도 초과 또는 일시 제한"
           : rawMessage;
-        const message = `API 동기화 실패 · ${friendlyMessage} · ${checkedAt}`;
+        const message = `API 즉시 확인 실패 · ${friendlyMessage} · ${checkedAt}`;
         setScheduleApiSyncStatus(message);
         setScheduleSyncCheckedAt(checkedAt);
         setNotice(message);
+      }
+    } finally {
+      if (showLoading) {
+        setScheduleApiSyncLoading(false);
       }
     }
   };
@@ -1584,6 +1598,18 @@ export default function HomePage() {
           onOpenNaver={openNaverWeather}
         />
 
+      </section>
+
+      <section style={stackStyle}>
+        <ScheduleSummaryCard
+          latestRoom={latestRoom}
+          syncCheckedAt={scheduleSyncCheckedAt}
+          apiSyncStatus={scheduleApiSyncStatus}
+          apiSyncLoading={scheduleApiSyncLoading}
+          onOpenScheduleFlight={openScheduleFlight}
+          onRefreshLatestSchedule={handleRefreshLatestSchedule}
+        />
+
         <FlightAlertHistoryCard
           historyItems={flightAlertHistory}
           serverHistoryItems={serverFlightAlertHistory}
@@ -1593,17 +1619,6 @@ export default function HomePage() {
           onClear={handleClearFlightAlertHistory}
           onLoadServerHistory={handleLoadServerFlightAlertHistory}
           onMergeServerHistory={handleMergeServerFlightAlertHistory}
-        />
-      </section>
-
-      <section style={stackStyle}>
-        <ScheduleSummaryCard
-          latestRoom={latestRoom}
-          syncCheckedAt={scheduleSyncCheckedAt}
-          apiSyncStatus={scheduleApiSyncStatus}
-          apiSyncLoading={false}
-          onOpenScheduleFlight={openScheduleFlight}
-          onRefreshLatestSchedule={handleRefreshLatestSchedule}
         />
 
         <ActionCard

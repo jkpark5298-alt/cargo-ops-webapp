@@ -30,14 +30,17 @@ export function ScheduleSummaryCard({
       </div>
 
       <div style={apiLookupTimeStyle}>
-        API 조회 {formatApiLookupTime(latestRoom?.lastFetchedAt)}
+        마지막 API 확인 {formatApiLookupTime(latestRoom?.lastFetchedAt)}
       </div>
 
       <div style={infoListStyle}>
         <FlightRouteRows room={latestRoom} />
       </div>
       {apiSyncStatus ? <div style={apiSyncStatusStyle}>{apiSyncStatus}</div> : null}
-      {syncCheckedAt ? <div style={syncStatusStyle}>동기화 확인 · {syncCheckedAt}</div> : null}
+      {syncCheckedAt ? <div style={syncStatusStyle}>초기화면 반영 확인 · {syncCheckedAt}</div> : null}
+      <div style={apiGuideStyle}>
+        API 즉시 확인은 Schedule Flight API를 바로 조회한 뒤 서버 기준과 초기화면에 반영합니다.
+      </div>
       <div style={buttonStackStyle}>
         <button
           onClick={onRefreshLatestSchedule}
@@ -48,10 +51,10 @@ export function ScheduleSummaryCard({
           }}
           disabled={apiSyncLoading}
         >
-          {apiSyncLoading ? "API 동기화 중..." : "최근 Schedule Flight API 동기화"}
+          {apiSyncLoading ? "API 즉시 확인 중..." : "API 즉시 확인"}
         </button>
         <button onClick={onOpenScheduleFlight} style={secondaryButtonStyle}>
-          최근 Schedule Flight 열기
+          Schedule Lite 열기
         </button>
       </div>
     </section>
@@ -488,6 +491,15 @@ const flightRouteMetaStyle: CSSProperties = {
   fontWeight: 900,
   textAlign: "right",
   whiteSpace: "nowrap",
+};
+
+const apiGuideStyle: CSSProperties = {
+  color: "#93c5fd",
+  fontSize: 12,
+  lineHeight: 1.45,
+  marginTop: 8,
+  marginBottom: 10,
+  fontWeight: 750,
 };
 
 const buttonStackStyle: CSSProperties = {

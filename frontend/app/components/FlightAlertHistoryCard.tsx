@@ -5,24 +5,20 @@ import type { FlightAlertHistoryItem } from "../lib/flight-alerts";
 
 type FlightAlertHistoryCardProps = {
   historyItems: FlightAlertHistoryItem[];
-  serverHistoryItems?: FlightAlertHistoryItem[];
   serverLoading?: boolean;
   serverStatus?: string;
   onDeleteItem: (item: FlightAlertHistoryItem) => void;
   onClear: () => void;
   onLoadServerHistory: () => void;
-  onMergeServerHistory: () => void;
 };
 
 export function FlightAlertHistoryCard({
   historyItems,
-  serverHistoryItems = [],
   serverLoading = false,
   serverStatus = "",
   onDeleteItem,
   onClear,
   onLoadServerHistory,
-  onMergeServerHistory,
 }: FlightAlertHistoryCardProps) {
   return (
     <section style={flightAlertHistoryCardStyle}>
@@ -41,32 +37,19 @@ export function FlightAlertHistoryCard({
           disabled={serverLoading}
           style={serverButtonStyle}
         >
-          {serverLoading ? "서버 확인 중..." : "서버 미처리 이력 불러오기"}
+          {serverLoading ? "새로고침 중..." : "서버 이력 새로고침"}
         </button>
         <button
           type="button"
-          onClick={onMergeServerHistory}
-          disabled={serverLoading || serverHistoryItems.length === 0}
-          style={serverHistoryItems.length > 0 ? serverButtonStyle : disabledServerButtonStyle}
+          onClick={onClear}
+          disabled={serverLoading || historyItems.length === 0}
+          style={historyItems.length > 0 ? dangerButtonStyle : disabledServerButtonStyle}
         >
-          서버 이력 앱 보관 후 정리
+          전체 삭제
         </button>
       </div>
 
       {serverStatus && <div style={serverStatusStyle}>{serverStatus}</div>}
-
-      {serverHistoryItems.length > 0 && (
-        <div style={serverHistoryBoxStyle}>
-          <div style={serverHistoryTitleStyle}>서버 미처리 알림 이력 {serverHistoryItems.length}건</div>
-          {serverHistoryItems.slice(0, 3).map((item, index) => (
-            <div key={`${item.key}-${item.checkedAt}-${index}`} style={serverHistoryItemStyle}>
-              <strong>{item.title}</strong>
-              <span>{item.description}</span>
-              <small>확인 {formatHistoryTime(item.checkedAt)} · {item.roomName}</small>
-            </div>
-          ))}
-        </div>
-      )}
 
       {historyItems.length > 0 ? (
         <div style={flightAlertListStyle}>
@@ -92,12 +75,6 @@ export function FlightAlertHistoryCard({
         </div>
       ) : (
         <div style={flightAlertMetaStyle}>아직 저장된 알림 이력이 없습니다.</div>
-      )}
-
-      {historyItems.length > 0 && (
-        <button onClick={onClear} style={resetButtonStyle}>
-          알림 이력 초기화
-        </button>
       )}
     </section>
   );
@@ -219,6 +196,13 @@ const disabledServerButtonStyle: CSSProperties = {
   cursor: "not-allowed",
 };
 
+const dangerButtonStyle: CSSProperties = {
+  ...serverButtonStyle,
+  border: "1px solid rgba(248, 113, 113, 0.48)",
+  background: "rgba(127, 29, 29, 0.72)",
+  color: "#fecaca",
+};
+
 const serverStatusStyle: CSSProperties = {
   color: "#93c5fd",
   fontSize: 12,
@@ -226,42 +210,9 @@ const serverStatusStyle: CSSProperties = {
   marginBottom: 10,
 };
 
-const serverHistoryBoxStyle: CSSProperties = {
-  border: "1px solid rgba(20, 184, 166, 0.28)",
-  background: "rgba(15, 118, 110, 0.14)",
-  borderRadius: 14,
-  padding: 10,
-  marginBottom: 12,
-};
 
-const serverHistoryTitleStyle: CSSProperties = {
-  color: "#ccfbf1",
-  fontSize: 12,
-  fontWeight: 950,
-  marginBottom: 8,
-};
 
-const serverHistoryItemStyle: CSSProperties = {
-  display: "grid",
-  gap: 3,
-  color: "#e0f2fe",
-  fontSize: 12,
-  lineHeight: 1.35,
-  padding: "7px 0",
-  borderTop: "1px solid rgba(148, 163, 184, 0.18)",
-};
 
-const resetButtonStyle: CSSProperties = {
-  width: "100%",
-  minHeight: 54,
-  border: "1px solid rgba(148, 163, 184, 0.3)",
-  borderRadius: 14,
-  color: "#e5edf7",
-  background: "#1f2937",
-  fontSize: 16,
-  fontWeight: 900,
-  cursor: "pointer",
-};
 
 
 const deleteItemButtonStyle: CSSProperties = {

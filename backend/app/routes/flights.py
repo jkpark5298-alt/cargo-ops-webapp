@@ -108,6 +108,14 @@ class LatestScheduleRequest(BaseModel):
     room: Dict[str, Any]
 
 
+class NotificationHistoryDeleteItemRequest(BaseModel):
+    key: Optional[str] = None
+    title: Optional[str] = None
+    description: Optional[str] = None
+    checkedAt: Optional[str] = None
+    roomName: Optional[str] = None
+
+
 class FlightQueryRequest(BaseModel):
     flights: List[str] = Field(default_factory=list)
     start: str
@@ -1300,6 +1308,33 @@ async def clear_notification_history() -> Dict[str, Any]:
 @router.post("/notification-history/clear")
 async def clear_notification_history_post() -> Dict[str, Any]:
     return await clear_notification_history()
+
+
+
+@router.post("/notification-history/delete-item")
+async def delete_notification_history_item(payload: NotificationHistoryDeleteItemRequest) -> Dict[str, Any]:
+    items = _read_notification_history()
+
+    def _same_item(item: Dict[str, Any]) -> bool:
+        if payload.key and str(item.get("key") or "") == payload.key:
+            return True
+
+        return (
+            str(item.get("title") or "") == str(payload.title or "")
+            and str(item.get("description") or "") == str(payload.description or "")
+            and str(item.get("checkedAt") or "") == str(payload.checkedAt or "")
+            and str(item.get("roomName") or "") == str(payload.roomName or "")
+        )
+
+    next_items = [item for item in items if not _same_item(item)]
+    deleted = len(items) - len(next_items)
+    _write_notification_history(next_items)
+
+    return {
+        "success": True,
+        "deleted": deleted,
+        "items": next_items[:50],
+    }
 
 
 @router.get("/latest-schedule")

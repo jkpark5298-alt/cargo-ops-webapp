@@ -508,8 +508,6 @@ export default function HomePage() {
     useState<FlightAlertSnapshot | null>(null);
   const [flightAlertHistory, setFlightAlertHistory] =
     useState<FlightAlertHistoryItem[]>([]);
-  const [serverFlightAlertHistory, setServerFlightAlertHistory] =
-    useState<FlightAlertHistoryItem[]>([]);
   const [serverFlightAlertLoading, setServerFlightAlertLoading] = useState(false);
   const [serverFlightAlertStatus, setServerFlightAlertStatus] = useState("");
   const [dailyStatus, setDailyStatus] = useState<"normal" | "issue">("normal");
@@ -611,7 +609,7 @@ export default function HomePage() {
     }
   }, [issueFlight, latestRoom]);
 
-  const handleDeleteFlightAlertHistoryItem = (targetItem: FlightAlertHistoryItem) => {
+  const handleDeleteFlightAlertHistoryItem = async (targetItem: FlightAlertHistoryItem) => {
     const nextItems = flightAlertHistory.filter((item) => {
       const itemKey = `${item.key}|${item.title}|${item.description}|${item.checkedAt}`;
       const targetKey = `${targetItem.key}|${targetItem.title}|${targetItem.description}|${targetItem.checkedAt}`;
@@ -620,16 +618,41 @@ export default function HomePage() {
 
     setFlightAlertHistory(nextItems);
     saveFlightAlertHistory(nextItems);
-    setNotice("\uC120\uD0DD\uD55C \uCD9C\uB3C4\uCC29 \uC54C\uB9BC \uC774\uB825\uC744 \uC0AD\uC81C\uD588\uC2B5\uB2C8\uB2E4.");
+    setServerFlightAlertStatus("선택한 알림을 삭제하는 중입니다.");
+
+    try {
+      await deleteServerFlightAlertHistoryItem(targetItem);
+      setServerFlightAlertStatus("선택한 알림을 앱과 서버 이력에서 삭제했습니다.");
+    } catch (error) {
+      setServerFlightAlertStatus(
+        error instanceof Error
+          ? `앱에서는 삭제했지만 서버 이력 삭제 실패: ${error.message}`
+          : "앱에서는 삭제했지만 서버 이력 삭제 중 오류가 발생했습니다.",
+      );
+    }
   };
 
-  const handleClearFlightAlertHistory = () => {
-    const confirmed = window.confirm("앱에 저장된 출도착 알림 이력을 초기화할까요?");
+  const handleClearFlightAlertHistory = async () => {
+    const confirmed = window.confirm("출도착 알림 이력을 모두 삭제할까요? 앱 알림과 서버 미처리 이력이 함께 정리됩니다.");
     if (!confirmed) return;
 
-    setFlightAlertHistory([]);
-    clearFlightAlertHistory();
-    setNotice("출도착 알림 이력을 초기화했습니다.");
+    setServerFlightAlertLoading(true);
+    setServerFlightAlertStatus("출도착 알림 이력을 전체 삭제하는 중입니다.");
+
+    try {
+      setFlightAlertHistory([]);
+      clearFlightAlertHistory();
+      const clearResult = await clearServerFlightAlertHistory();
+      setServerFlightAlertStatus(`알림 이력을 전체 삭제했습니다. 서버 이력 ${clearResult.cleared ?? 0}건 정리`);
+    } catch (error) {
+      setServerFlightAlertStatus(
+        error instanceof Error
+          ? `앱 이력은 삭제했지만 서버 이력 정리 실패: ${error.message}`
+          : "앱 이력은 삭제했지만 서버 이력 정리 중 오류가 발생했습니다.",
+      );
+    } finally {
+      setServerFlightAlertLoading(false);
+    }
   };
 
 
@@ -690,6 +713,30 @@ export default function HomePage() {
     return merged.slice(0, 20);
   };
 
+  const deleteServerFlightAlertHistoryItem = async (item: FlightAlertHistoryItem) => {
+    const res = await fetch(`${BACKEND_URL}/flights/notification-history/delete-item`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      cache: "no-store",
+      body: JSON.stringify({
+        key: item.key,
+        title: item.title,
+        description: item.description,
+        checkedAt: item.checkedAt,
+        roomName: item.roomName,
+      }),
+    });
+    const json = await res.json();
+
+    if (!res.ok || json.success === false) {
+      throw new Error(json.detail || json.message || "서버 알림 이력 개별 삭제 실패");
+    }
+
+    return json as { success?: boolean; deleted?: number };
+  };
+
   const clearServerFlightAlertHistory = async () => {
     const res = await fetch(`${BACKEND_URL}/flights/notification-history`, {
       method: "DELETE",
@@ -706,7 +753,7 @@ export default function HomePage() {
 
   const handleLoadServerFlightAlertHistory = async () => {
     setServerFlightAlertLoading(true);
-    setServerFlightAlertStatus("서버 알림 이력을 불러오는 중입니다.");
+    setServerFlightAlertStatus("서버 미처리 이력을 확인하는 중입니다.");
 
     try {
       const res = await fetch(`${BACKEND_URL}/flights/notification-history`, {
@@ -719,48 +766,24 @@ export default function HomePage() {
       }
 
       const rawItems = json.items || json.history || json.notifications || json.data || [];
-      const nextItems = mapServerNotificationHistory(rawItems);
+      const serverItems = mapServerNotificationHistory(rawItems);
+      const currentItems = loadFlightAlertHistory();
+      const nextItems = mergeFlightAlertHistoryItems(serverItems, currentItems);
 
-      setServerFlightAlertHistory(nextItems);
-      setServerFlightAlertStatus(`서버 이력 ${nextItems.length}건 확인`);
+      setFlightAlertHistory(nextItems);
+      saveFlightAlertHistory(nextItems);
+
+      const addedCount = Math.max(0, nextItems.length - currentItems.length);
+      setServerFlightAlertStatus(
+        serverItems.length > 0
+          ? `서버 미처리 이력 ${serverItems.length}건 확인 · 앱 알림 목록에 표시 · 신규 ${addedCount}건`
+          : "서버 미처리 이력이 없습니다.",
+      );
     } catch (error) {
       setServerFlightAlertStatus(
         error instanceof Error
           ? error.message
           : "서버 알림 이력을 불러오는 중 오류가 발생했습니다.",
-      );
-    } finally {
-      setServerFlightAlertLoading(false);
-    }
-  };
-
-  const handleMergeServerFlightAlertHistory = async () => {
-    if (serverFlightAlertHistory.length === 0) {
-      setServerFlightAlertStatus("먼저 서버 이력을 불러오세요.");
-      return;
-    }
-
-    setServerFlightAlertLoading(true);
-    setServerFlightAlertStatus("서버 이력을 앱 보관함에 저장하는 중입니다.");
-
-    const beforeCount = flightAlertHistory.length;
-    const nextItems = mergeFlightAlertHistoryItems(serverFlightAlertHistory, flightAlertHistory);
-    const addedCount = Math.max(0, nextItems.length - beforeCount);
-
-    try {
-      setFlightAlertHistory(nextItems);
-      saveFlightAlertHistory(nextItems);
-
-      const clearResult = await clearServerFlightAlertHistory();
-      setServerFlightAlertHistory([]);
-      setServerFlightAlertStatus(
-        `서버 이력 ${serverFlightAlertHistory.length}건을 앱 보관함에 반영하고 서버 이력 ${clearResult.cleared ?? serverFlightAlertHistory.length}건을 정리했습니다. 신규 보관 ${addedCount}건`,
-      );
-    } catch (error) {
-      setServerFlightAlertStatus(
-        error instanceof Error
-          ? `앱 보관은 완료했지만 서버 이력 정리 실패: ${error.message}`
-          : "앱 보관은 완료했지만 서버 이력 정리 중 오류가 발생했습니다.",
       );
     } finally {
       setServerFlightAlertLoading(false);
@@ -1672,13 +1695,11 @@ export default function HomePage() {
 
         <FlightAlertHistoryCard
           historyItems={flightAlertHistory}
-          serverHistoryItems={serverFlightAlertHistory}
           serverLoading={serverFlightAlertLoading}
           serverStatus={serverFlightAlertStatus}
           onDeleteItem={handleDeleteFlightAlertHistoryItem}
           onClear={handleClearFlightAlertHistory}
           onLoadServerHistory={handleLoadServerFlightAlertHistory}
-          onMergeServerHistory={handleMergeServerFlightAlertHistory}
         />
 
         <ActionCard

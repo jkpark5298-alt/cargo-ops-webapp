@@ -665,6 +665,45 @@ export default function HomePage() {
     });
   };
 
+  const mergeFlightAlertHistoryItems = (
+    incomingItems: FlightAlertHistoryItem[],
+    existingItems: FlightAlertHistoryItem[],
+  ) => {
+    const seen = new Set<string>();
+    const merged: FlightAlertHistoryItem[] = [];
+
+    [...incomingItems, ...existingItems].forEach((item) => {
+      const key = [
+        item.title,
+        item.description,
+        item.checkedAt,
+        item.roomName,
+      ]
+        .map((value) => String(value || "").trim())
+        .join("|");
+
+      if (!key.trim() || seen.has(key)) return;
+      seen.add(key);
+      merged.push(item);
+    });
+
+    return merged.slice(0, 20);
+  };
+
+  const clearServerFlightAlertHistory = async () => {
+    const res = await fetch(`${BACKEND_URL}/flights/notification-history`, {
+      method: "DELETE",
+      cache: "no-store",
+    });
+    const json = await res.json();
+
+    if (!res.ok || json.success === false) {
+      throw new Error(json.detail || json.message || "서버 알림 이력 삭제 실패");
+    }
+
+    return json as { success?: boolean; cleared?: number };
+  };
+
   const handleLoadServerFlightAlertHistory = async () => {
     setServerFlightAlertLoading(true);
     setServerFlightAlertStatus("서버 알림 이력을 불러오는 중입니다.");
@@ -695,16 +734,37 @@ export default function HomePage() {
     }
   };
 
-  const handleMergeServerFlightAlertHistory = () => {
+  const handleMergeServerFlightAlertHistory = async () => {
     if (serverFlightAlertHistory.length === 0) {
       setServerFlightAlertStatus("먼저 서버 이력을 불러오세요.");
       return;
     }
 
-    const nextItems = [...serverFlightAlertHistory, ...flightAlertHistory].slice(0, 20);
-    setFlightAlertHistory(nextItems);
-    saveFlightAlertHistory(nextItems);
-    setServerFlightAlertStatus("서버 이력을 앱 알림 보관함에 반영했습니다.");
+    setServerFlightAlertLoading(true);
+    setServerFlightAlertStatus("서버 이력을 앱 보관함에 저장하는 중입니다.");
+
+    const beforeCount = flightAlertHistory.length;
+    const nextItems = mergeFlightAlertHistoryItems(serverFlightAlertHistory, flightAlertHistory);
+    const addedCount = Math.max(0, nextItems.length - beforeCount);
+
+    try {
+      setFlightAlertHistory(nextItems);
+      saveFlightAlertHistory(nextItems);
+
+      const clearResult = await clearServerFlightAlertHistory();
+      setServerFlightAlertHistory([]);
+      setServerFlightAlertStatus(
+        `서버 이력 ${serverFlightAlertHistory.length}건을 앱 보관함에 반영하고 서버 이력 ${clearResult.cleared ?? serverFlightAlertHistory.length}건을 정리했습니다. 신규 보관 ${addedCount}건`,
+      );
+    } catch (error) {
+      setServerFlightAlertStatus(
+        error instanceof Error
+          ? `앱 보관은 완료했지만 서버 이력 정리 실패: ${error.message}`
+          : "앱 보관은 완료했지만 서버 이력 정리 중 오류가 발생했습니다.",
+      );
+    } finally {
+      setServerFlightAlertLoading(false);
+    }
   };
 
   const appendBackendFlightAlertHistory = (result: BackendScheduleCheckResult, sourceLabel = "API 확인") => {

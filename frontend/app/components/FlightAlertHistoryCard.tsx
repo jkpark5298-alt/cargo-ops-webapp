@@ -41,7 +41,7 @@ export function FlightAlertHistoryCard({
           disabled={serverLoading}
           style={serverButtonStyle}
         >
-          {serverLoading ? "서버 확인 중..." : "서버 이력 불러오기"}
+          {serverLoading ? "서버 확인 중..." : "서버 미처리 이력 불러오기"}
         </button>
         <button
           type="button"
@@ -49,7 +49,7 @@ export function FlightAlertHistoryCard({
           disabled={serverLoading || serverHistoryItems.length === 0}
           style={serverHistoryItems.length > 0 ? serverButtonStyle : disabledServerButtonStyle}
         >
-          서버 이력 앱 보관
+          서버 이력 앱 보관 후 정리
         </button>
       </div>
 
@@ -57,7 +57,7 @@ export function FlightAlertHistoryCard({
 
       {serverHistoryItems.length > 0 && (
         <div style={serverHistoryBoxStyle}>
-          <div style={serverHistoryTitleStyle}>서버 알림 이력 {serverHistoryItems.length}건</div>
+          <div style={serverHistoryTitleStyle}>서버 미처리 알림 이력 {serverHistoryItems.length}건</div>
           {serverHistoryItems.slice(0, 3).map((item, index) => (
             <div key={`${item.key}-${item.checkedAt}-${index}`} style={serverHistoryItemStyle}>
               <strong>{item.title}</strong>

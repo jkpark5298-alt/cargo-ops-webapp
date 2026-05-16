@@ -631,6 +631,19 @@ export default function HomePage() {
     );
   };
 
+
+  const handleDeleteFlightAlertHistoryItem = (targetItem: FlightAlertHistoryItem) => {
+    const nextItems = flightAlertHistory.filter((item) => {
+      const itemKey = `${item.key}|${item.title}|${item.description}|${item.checkedAt}`;
+      const targetKey = `${targetItem.key}|${targetItem.title}|${targetItem.description}|${targetItem.checkedAt}`;
+      return itemKey !== targetKey;
+    });
+
+    setFlightAlertHistory(nextItems);
+    saveFlightAlertHistory(nextItems);
+    setNotice("\uC120\uD0DD\uD55C \uCD9C\uB3C4\uCC29 \uC54C\uB9BC \uC774\uB825\uC744 \uC0AD\uC81C\uD588\uC2B5\uB2C8\uB2E4.");
+  };
+
   const handleClearFlightAlertHistory = () => {
     const confirmed = window.confirm("앱에 저장된 출도착 알림 이력을 초기화할까요?");
     if (!confirmed) return;
@@ -1187,6 +1200,12 @@ export default function HomePage() {
     );
   };
 
+
+  const handleSaveIssueDraft = () => {
+    saveNote(note);
+    setNotice("\uD2B9\uC774\uC0AC\uD56D\uC744 \uC784\uC2DC \uC800\uC7A5\uD588\uC2B5\uB2C8\uB2E4.");
+  };
+
   const handleSaveDailyDraft = () => {
     setNotice(
       dailyStatus === "normal"
@@ -1526,6 +1545,7 @@ export default function HomePage() {
 
         <FlightAlertHistoryCard
           historyItems={flightAlertHistory}
+          onDeleteItem={handleDeleteFlightAlertHistoryItem}
           onClear={handleClearFlightAlertHistory}
         />
       </section>
@@ -1535,6 +1555,7 @@ export default function HomePage() {
           latestRoom={latestRoom}
           syncCheckedAt={scheduleSyncCheckedAt}
           apiSyncStatus={scheduleApiSyncStatus}
+          apiSyncLoading={false}
           onOpenScheduleFlight={openScheduleFlight}
           onRefreshLatestSchedule={handleRefreshLatestSchedule}
         />
@@ -1614,6 +1635,7 @@ export default function HomePage() {
             setIssueText={setIssueText}
             issueNotionRecord={issueNotionRecord}
             isIssueSaving={isIssueSaving}
+            handleSaveIssueDraft={handleSaveIssueDraft}
             handleSaveIssueToNotion={handleSaveIssueToNotion}
             handleUpdateIssueToNotion={handleUpdateIssueToNotion}
             handleDeleteIssueFromNotion={handleDeleteIssueFromNotion}

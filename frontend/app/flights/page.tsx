@@ -48,6 +48,7 @@ type MonitorRoom = {
 };
 
 const STORAGE_KEY = "cargo_ops_monitor_rooms_v6";
+const LAST_FIXED_ROOM_KEY = "last_fixed_room_id";
 const FLIGHT_ALERT_SNAPSHOT_KEY = "cargo_ops_flight_alert_snapshot_v1";
 const FLIGHT_ALERT_HISTORY_KEY = "cargo_ops_flight_alert_history_v1";
 
@@ -128,15 +129,33 @@ async function saveLatestScheduleToServer(room: MonitorRoom) {
   return json.room as MonitorRoom;
 }
 
-async function clearLatestScheduleOnServer(room: MonitorRoom) {
+async function clearLatestScheduleOnServer(room?: MonitorRoom) {
+  const now = new Date();
   const emptyRoom: MonitorRoom = {
-    ...room,
+    id: room?.id || `${now.getTime()}`,
+    name: room?.name || `Schedule_${now.toLocaleString("ko-KR")}`,
     flightsInput: "",
+    startDateTime: room?.startDateTime || getDefaultStartDateTime(),
+    endDateTime: room?.endDateTime || getDefaultEndDateTime(),
+    fixed: true,
+    lastFetchedAt: now.toISOString(),
     rows: [],
-    lastFetchedAt: new Date().toLocaleString("ko-KR"),
   };
 
-  return saveLatestScheduleToServer(emptyRoom);
+  const res = await fetch(`${BACKEND_URL}/flights/latest-schedule`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({ room: emptyRoom }),
+  });
+  const json = await res.json();
+
+  if (!res.ok || json.success === false) {
+    throw new Error(json.detail || json.message || "Schedule Flight 서버 비우기 실패");
+  }
+
+  return json;
 }
 
 function isScheduleFlightRoom(room?: MonitorRoom | null) {
@@ -1496,9 +1515,10 @@ export default function FlightsPage() {
       try {
         await clearLatestScheduleOnServer(targetRoom);
         if (typeof window !== "undefined") {
+          window.localStorage.removeItem(LAST_FIXED_ROOM_KEY);
           window.localStorage.setItem("cargo_ops_latest_schedule_updated_at", new Date().toISOString());
         }
-        setError("Schedule Flight 저장방을 삭제하고 초기화면 최근 Schedule Flight도 비웠습니다.");
+        setError("Schedule Flight 저장방을 삭제하고 서버 기준도 비웠습니다. 초기화면과 Schedule Lite에도 반영됩니다.");
       } catch (error) {
         setError(
           error instanceof Error

@@ -8,7 +8,6 @@ import {
   type CSSProperties,
 } from "react";
 import { useRouter } from "next/navigation";
-import { FlightAlertCard } from "./components/FlightAlertCard";
 import { FlightAlertHistoryCard } from "./components/FlightAlertHistoryCard";
 import { WeatherCard } from "./components/WeatherCard";
 import { ScheduleSummaryCard } from "./components/ScheduleSummaryCard";
@@ -18,7 +17,6 @@ import { PwaNotificationCard } from "./components/PwaNotificationCard";
 import {
   buildFlightAlertSnapshot,
   clearFlightAlertHistory,
-  createFlightAlertItems,
   loadFlightAlertHistory,
   loadFlightAlertSnapshot,
   saveFlightAlertHistory,
@@ -504,11 +502,15 @@ export default function HomePage() {
   const [isIssueSaving, setIsIssueSaving] = useState(false);
   const [weather, setWeather] = useState<WeatherInfo>(DEFAULT_WEATHER);
   const [weatherLoading, setWeatherLoading] = useState(false);
-  const [alertCheckedAt, setAlertCheckedAt] = useState("");
+  const [, setAlertCheckedAt] = useState("");
   const [flightAlertSnapshot, setFlightAlertSnapshot] =
     useState<FlightAlertSnapshot | null>(null);
   const [flightAlertHistory, setFlightAlertHistory] =
     useState<FlightAlertHistoryItem[]>([]);
+  const [serverFlightAlertHistory, setServerFlightAlertHistory] =
+    useState<FlightAlertHistoryItem[]>([]);
+  const [serverFlightAlertLoading, setServerFlightAlertLoading] = useState(false);
+  const [serverFlightAlertStatus, setServerFlightAlertStatus] = useState("");
   const [dailyStatus, setDailyStatus] = useState<"normal" | "issue">("normal");
   const [author, setAuthor] = useState("jkpark");
   const [issueFlight, setIssueFlight] = useState("");
@@ -521,11 +523,6 @@ export default function HomePage() {
     useState<IssueNotionRecord | null>(null);
   const todayText = useMemo(() => formatDateForTitle(new Date()), []);
   const latestRoom = useMemo(() => getLatestScheduleRoom(rooms), [rooms]);
-  const flightAlertItems = useMemo(
-    () => createFlightAlertItems(latestRoom, flightAlertSnapshot),
-    [latestRoom, flightAlertSnapshot],
-  );
-  const flightAlertCount = flightAlertItems.length;
 
   useEffect(() => {
     setRooms(loadRooms());
@@ -613,38 +610,6 @@ export default function HomePage() {
     }
   }, [issueFlight, latestRoom]);
 
-  const handleCheckFlightAlerts = () => {
-    const snapshot = buildFlightAlertSnapshot(latestRoom);
-
-    if (!snapshot) {
-      setAlertCheckedAt(getCurrentTimeLabel());
-      setNotice("저장된 Schedule Flight가 없습니다. 먼저 편명조회를 실행하세요.");
-      return;
-    }
-
-    if (flightAlertItems.length > 0) {
-      const checkedAt = getCurrentTimeLabel();
-      const historyItems = flightAlertItems.map((item) => ({
-        ...item,
-        checkedAt,
-        roomName: latestRoom?.name || snapshot.roomName,
-      }));
-      const nextHistory = [...historyItems, ...flightAlertHistory].slice(0, 20);
-      setFlightAlertHistory(nextHistory);
-      saveFlightAlertHistory(nextHistory);
-    }
-
-    setFlightAlertSnapshot(snapshot);
-    saveFlightAlertSnapshot(snapshot);
-    setAlertCheckedAt(snapshot.savedAt);
-    setNotice(
-      flightAlertItems.length > 0
-        ? "변경 알림을 이력에 저장하고 현재 결과를 새 기준으로 저장했습니다."
-        : "현재 Schedule Flight 결과를 변경 감지 기준으로 저장했습니다.",
-    );
-  };
-
-
   const handleDeleteFlightAlertHistoryItem = (targetItem: FlightAlertHistoryItem) => {
     const nextItems = flightAlertHistory.filter((item) => {
       const itemKey = `${item.key}|${item.title}|${item.description}|${item.checkedAt}`;
@@ -664,6 +629,81 @@ export default function HomePage() {
     setFlightAlertHistory([]);
     clearFlightAlertHistory();
     setNotice("출도착 알림 이력을 초기화했습니다.");
+  };
+
+
+  const mapServerNotificationHistory = (rawItems: unknown): FlightAlertHistoryItem[] => {
+    const items = Array.isArray(rawItems) ? rawItems : [];
+
+    return items.slice(0, 20).map((item, index) => {
+      const value = item as Record<string, unknown>;
+      const title =
+        String(value.title || value.flight || value.flightId || value.flightNo || "Schedule Flight");
+      const route = value.route ? String(value.route) : "";
+      const description =
+        String(
+          value.description ||
+            value.message ||
+            value.detail ||
+            value.changeText ||
+            value.status ||
+            "서버에 저장된 알림 이력",
+        );
+      const checkedAt =
+        String(value.checkedAt || value.createdAt || value.savedAt || value.timestamp || value.time || "");
+      const roomName =
+        String(value.roomName || value.room || value.source || "서버 알림 이력");
+
+      return {
+        key: `server-${checkedAt || Date.now()}-${index}-${title}`,
+        title: route ? `${title} ${route}` : title,
+        description,
+        checkedAt: checkedAt || getCurrentTimeLabel(),
+        roomName,
+      };
+    });
+  };
+
+  const handleLoadServerFlightAlertHistory = async () => {
+    setServerFlightAlertLoading(true);
+    setServerFlightAlertStatus("서버 알림 이력을 불러오는 중입니다.");
+
+    try {
+      const res = await fetch(`${BACKEND_URL}/flights/notification-history`, {
+        cache: "no-store",
+      });
+      const json = await res.json();
+
+      if (!res.ok || json.success === false) {
+        throw new Error(json.detail || json.message || "서버 알림 이력 조회 실패");
+      }
+
+      const rawItems = json.items || json.history || json.notifications || json.data || [];
+      const nextItems = mapServerNotificationHistory(rawItems);
+
+      setServerFlightAlertHistory(nextItems);
+      setServerFlightAlertStatus(`서버 이력 ${nextItems.length}건 확인`);
+    } catch (error) {
+      setServerFlightAlertStatus(
+        error instanceof Error
+          ? error.message
+          : "서버 알림 이력을 불러오는 중 오류가 발생했습니다.",
+      );
+    } finally {
+      setServerFlightAlertLoading(false);
+    }
+  };
+
+  const handleMergeServerFlightAlertHistory = () => {
+    if (serverFlightAlertHistory.length === 0) {
+      setServerFlightAlertStatus("먼저 서버 이력을 불러오세요.");
+      return;
+    }
+
+    const nextItems = [...serverFlightAlertHistory, ...flightAlertHistory].slice(0, 20);
+    setFlightAlertHistory(nextItems);
+    saveFlightAlertHistory(nextItems);
+    setServerFlightAlertStatus("서버 이력을 앱 알림 보관함에 반영했습니다.");
   };
 
   const appendBackendFlightAlertHistory = (result: BackendScheduleCheckResult, sourceLabel = "API 확인") => {
@@ -1544,18 +1584,15 @@ export default function HomePage() {
           onOpenNaver={openNaverWeather}
         />
 
-        <FlightAlertCard
-          alertCount={flightAlertCount}
-          alertItems={flightAlertItems}
-          checkedAt={alertCheckedAt}
-          snapshotName={flightAlertSnapshot?.roomName || null}
-          onSaveCurrent={handleCheckFlightAlerts}
-        />
-
         <FlightAlertHistoryCard
           historyItems={flightAlertHistory}
+          serverHistoryItems={serverFlightAlertHistory}
+          serverLoading={serverFlightAlertLoading}
+          serverStatus={serverFlightAlertStatus}
           onDeleteItem={handleDeleteFlightAlertHistoryItem}
           onClear={handleClearFlightAlertHistory}
+          onLoadServerHistory={handleLoadServerFlightAlertHistory}
+          onMergeServerHistory={handleMergeServerFlightAlertHistory}
         />
       </section>
 

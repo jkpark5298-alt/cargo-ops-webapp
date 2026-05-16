@@ -5,14 +5,24 @@ import type { FlightAlertHistoryItem } from "../lib/flight-alerts";
 
 type FlightAlertHistoryCardProps = {
   historyItems: FlightAlertHistoryItem[];
+  serverHistoryItems?: FlightAlertHistoryItem[];
+  serverLoading?: boolean;
+  serverStatus?: string;
   onDeleteItem: (item: FlightAlertHistoryItem) => void;
   onClear: () => void;
+  onLoadServerHistory: () => void;
+  onMergeServerHistory: () => void;
 };
 
 export function FlightAlertHistoryCard({
   historyItems,
+  serverHistoryItems = [],
+  serverLoading = false,
+  serverStatus = "",
   onDeleteItem,
   onClear,
+  onLoadServerHistory,
+  onMergeServerHistory,
 }: FlightAlertHistoryCardProps) {
   return (
     <section style={flightAlertHistoryCardStyle}>
@@ -21,8 +31,42 @@ export function FlightAlertHistoryCard({
           <div style={cardLabelStyle}>출도착 알림 이력</div>
           <h2 style={flightAlertTitleStyle}>최근 변경 {historyItems.length}건</h2>
         </div>
-        <div style={flightAlertBadgeStyle}>앱 저장</div>
+        <div style={flightAlertBadgeStyle}>알림 보관</div>
       </div>
+
+      <div style={serverActionRowStyle}>
+        <button
+          type="button"
+          onClick={onLoadServerHistory}
+          disabled={serverLoading}
+          style={serverButtonStyle}
+        >
+          {serverLoading ? "서버 확인 중..." : "서버 이력 불러오기"}
+        </button>
+        <button
+          type="button"
+          onClick={onMergeServerHistory}
+          disabled={serverLoading || serverHistoryItems.length === 0}
+          style={serverHistoryItems.length > 0 ? serverButtonStyle : disabledServerButtonStyle}
+        >
+          서버 이력 앱 보관
+        </button>
+      </div>
+
+      {serverStatus && <div style={serverStatusStyle}>{serverStatus}</div>}
+
+      {serverHistoryItems.length > 0 && (
+        <div style={serverHistoryBoxStyle}>
+          <div style={serverHistoryTitleStyle}>서버 알림 이력 {serverHistoryItems.length}건</div>
+          {serverHistoryItems.slice(0, 3).map((item, index) => (
+            <div key={`${item.key}-${item.checkedAt}-${index}`} style={serverHistoryItemStyle}>
+              <strong>{item.title}</strong>
+              <span>{item.description}</span>
+              <small>확인 {formatHistoryTime(item.checkedAt)} · {item.roomName}</small>
+            </div>
+          ))}
+        </div>
+      )}
 
       {historyItems.length > 0 ? (
         <div style={flightAlertListStyle}>
@@ -149,6 +193,62 @@ const flightAlertHistoryMetaStyle: CSSProperties = {
   lineHeight: 1.4,
   marginTop: 6,
   fontWeight: 800,
+};
+
+const serverActionRowStyle: CSSProperties = {
+  display: "grid",
+  gridTemplateColumns: "1fr 1fr",
+  gap: 8,
+  marginBottom: 10,
+};
+
+const serverButtonStyle: CSSProperties = {
+  minHeight: 44,
+  border: "1px solid rgba(59, 130, 246, 0.45)",
+  borderRadius: 12,
+  color: "#dbeafe",
+  background: "#1d4ed8",
+  fontSize: 13,
+  fontWeight: 900,
+  cursor: "pointer",
+};
+
+const disabledServerButtonStyle: CSSProperties = {
+  ...serverButtonStyle,
+  opacity: 0.5,
+  cursor: "not-allowed",
+};
+
+const serverStatusStyle: CSSProperties = {
+  color: "#93c5fd",
+  fontSize: 12,
+  fontWeight: 800,
+  marginBottom: 10,
+};
+
+const serverHistoryBoxStyle: CSSProperties = {
+  border: "1px solid rgba(20, 184, 166, 0.28)",
+  background: "rgba(15, 118, 110, 0.14)",
+  borderRadius: 14,
+  padding: 10,
+  marginBottom: 12,
+};
+
+const serverHistoryTitleStyle: CSSProperties = {
+  color: "#ccfbf1",
+  fontSize: 12,
+  fontWeight: 950,
+  marginBottom: 8,
+};
+
+const serverHistoryItemStyle: CSSProperties = {
+  display: "grid",
+  gap: 3,
+  color: "#e0f2fe",
+  fontSize: 12,
+  lineHeight: 1.35,
+  padding: "7px 0",
+  borderTop: "1px solid rgba(148, 163, 184, 0.18)",
 };
 
 const resetButtonStyle: CSSProperties = {

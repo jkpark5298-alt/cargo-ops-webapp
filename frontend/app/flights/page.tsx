@@ -1534,7 +1534,7 @@ export default function FlightsPage() {
       return;
     }
 
-    router.push(`/fixed-lite?roomId=${encodeURIComponent(selectedRoom.id)}`);
+    router.push("/fixed-lite");
   };
 
   const selectedRoomCounts = useMemo(

@@ -440,6 +440,7 @@ export default function FixedLitePage() {
   const [selectedRoomId, setSelectedRoomId] = useState("");
   const [summary, setSummary] = useState<WidgetSummaryResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [serverSyncLoading, setServerSyncLoading] = useState(true);
   const [error, setError] = useState("");
   const [nextRefreshAt, setNextRefreshAt] = useState<Date | null>(null);
   const [currentIntervalMinutes, setCurrentIntervalMinutes] = useState<number | null>(null);
@@ -553,20 +554,31 @@ export default function FixedLitePage() {
     };
 
     const savedRooms = loadRooms();
-    setRooms(savedRooms);
-    selectTargetRoom(savedRooms);
+    setRooms([]);
+    setSelectedRoomId("");
+    setServerSyncLoading(true);
 
     void loadLatestScheduleFromServer()
       .then((serverRoom) => {
-        if (!serverRoom) return;
-        const nextRooms = mergeLatestScheduleRoom(loadRooms(), serverRoom);
-        setRooms(nextRooms);
-        saveRooms(nextRooms);
-        setSelectedRoomId(serverRoom.id);
-        localStorage.setItem(LAST_FIXED_ROOM_KEY, serverRoom.id);
+        if (serverRoom) {
+          const nextRooms = mergeLatestScheduleRoom(savedRooms, serverRoom);
+          setRooms(nextRooms);
+          saveRooms(nextRooms);
+          setSelectedRoomId(serverRoom.id);
+          localStorage.setItem(LAST_FIXED_ROOM_KEY, serverRoom.id);
+          return;
+        }
+
+        setRooms(savedRooms);
+        selectTargetRoom(savedRooms);
       })
       .catch(() => {
         // 서버 동기화 실패 시 로컬 Schedule Flight를 그대로 사용합니다.
+        setRooms(savedRooms);
+        selectTargetRoom(savedRooms);
+      })
+      .finally(() => {
+        setServerSyncLoading(false);
       });
   }, []);
 
@@ -671,7 +683,22 @@ export default function FixedLitePage() {
       });
 
       try {
-        await saveLatestScheduleToServer(updatedRoom);
+        const serverRoom = await saveLatestScheduleToServer(updatedRoom);
+        const syncedRoom: MonitorRoom = {
+          ...updatedRoom,
+          ...serverRoom,
+          fixed: true,
+          rows: Array.isArray(serverRoom.rows) ? serverRoom.rows : updatedRoom.rows,
+          flightsInput: serverRoom.flightsInput || updatedRoom.flightsInput,
+          startDateTime: serverRoom.startDateTime || updatedRoom.startDateTime,
+          endDateTime: serverRoom.endDateTime || updatedRoom.endDateTime,
+          lastFetchedAt: serverRoom.lastFetchedAt || updatedRoom.lastFetchedAt,
+        };
+        const syncedRooms = mergeLatestScheduleRoom(loadRooms(), syncedRoom);
+        setRooms(syncedRooms);
+        saveRooms(syncedRooms);
+        setSelectedRoomId(syncedRoom.id);
+        localStorage.setItem(LAST_FIXED_ROOM_KEY, syncedRoom.id);
       } catch (syncError) {
         console.warn("Schedule Flight 알림 비교 또는 서버 기준 저장 실패", syncError);
       }
@@ -790,7 +817,11 @@ export default function FixedLitePage() {
             Schedule Flight 선택
           </div>
 
-          {fixedRooms.length === 0 ? (
+          {serverSyncLoading ? (
+            <div style={{ color: "#b8c7db", fontSize: 14 }}>
+              최근 Schedule Flight 기준을 동기화 중입니다.
+            </div>
+          ) : fixedRooms.length === 0 ? (
             <div style={{ color: "#b8c7db", fontSize: 14 }}>
               저장된 Schedule Flight가 없습니다.
               <br />

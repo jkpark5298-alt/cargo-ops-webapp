@@ -682,7 +682,7 @@ export default function HomePage() {
 
   const openScheduleFlight = () => {
     if (latestRoom) {
-      router.push(`/fixed-lite?roomId=${encodeURIComponent(latestRoom.id)}`);
+      router.push("/fixed-lite");
       return;
     }
     router.push("/flights");

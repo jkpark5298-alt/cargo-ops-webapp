@@ -152,6 +152,36 @@ def _write_latest_schedule(room: Dict[str, Any]) -> Dict[str, Any]:
     return payload
 
 
+def _sanitize_latest_schedule_room(room: Dict[str, Any]) -> Dict[str, Any]:
+    sanitized = dict(room or {})
+    rows = sanitized.get("rows") if isinstance(sanitized.get("rows"), list) else []
+
+    rows_by_flight: Dict[str, Dict[str, Any]] = {}
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+
+        flight = _get_flight_key(row)
+        if not flight:
+            continue
+
+        rows_by_flight[flight] = row
+
+    requested_flights = _normalize_flights([str(sanitized.get("flightsInput") or "")])
+    final_flights = (
+        [flight for flight in requested_flights if flight in rows_by_flight]
+        if requested_flights
+        else list(rows_by_flight.keys())
+    )
+    final_rows = [rows_by_flight[flight] for flight in final_flights]
+
+    sanitized["flightsInput"] = ", ".join(final_flights)
+    sanitized["rows"] = final_rows
+    sanitized["fixed"] = True
+
+    return sanitized
+
+
 def _read_notification_history() -> List[Dict[str, Any]]:
     try:
         if not NOTIFICATION_HISTORY_FILE.exists():
@@ -1251,7 +1281,7 @@ async def check_push_and_save_latest_schedule(payload: LatestScheduleRequest) ->
     if changed_items:
         _append_notification_history(changed_items, current_room, "Schedule Lite 저장 알림")
 
-    saved = _write_latest_schedule(current_room)
+    saved = _write_latest_schedule(_sanitize_latest_schedule_room(current_room))
     if prealert_keys_to_save:
         _append_arrival_prealert_keys(prealert_keys_to_save)
 
@@ -1358,6 +1388,8 @@ async def save_latest_schedule(payload: LatestScheduleRequest) -> Dict[str, Any]
 
     if not room.get("name"):
         room["name"] = "Schedule_Synced"
+
+    room = _sanitize_latest_schedule_room(room)
 
     saved = _write_latest_schedule(room)
     _update_auto_push_status(

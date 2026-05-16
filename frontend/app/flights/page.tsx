@@ -126,12 +126,14 @@ async function loadLatestScheduleFromServer() {
 }
 
 async function saveLatestScheduleToServer(room: MonitorRoom) {
+  const roomToSave = normalizeScheduleRoomRows(room);
+
   const res = await fetch(`${BACKEND_URL}/flights/latest-schedule`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
     },
-    body: JSON.stringify({ room }),
+    body: JSON.stringify({ room: roomToSave }),
   });
 
   const json = await res.json();
@@ -140,7 +142,7 @@ async function saveLatestScheduleToServer(room: MonitorRoom) {
     throw new Error(json.detail || json.message || "Schedule Flight 서버 동기화 실패");
   }
 
-  return json.room as MonitorRoom;
+  return normalizeScheduleRoomRows((json.room || roomToSave) as MonitorRoom);
 }
 
 async function clearLatestScheduleOnServer(room?: MonitorRoom) {
@@ -481,6 +483,41 @@ function filterRowsByFlightInput(rows: FlightRow[], flights: string[]) {
     const rowFlight = getFlightDisplay(row).replace(/\s+/g, "").toUpperCase();
     return flightSet.has(rowFlight);
   });
+}
+
+function buildRowsByFlight(rows: FlightRow[]) {
+  const rowsByFlight = new Map<string, FlightRow>();
+
+  rows.forEach((row) => {
+    const flight = getFlightKeyFromRow(row);
+    if (!flight || flight === "-") return;
+    rowsByFlight.set(flight, row);
+  });
+
+  return rowsByFlight;
+}
+
+function buildScheduleRowsForFlights(rows: FlightRow[], flights: string[]) {
+  const rowsByFlight = buildRowsByFlight(rows);
+
+  return flights
+    .map((flight) => rowsByFlight.get(normalizeFlightKey(flight)))
+    .filter((row): row is FlightRow => Boolean(row));
+}
+
+function normalizeScheduleRoomRows(room: MonitorRoom): MonitorRoom {
+  const sourceRows = Array.isArray(room.rows) ? room.rows : [];
+  const rowsByFlight = buildRowsByFlight(sourceRows);
+  const requestedFlights = normalizeFlightsInput(room.flightsInput);
+  const finalFlights = requestedFlights.length > 0
+    ? requestedFlights.filter((flight) => rowsByFlight.has(normalizeFlightKey(flight)))
+    : Array.from(rowsByFlight.keys());
+
+  return {
+    ...room,
+    flightsInput: finalFlights.join(", "),
+    rows: buildScheduleRowsForFlights(sourceRows, finalFlights),
+  };
 }
 
 function buildFixedDetailRows(row: FlightRow) {
@@ -1007,11 +1044,11 @@ export default function FlightsPage() {
       }
 
       const fetchedAt = new Date().toLocaleString("ko-KR");
-      const updatedRoom: MonitorRoom = {
+      const updatedRoom: MonitorRoom = normalizeScheduleRoomRows({
         ...room,
         rows: nextRows,
         lastFetchedAt: fetchedAt,
-      };
+      });
 
       setRooms((prevRooms) => {
         const nextRooms = prevRooms.map((prevRoom) =>
@@ -1026,7 +1063,7 @@ export default function FlightsPage() {
         setStartDateTime(updatedRoom.startDateTime);
         setEndDateTime(updatedRoom.endDateTime);
         setFixed(updatedRoom.fixed);
-        setRows(nextRows);
+        setRows(updatedRoom.rows);
         setLastFetchedAt(fetchedAt);
         setExpandedDetailKeys({});
       }
@@ -1442,13 +1479,17 @@ export default function FlightsPage() {
 
     const missingFlights = getMissingInputFlights(input, rows);
     const now = new Date();
-    const baseScheduleRoom = selectedRoom?.fixed ? selectedRoom : null;
+    const baseScheduleRoom = selectedRoom?.fixed ? normalizeScheduleRoomRows(selectedRoom) : null;
+    const selectedOnlyRows = buildScheduleRowsForFlights(selectedScheduleRows, selectedFlights);
+    const baseRows = baseScheduleRoom
+      ? buildScheduleRowsForFlights(baseScheduleRoom.rows || [], normalizeFlightsInput(baseScheduleRoom.flightsInput))
+      : [];
     const mergedRows = baseScheduleRoom
-      ? mergeScheduleRowsByFlight(baseScheduleRoom.rows || [], selectedScheduleRows)
-      : selectedScheduleRows;
+      ? mergeScheduleRowsByFlight(baseRows, selectedOnlyRows)
+      : selectedOnlyRows;
     const mergedFlightsInput = buildScheduleFlightsInputFromRows(mergedRows);
 
-    const baseRoom: MonitorRoom = {
+    const baseRoom: MonitorRoom = normalizeScheduleRoomRows({
       id: baseScheduleRoom?.id || `${now.getTime()}`,
       name: baseScheduleRoom?.name || `Schedule_${formatMonitorRoomName(now).replace("Monitor_", "")}`,
       flightsInput: mergedFlightsInput,
@@ -1457,7 +1498,7 @@ export default function FlightsPage() {
       fixed: true,
       lastFetchedAt: new Date().toISOString(),
       rows: mergedRows,
-    };
+    });
 
     setError(
       baseScheduleRoom
@@ -1469,7 +1510,7 @@ export default function FlightsPage() {
 
     try {
       const serverRoom = await saveLatestScheduleToServer(baseRoom);
-      finalRoom = {
+      finalRoom = normalizeScheduleRoomRows({
         ...baseRoom,
         ...serverRoom,
         fixed: true,
@@ -1478,7 +1519,7 @@ export default function FlightsPage() {
         startDateTime: serverRoom.startDateTime || baseRoom.startDateTime,
         endDateTime: serverRoom.endDateTime || baseRoom.endDateTime,
         lastFetchedAt: serverRoom.lastFetchedAt || baseRoom.lastFetchedAt,
-      };
+      });
 
       setError(
         missingFlights.length > 0
@@ -1501,7 +1542,9 @@ export default function FlightsPage() {
     clearFlightAlertBaselineAndHistory();
     setSelectedRoomId(finalRoom.id);
     setInput(finalRoom.flightsInput);
-    setFixed(false);
+    setRows(finalRoom.rows);
+    setLastFetchedAt(finalRoom.lastFetchedAt);
+    setFixed(true);
     setSelectedScheduleKeys({});
     setSelectedScheduleOrder([]);
     setExpandedDetailKeys({});
@@ -1523,7 +1566,7 @@ export default function FlightsPage() {
     const normalizedInput = normalizeFlightsInput(trimmedInput).join(", ");
 
     if (selectedRoom?.fixed) {
-      const updatedScheduleRoom: MonitorRoom = {
+      const updatedScheduleRoom: MonitorRoom = normalizeScheduleRoomRows({
         ...selectedRoom,
         flightsInput: normalizedInput,
         startDateTime,
@@ -1531,7 +1574,7 @@ export default function FlightsPage() {
         fixed: true,
         lastFetchedAt: lastFetchedAt || new Date().toISOString(),
         rows,
-      };
+      });
 
       const nextRooms = mergeLatestScheduleRoom(rooms, updatedScheduleRoom);
       setRooms(nextRooms);
@@ -1542,7 +1585,7 @@ export default function FlightsPage() {
 
       try {
         const serverRoom = await saveLatestScheduleToServer(updatedScheduleRoom);
-        const finalRoom: MonitorRoom = {
+        const finalRoom: MonitorRoom = normalizeScheduleRoomRows({
           ...updatedScheduleRoom,
           ...serverRoom,
           fixed: true,
@@ -1551,7 +1594,7 @@ export default function FlightsPage() {
           startDateTime: serverRoom.startDateTime || updatedScheduleRoom.startDateTime,
           endDateTime: serverRoom.endDateTime || updatedScheduleRoom.endDateTime,
           lastFetchedAt: serverRoom.lastFetchedAt || updatedScheduleRoom.lastFetchedAt,
-        };
+        });
 
         const syncedRooms = mergeLatestScheduleRoom(loadRooms(), finalRoom);
         setRooms(syncedRooms);

@@ -451,6 +451,29 @@ function normalizeFlightsInput(rawInput: string) {
     });
 }
 
+function normalizeFlightKey(value: string) {
+  return value.replace(/\s+/g, "").toUpperCase();
+}
+
+function getFlightKeyFromRow(row: FlightRow) {
+  return normalizeFlightKey(getFlightDisplay(row));
+}
+
+function removeFlightFromScheduleRoom(room: MonitorRoom, targetFlight: string): MonitorRoom {
+  const targetKey = normalizeFlightKey(targetFlight);
+  const nextFlights = normalizeFlightsInput(room.flightsInput).filter(
+    (flight) => normalizeFlightKey(flight) !== targetKey,
+  );
+  const nextRows = (room.rows || []).filter((row) => getFlightKeyFromRow(row) !== targetKey);
+
+  return {
+    ...room,
+    flightsInput: nextFlights.join(", "),
+    rows: nextRows,
+    lastFetchedAt: new Date().toISOString(),
+  };
+}
+
 function filterRowsByFlightInput(rows: FlightRow[], flights: string[]) {
   const flightSet = new Set(flights.map((flight) => flight.replace(/\s+/g, "").toUpperCase()));
 
@@ -578,12 +601,14 @@ function FixedResultsTable({
   selectedKeys,
   onToggleDetail,
   onToggleSelect,
+  onDeleteFlight,
 }: {
   rows: FlightRow[];
   expandedKeys: Record<string, boolean>;
   selectedKeys: Record<string, boolean>;
   onToggleDetail: (key: string) => void;
   onToggleSelect: (row: FlightRow, idx: number) => void;
+  onDeleteFlight?: (flight: string) => void;
 }) {
   return (
     <div style={{ marginTop: 30, overflowX: "auto" }}>
@@ -598,7 +623,7 @@ function FixedResultsTable({
       >
         <thead>
           <tr style={{ background: "#18263f" }}>
-            <th style={thStyle}>추가</th>
+            <th style={thStyle}>관리</th>
             <th style={thStyle}>편명</th>
             <th style={thStyle}>구분</th>
             <th style={thStyle}>출발</th>
@@ -636,27 +661,49 @@ function FixedResultsTable({
                   }}
                 >
                   <td style={tdStyle}>
-                    <button
-                      type="button"
-                      onClick={() => onToggleSelect(row, idx)}
-                      disabled={finalCompleted}
-                      title={finalCompleted ? `${getRefreshExcludeReason(row)}으로 저장 제외` : "Schedule Flight에 추가 선택"}
-                      style={{
-                        width: 30,
-                        height: 30,
-                        borderRadius: 999,
-                        border: selected ? "1px solid #60a5fa" : "1px solid #334155",
-                        background: selected ? "#2563eb" : "#111827",
-                        color: selected ? "#ffffff" : "#facc15",
-                        fontWeight: 900,
-                        fontSize: 20,
-                        lineHeight: 1,
-                        cursor: finalCompleted ? "not-allowed" : "pointer",
-                        opacity: finalCompleted ? 0.45 : 1,
-                      }}
-                    >
-                      {selected ? "✓" : "+"}
-                    </button>
+                    {onDeleteFlight ? (
+                      <button
+                        type="button"
+                        onClick={() => onDeleteFlight(getFlightDisplay(row))}
+                        title={`${getFlightDisplay(row)} Schedule Flight에서 삭제`}
+                        style={{
+                          width: 30,
+                          height: 30,
+                          borderRadius: 999,
+                          border: "1px solid rgba(248, 113, 113, 0.65)",
+                          background: "rgba(127, 29, 29, 0.72)",
+                          color: "#fecaca",
+                          fontWeight: 900,
+                          fontSize: 20,
+                          lineHeight: 1,
+                          cursor: "pointer",
+                        }}
+                      >
+                        -
+                      </button>
+                    ) : (
+                      <button
+                        type="button"
+                        onClick={() => onToggleSelect(row, idx)}
+                        disabled={finalCompleted}
+                        title={finalCompleted ? `${getRefreshExcludeReason(row)}으로 저장 제외` : "Schedule Flight에 추가 선택"}
+                        style={{
+                          width: 30,
+                          height: 30,
+                          borderRadius: 999,
+                          border: selected ? "1px solid #60a5fa" : "1px solid #334155",
+                          background: selected ? "#2563eb" : "#111827",
+                          color: selected ? "#ffffff" : "#facc15",
+                          fontWeight: 900,
+                          fontSize: 20,
+                          lineHeight: 1,
+                          cursor: finalCompleted ? "not-allowed" : "pointer",
+                          opacity: finalCompleted ? 0.45 : 1,
+                        }}
+                      >
+                        {selected ? "✓" : "+"}
+                      </button>
+                    )}
                   </td>
                   <td style={tdStyle}>{getFlightDisplay(row)}</td>
                   <td
@@ -1256,6 +1303,63 @@ export default function FlightsPage() {
         [key]: nextSelected,
       };
     });
+  };
+
+  const handleDeleteFlightFromSchedule = async (flight: string) => {
+    if (!selectedRoom?.fixed) return;
+
+    const targetFlight = normalizeFlightKey(flight);
+    if (!targetFlight) return;
+
+    const confirmed = window.confirm(`${targetFlight} 편명을 Schedule Flight에서 삭제할까요?`);
+    if (!confirmed) return;
+
+    const updatedRoom = removeFlightFromScheduleRoom(selectedRoom, targetFlight);
+    const hasRemaining = isActiveScheduleRoom(updatedRoom);
+
+    const nextRooms = hasRemaining
+      ? mergeLatestScheduleRoom(rooms, updatedRoom)
+      : removeEmptyScheduleRooms(rooms.map((room) => (room.id === selectedRoom.id ? updatedRoom : room)));
+
+    setRooms(nextRooms);
+    saveRooms(nextRooms);
+    setRows(updatedRoom.rows || []);
+    setInput(updatedRoom.flightsInput);
+    setLastFetchedAt(updatedRoom.lastFetchedAt);
+    setSelectedScheduleKeys({});
+    setSelectedScheduleOrder([]);
+    setExpandedDetailKeys({});
+    clearFlightAlertBaselineAndHistory();
+
+    if (!hasRemaining) {
+      setSelectedRoomId("");
+      setFixed(false);
+    } else {
+      setSelectedRoomId(updatedRoom.id);
+      setFixed(true);
+    }
+
+    try {
+      await saveLatestScheduleToServer(updatedRoom);
+      if (typeof window !== "undefined") {
+        if (!hasRemaining) {
+          window.localStorage.removeItem(LAST_FIXED_ROOM_KEY);
+        }
+        window.localStorage.setItem("cargo_ops_latest_schedule_updated_at", new Date().toISOString());
+      }
+
+      setError(
+        hasRemaining
+          ? `${targetFlight} 삭제 완료. 초기화면과 Schedule Lite에도 반영됩니다.`
+          : `${targetFlight} 삭제 완료. 남은 편명이 없어 Schedule Flight를 비웠습니다.`,
+      );
+    } catch (syncError) {
+      setError(
+        syncError instanceof Error
+          ? `${targetFlight} 로컬 삭제 완료. 서버 동기화 실패: ${syncError.message}`
+          : `${targetFlight} 로컬 삭제 완료. 서버 동기화 중 오류가 발생했습니다.`,
+      );
+    }
   };
 
   const mergeScheduleRowsByFlight = (baseRows: FlightRow[], addRows: FlightRow[]) => {
@@ -2200,6 +2304,7 @@ export default function FlightsPage() {
             selectedKeys={selectedScheduleKeys}
             onToggleDetail={handleToggleDetail}
             onToggleSelect={handleToggleScheduleSelection}
+            onDeleteFlight={isSelectedFixedRoom ? handleDeleteFlightFromSchedule : undefined}
           />
         )}
 

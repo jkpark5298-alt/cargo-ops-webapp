@@ -201,6 +201,25 @@ function normalizeFlightKey(value: string) {
   return value.replace(/\s+/g, "").toUpperCase();
 }
 
+function getFlightKeyFromRow(row: FlightRow) {
+  return normalizeFlightKey(row.flightId || row.flightNo || "");
+}
+
+function removeFlightFromScheduleRoom(room: MonitorRoom, targetFlight: string): MonitorRoom {
+  const targetKey = normalizeFlightKey(targetFlight);
+  const nextFlights = normalizeFlightsInput(room.flightsInput).filter(
+    (flight) => normalizeFlightKey(flight) !== targetKey,
+  );
+  const nextRows = (room.rows || []).filter((row) => getFlightKeyFromRow(row) !== targetKey);
+
+  return {
+    ...room,
+    flightsInput: nextFlights.join(", "),
+    rows: nextRows,
+    lastFetchedAt: new Date().toISOString(),
+  };
+}
+
 function getFlightOrderIndex(flightsInput: string, flight: string) {
   const order = flightsInput
     .split(",")
@@ -510,6 +529,59 @@ export default function FixedLitePage() {
       return true;
     });
   }, [selectedRoom, displayItemsForSelectedRoom, completedFlightsByRoom]);
+
+  const handleDeleteFlightFromSchedule = async (flight: string) => {
+    if (!selectedRoom) return;
+
+    const targetFlight = normalizeFlightKey(flight);
+    if (!targetFlight) return;
+
+    const confirmed = window.confirm(`${targetFlight} 편명을 Schedule Flight에서 삭제할까요?`);
+    if (!confirmed) return;
+
+    const updatedRoom = removeFlightFromScheduleRoom(selectedRoom, targetFlight);
+    const hasRemaining = isActiveScheduleRoom(updatedRoom);
+    const nextRooms = hasRemaining
+      ? mergeLatestScheduleRoom(rooms, updatedRoom)
+      : removeEmptyScheduleRooms(rooms.map((room) => (room.id === selectedRoom.id ? updatedRoom : room)));
+
+    setRooms(nextRooms);
+    saveRooms(nextRooms);
+    setSummary(null);
+    setCompletedFlightsByRoom((prev) => {
+      const next = { ...prev };
+      delete next[selectedRoom.id];
+      return next;
+    });
+    setLastKnownItemsByRoom((prev) => {
+      const next = { ...prev };
+      delete next[selectedRoom.id];
+      return next;
+    });
+
+    if (hasRemaining) {
+      setSelectedRoomId(updatedRoom.id);
+      localStorage.setItem(LAST_FIXED_ROOM_KEY, updatedRoom.id);
+    } else {
+      setSelectedRoomId("");
+      localStorage.removeItem(LAST_FIXED_ROOM_KEY);
+    }
+
+    try {
+      await saveLatestScheduleToServer(updatedRoom);
+      setError(
+        hasRemaining
+          ? `${targetFlight} 삭제 완료. 초기화면과 편명조회에도 반영됩니다.`
+          : `${targetFlight} 삭제 완료. 남은 편명이 없어 Schedule Flight를 비웠습니다.`,
+      );
+    } catch (syncError) {
+      setError(
+        syncError instanceof Error
+          ? `${targetFlight} 로컬 삭제 완료. 서버 동기화 실패: ${syncError.message}`
+          : `${targetFlight} 로컬 삭제 완료. 서버 동기화 중 오류가 발생했습니다.`,
+      );
+    }
+  };
 
   const backToFlightsHref = selectedRoomId
     ? `/flights?roomId=${encodeURIComponent(selectedRoomId)}`
@@ -1039,6 +1111,15 @@ export default function FixedLitePage() {
                           justifyContent: "flex-end",
                         }}
                       >
+                        <button
+                          type="button"
+                          onClick={() => void handleDeleteFlightFromSchedule(item.flight)}
+                          title={`${item.flight} Schedule Flight에서 삭제`}
+                          style={deleteFlightBtnStyle}
+                        >
+                          -
+                        </button>
+
                         {focused && (
                           <span style={focusBadgeStyle}>집중조회</span>
                         )}
@@ -1207,4 +1288,18 @@ const completedBadgeStyle: CSSProperties = {
   fontSize: 12,
   fontWeight: 800,
   whiteSpace: "nowrap",
+};
+
+
+const deleteFlightBtnStyle: CSSProperties = {
+  width: 34,
+  height: 34,
+  borderRadius: 999,
+  border: "1px solid rgba(248, 113, 113, 0.65)",
+  background: "rgba(127, 29, 29, 0.72)",
+  color: "#fecaca",
+  fontSize: 20,
+  fontWeight: 900,
+  lineHeight: 1,
+  cursor: "pointer",
 };

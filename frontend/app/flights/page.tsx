@@ -94,8 +94,21 @@ function saveRooms(rooms: MonitorRoom[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(rooms));
 }
 
-function mergeLatestScheduleRoom(rooms: MonitorRoom[], latestRoom: MonitorRoom) {
-  return [latestRoom, ...rooms.filter((room) => !room.fixed)];
+function isActiveScheduleRoom(room?: MonitorRoom | null) {
+  if (!room) return false;
+  const flightsInput = String(room.flightsInput || "").trim();
+  const rows = Array.isArray(room.rows) ? room.rows : [];
+  return Boolean(flightsInput || rows.length > 0);
+}
+
+function removeEmptyScheduleRooms(rooms: MonitorRoom[]) {
+  return rooms.filter((room) => !room.fixed || isActiveScheduleRoom(room));
+}
+
+function mergeLatestScheduleRoom(rooms: MonitorRoom[], latestRoom: MonitorRoom | null) {
+  const localRooms = removeEmptyScheduleRooms(rooms).filter((room) => !room.fixed);
+  if (!isActiveScheduleRoom(latestRoom)) return localRooms;
+  return [latestRoom as MonitorRoom, ...localRooms];
 }
 
 async function loadLatestScheduleFromServer() {
@@ -108,7 +121,8 @@ async function loadLatestScheduleFromServer() {
     throw new Error(json.detail || json.message || "Schedule Flight 서버 조회 실패");
   }
 
-  return (json.room || null) as MonitorRoom | null;
+  const room = (json.room || null) as MonitorRoom | null;
+  return isActiveScheduleRoom(room) ? room : null;
 }
 
 async function saveLatestScheduleToServer(room: MonitorRoom) {
@@ -984,7 +998,6 @@ export default function FlightsPage() {
 
     void loadLatestScheduleFromServer()
       .then((serverRoom) => {
-        if (!serverRoom) return;
         const mergedRooms = mergeLatestScheduleRoom(loadRooms(), serverRoom);
         setRooms(mergedRooms);
         saveRooms(mergedRooms);
@@ -1014,12 +1027,11 @@ export default function FlightsPage() {
 
       void loadLatestScheduleFromServer()
         .then((serverRoom) => {
-          if (!serverRoom) return;
           const mergedRooms = mergeLatestScheduleRoom(loadRooms(), serverRoom);
           setRooms(mergedRooms);
           saveRooms(mergedRooms);
 
-          if (serverRoom.id === roomId || serverRoom.fixed) {
+          if (serverRoom && (serverRoom.id === roomId || serverRoom.fixed)) {
             setSelectedRoomId(serverRoom.id);
             setInput(serverRoom.flightsInput);
             setStartDateTime(serverRoom.startDateTime);
@@ -1028,6 +1040,8 @@ export default function FlightsPage() {
             setLastFetchedAt(serverRoom.lastFetchedAt);
             setRows(serverRoom.rows || []);
             setExpandedDetailKeys({});
+          } else if (!serverRoom) {
+            resetLookupView();
           }
         })
         .catch(() => {

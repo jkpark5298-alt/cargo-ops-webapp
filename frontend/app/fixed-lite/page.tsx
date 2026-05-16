@@ -74,7 +74,7 @@ function loadRooms(): MonitorRoom[] {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? removeEmptyScheduleRooms(parsed) : [];
   } catch {
     return [];
   }
@@ -85,8 +85,21 @@ function saveRooms(rooms: MonitorRoom[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(rooms));
 }
 
-function mergeLatestScheduleRoom(rooms: MonitorRoom[], latestRoom: MonitorRoom) {
-  return [latestRoom, ...rooms.filter((room) => !room.fixed)];
+function isActiveScheduleRoom(room?: MonitorRoom | null) {
+  if (!room) return false;
+  const flightsInput = String(room.flightsInput || "").trim();
+  const rows = Array.isArray(room.rows) ? room.rows : [];
+  return Boolean(flightsInput || rows.length > 0);
+}
+
+function removeEmptyScheduleRooms(rooms: MonitorRoom[]) {
+  return rooms.filter((room) => !room.fixed || isActiveScheduleRoom(room));
+}
+
+function mergeLatestScheduleRoom(rooms: MonitorRoom[], latestRoom: MonitorRoom | null) {
+  const localRooms = removeEmptyScheduleRooms(rooms).filter((room) => !room.fixed);
+  if (!isActiveScheduleRoom(latestRoom)) return localRooms;
+  return [latestRoom as MonitorRoom, ...localRooms];
 }
 
 async function loadLatestScheduleFromServer() {
@@ -99,7 +112,8 @@ async function loadLatestScheduleFromServer() {
     throw new Error(json.detail || json.message || "Schedule Flight 동기화 실패");
   }
 
-  return (json.room || null) as MonitorRoom | null;
+  const room = (json.room || null) as MonitorRoom | null;
+  return isActiveScheduleRoom(room) ? room : null;
 }
 
 async function saveLatestScheduleToServer(room: MonitorRoom) {
@@ -451,7 +465,10 @@ export default function FixedLitePage() {
 
   const timerRef = useRef<number | null>(null);
 
-  const fixedRooms = useMemo(() => rooms.filter((room) => room.fixed), [rooms]);
+  const fixedRooms = useMemo(
+    () => rooms.filter((room) => room.fixed && isActiveScheduleRoom(room)),
+    [rooms],
+  );
 
   const selectedRoom = useMemo(
     () => fixedRooms.find((room) => room.id === selectedRoomId) || null,
@@ -560,17 +577,18 @@ export default function FixedLitePage() {
 
     void loadLatestScheduleFromServer()
       .then((serverRoom) => {
+        const nextRooms = mergeLatestScheduleRoom(savedRooms, serverRoom);
+        setRooms(nextRooms);
+        saveRooms(nextRooms);
+
         if (serverRoom) {
-          const nextRooms = mergeLatestScheduleRoom(savedRooms, serverRoom);
-          setRooms(nextRooms);
-          saveRooms(nextRooms);
           setSelectedRoomId(serverRoom.id);
           localStorage.setItem(LAST_FIXED_ROOM_KEY, serverRoom.id);
           return;
         }
 
-        setRooms(savedRooms);
-        selectTargetRoom(savedRooms);
+        localStorage.removeItem(LAST_FIXED_ROOM_KEY);
+        selectTargetRoom(nextRooms);
       })
       .catch(() => {
         // 서버 동기화 실패 시 로컬 Schedule Flight를 그대로 사용합니다.

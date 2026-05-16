@@ -217,7 +217,7 @@ function loadRooms(): MonitorRoom[] {
     const raw = localStorage.getItem(STORAGE_KEY);
     if (!raw) return [];
     const parsed = JSON.parse(raw);
-    return Array.isArray(parsed) ? parsed : [];
+    return Array.isArray(parsed) ? removeEmptyScheduleRooms(parsed) : [];
   } catch {
     return [];
   }
@@ -228,12 +228,25 @@ function saveRooms(rooms: MonitorRoom[]) {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(rooms));
 }
 
-function mergeLatestScheduleRoom(rooms: MonitorRoom[], latestRoom: MonitorRoom) {
-  return [latestRoom, ...rooms.filter((room) => !room.fixed)];
+function isActiveScheduleRoom(room?: MonitorRoom | null) {
+  if (!room) return false;
+  const flightsInput = String(room.flightsInput || "").trim();
+  const rows = Array.isArray(room.rows) ? room.rows : [];
+  return Boolean(flightsInput || rows.length > 0);
+}
+
+function removeEmptyScheduleRooms(rooms: MonitorRoom[]) {
+  return rooms.filter((room) => !room.fixed || isActiveScheduleRoom(room));
+}
+
+function mergeLatestScheduleRoom(rooms: MonitorRoom[], latestRoom: MonitorRoom | null) {
+  const localRooms = removeEmptyScheduleRooms(rooms).filter((room) => !room.fixed);
+  if (!isActiveScheduleRoom(latestRoom)) return localRooms;
+  return [latestRoom as MonitorRoom, ...localRooms];
 }
 
 function getLocalLatestScheduleRoom() {
-  return loadRooms().find((room) => room.fixed) || null;
+  return loadRooms().find((room) => room.fixed && isActiveScheduleRoom(room)) || null;
 }
 
 function getCurrentSyncLabel() {
@@ -699,42 +712,38 @@ export default function HomePage() {
         throw new Error(json.detail || json.message || "Schedule Flight 동기화 실패");
       }
 
-      let serverRoom = json.room as MonitorRoom | null;
+      const serverRoom = isActiveScheduleRoom(json.room as MonitorRoom | null)
+        ? (json.room as MonitorRoom)
+        : null;
+
+      const nextRooms = mergeLatestScheduleRoom(loadRooms(), serverRoom);
+      setRooms(nextRooms);
+      saveRooms(nextRooms);
 
       if (!serverRoom) {
-        const localRoom = getLocalLatestScheduleRoom();
+        setFlightAlertSnapshot(null);
+        if (typeof window !== "undefined") localStorage.removeItem("cargo_ops_flight_alert_snapshot_v1");
+        setFlightAlertHistory([]);
+        clearFlightAlertHistory();
 
-        if (!localRoom) {
-          const checkedAt = getCurrentSyncLabel();
-          setScheduleSyncCheckedAt(checkedAt);
-          if (showNotice) setNotice(`Schedule Flight 없음 · 확인 ${checkedAt}`);
-          await fetchAutoPushStatus();
-          return;
-        }
+        const checkedAt = getCurrentSyncLabel();
+        setScheduleSyncCheckedAt(checkedAt);
+        if (showNotice) setNotice(`Schedule Flight 없음 · 확인 ${checkedAt}`);
+        await fetchAutoPushStatus();
+        return;
+      }
 
-        serverRoom = await saveLatestScheduleToServer(localRoom);
-        if (showNotice) {
-          const checkedAt = getCurrentSyncLabel();
-          setScheduleSyncCheckedAt(checkedAt);
-          setNotice(`이 기기의 Schedule Flight를 서버에 동기화했습니다. 확인 ${checkedAt}`);
-        }
-      } else {
-        const nextRooms = mergeLatestScheduleRoom(loadRooms(), serverRoom);
-        setRooms(nextRooms);
-        saveRooms(nextRooms);
+      const nextSnapshot = buildFlightAlertSnapshot(serverRoom);
+      if (nextSnapshot) {
+        setFlightAlertSnapshot(nextSnapshot);
+        saveFlightAlertSnapshot(nextSnapshot);
+        setAlertCheckedAt(nextSnapshot.savedAt);
+      }
 
-        const nextSnapshot = buildFlightAlertSnapshot(serverRoom);
-        if (nextSnapshot) {
-          setFlightAlertSnapshot(nextSnapshot);
-          saveFlightAlertSnapshot(nextSnapshot);
-          setAlertCheckedAt(nextSnapshot.savedAt);
-        }
-
-        if (showNotice) {
-          const checkedAt = getCurrentSyncLabel();
-          setScheduleSyncCheckedAt(checkedAt);
-          setNotice(`Schedule Flight 동기화 확인 · ${checkedAt}`);
-        }
+      if (showNotice) {
+        const checkedAt = getCurrentSyncLabel();
+        setScheduleSyncCheckedAt(checkedAt);
+        setNotice(`Schedule Flight 동기화 확인 · ${checkedAt}`);
       }
 
       setFlightAlertHistory([]);

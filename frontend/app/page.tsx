@@ -538,14 +538,21 @@ export default function HomePage() {
     void fetchWeather();
     void checkScheduleApiAndSync(false, true);
     void fetchAutoPushStatus();
+    void handleLoadServerFlightAlertHistory(false);
 
     const syncTimer = window.setTimeout(() => {
       void checkScheduleApiAndSync(false);
       void syncPwaPermissionAndSubscription(false);
+      void handleLoadServerFlightAlertHistory(false);
     }, 1200);
+
+    const alertHistoryTimer = window.setInterval(() => {
+      void handleLoadServerFlightAlertHistory(false);
+    }, 60_000);
 
     return () => {
       window.clearTimeout(syncTimer);
+      window.clearInterval(alertHistoryTimer);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -564,6 +571,7 @@ export default function HomePage() {
       void checkScheduleApiAndSync(false);
       void syncPwaPermissionAndSubscription(false);
       void fetchAutoPushStatus();
+      void handleLoadServerFlightAlertHistory(false);
     };
 
     const handleVisibilityChange = () => {
@@ -751,9 +759,11 @@ export default function HomePage() {
     return json as { success?: boolean; cleared?: number };
   };
 
-  const handleLoadServerFlightAlertHistory = async () => {
-    setServerFlightAlertLoading(true);
-    setServerFlightAlertStatus("서버 미처리 이력을 확인하는 중입니다.");
+  const handleLoadServerFlightAlertHistory = async (showStatus = true) => {
+    if (showStatus) {
+      setServerFlightAlertLoading(true);
+      setServerFlightAlertStatus("서버 미처리 이력을 확인하는 중입니다.");
+    }
 
     try {
       const res = await fetch(`${BACKEND_URL}/flights/notification-history`, {
@@ -774,19 +784,30 @@ export default function HomePage() {
       saveFlightAlertHistory(nextItems);
 
       const addedCount = Math.max(0, nextItems.length - currentItems.length);
-      setServerFlightAlertStatus(
-        serverItems.length > 0
-          ? `서버 미처리 이력 ${serverItems.length}건 확인 · 앱 알림 목록에 표시 · 신규 ${addedCount}건`
-          : "서버 미처리 이력이 없습니다.",
-      );
+
+      if (showStatus) {
+        setServerFlightAlertStatus(
+          serverItems.length > 0
+            ? `서버 미처리 이력 ${serverItems.length}건 확인 · 출도착 알림 이력에 자동 표시 · 신규 ${addedCount}건`
+            : "서버 미처리 이력이 없습니다.",
+        );
+      } else if (addedCount > 0) {
+        setServerFlightAlertStatus(
+          `서버 알림 ${addedCount}건을 출도착 알림 이력에 자동 반영했습니다.`,
+        );
+      }
     } catch (error) {
-      setServerFlightAlertStatus(
-        error instanceof Error
-          ? error.message
-          : "서버 알림 이력을 불러오는 중 오류가 발생했습니다.",
-      );
+      if (showStatus) {
+        setServerFlightAlertStatus(
+          error instanceof Error
+            ? error.message
+            : "서버 알림 이력을 불러오는 중 오류가 발생했습니다.",
+        );
+      }
     } finally {
-      setServerFlightAlertLoading(false);
+      if (showStatus) {
+        setServerFlightAlertLoading(false);
+      }
     }
   };
 
@@ -1157,9 +1178,11 @@ export default function HomePage() {
           `Schedule Flight 변경 ${changed}건 감지. 푸시 발송 성공 ${sent}건 / 실패 ${failed}건`,
         );
         await syncLatestScheduleFromServer(false);
+        await handleLoadServerFlightAlertHistory(false);
       } else {
         setPwaStatusMessage(`Schedule Flight 변경 없음. 재조회 대상 ${checked}건 확인 완료`);
         await syncLatestScheduleFromServer(false);
+        await handleLoadServerFlightAlertHistory(false);
       }
     } catch (error) {
       setPwaStatusMessage(error instanceof Error ? error.message : "Schedule Flight 변경 확인 중 오류가 발생했습니다.");

@@ -27,7 +27,11 @@ export function FlightAlertHistoryCard({
           <div style={cardLabelStyle}>출도착 알림 이력</div>
           <h2 style={flightAlertTitleStyle}>최근 변경 {historyItems.length}건</h2>
         </div>
-        <div style={flightAlertBadgeStyle}>알림 보관</div>
+        <div style={flightAlertBadgeStyle}>자동 반영</div>
+      </div>
+
+      <div style={autoGuideStyle}>
+        서버 이력이 발생하면 이 목록에 자동으로 반영됩니다. 바로 확인하려면 서버 이력 즉시 확인을 누르세요.
       </div>
 
       <div style={serverActionRowStyle}>
@@ -37,7 +41,7 @@ export function FlightAlertHistoryCard({
           disabled={serverLoading}
           style={serverButtonStyle}
         >
-          {serverLoading ? "새로고침 중..." : "서버 이력 새로고침"}
+          {serverLoading ? "새로고침 중..." : "서버 이력 즉시 확인"}
         </button>
         <button
           type="button"
@@ -170,6 +174,14 @@ const flightAlertHistoryMetaStyle: CSSProperties = {
   lineHeight: 1.4,
   marginTop: 6,
   fontWeight: 800,
+};
+
+const autoGuideStyle: CSSProperties = {
+  color: "#93c5fd",
+  fontSize: 12,
+  lineHeight: 1.45,
+  marginBottom: 10,
+  fontWeight: 750,
 };
 
 const serverActionRowStyle: CSSProperties = {
